@@ -194,7 +194,7 @@ live direct text send: the CLI returned a server message ID with `encrypted: fal
 This confirms server acceptance of a plaintext send; recipient delivery/read status
 was not checked. The user subsequently reported an encrypted direct send selected
 by exact chat name, with a server message ID and `encrypted: true`. This verifies
-server acceptance of encrypted sending; recipient-side delivery remains unconfirmed.
+server acceptance of encrypted sending; the user also confirmed recipient-side delivery.
 Live fresh group-key registration and token rotation still need validation.
 Tests of outgoing message construction,
 capability fallback, blocked contacts, persistent sequencing, and failed-send
