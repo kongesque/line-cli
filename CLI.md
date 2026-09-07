@@ -1,7 +1,7 @@
 # LINE CLI
 
-A standalone command-line client built on `beeper/line`. The first milestone
-supports account login and contact/chat discovery. It uses your personal LINE
+A standalone command-line client built on `beeper/line`. Supports account login,
+contact/chat discovery, recent text history, and text sending. It uses your personal LINE
 account and does not require a Matrix homeserver or Beeper account.
 
 ## Build
@@ -30,6 +30,11 @@ rebuilding or moving the binary may cause another access prompt.
 ./bin/line contacts --json
 ./bin/line chats --json
 
+# Replace CHAT_ID with an ID from contacts or chats.
+./bin/line messages CHAT_ID --limit 20 --json
+./bin/line send CHAT_ID --text "Hello" --json
+./bin/line send CHAT_ID --stdin < message.txt
+
 ./bin/line logout
 ```
 
@@ -48,6 +53,32 @@ service `io.github.kongesque.line-cli`, account `default`. One LINE account is
 supported in this milestone. A process lock in the user's cache directory
 serializes commands to protect token rotation and logout.
 
+`messages` reads 1–100 recent messages in the order returned by LINE. It restores
+Letter Sealing keys from Keychain and fetches the exact device/group keys needed
+for each message. Reading does not mark messages read, register group keys, or
+save message history locally. Older messages can remain unreadable when their
+original device keys are no longer available.
+
+`send` supports direct chats, rooms, and groups. It checks blocked contacts for
+direct messages and encrypts using Letter Sealing when available. Plaintext is
+allowed only for an explicitly non-E2EE login or an explicit LINE capability
+response. Missing/malformed keys, membership failures, and network errors stop
+the send instead of downgrading encryption.
+
+For a group without a usable shared key, an explicit send may register a fresh
+group key for all current members. If LINE does not provide complete membership,
+the CLI fails rather than creating a key for an incomplete member list.
+
+Request sequences are saved before transmission and shared across CLI processes.
+A send is attempted once; if its response is lost, inspect history before retrying
+because the message may already have been delivered. Sends and key registration
+are not automatically replayed after errors. This version does not persist an
+outbox or provide exactly-once delivery across manual retries.
+
+`--text` and `--stdin` are mutually exclusive. Input must be nonempty UTF-8 text
+within the CLI's 10,000 UTF-16-unit limit. Stdin preserves newlines and avoids
+placing the text directly in process arguments or shell history.
+
 `logout` removes the local Keychain item. It does **not** revoke the session on
 LINE's servers. The upstream remote logout method is currently unimplemented.
 
@@ -62,6 +93,15 @@ status 1; help and successful commands return 0.
 - `chats --json`: objects with `id`, `type`, and `unread_count`. This initial
   command lists IDs and unread counts; it does not resolve chat titles or decode
   message previews.
+- `messages --json`: message ID, sender/recipient, timestamp, content type, text,
+  encryption flag, and status (`plaintext`, `decrypted`, `unsupported`, or
+  `decryption_failed`). Images, stickers, and other non-text content are listed
+  by type; their payloads are not decoded in this milestone.
+- `send --json`: server message ID, chat ID, encryption flag, and request sequence.
+
+If some history entries cannot be decrypted, the command still writes the full
+JSON array with per-message errors and exits 1. It never substitutes encrypted
+chunks or server fallback text for a successfully decrypted message.
 
 Contact retrieval is batched. Chat retrieval follows pagination and fails without
 partial stdout output if the server repeats a cursor. These discovery commands
@@ -83,8 +123,22 @@ Tests use fake API and credential-store implementations; they never log into LIN
 send messages, or read/write your Keychain. After a user completed interactive
 login, separate CLI processes successfully loaded the saved Keychain session and
 ran `whoami`, `contacts --json`, and `chats --json` against LINE on 2026-09-07.
-Live token rotation and encrypted message decryption still need validation.
+An opt-in read-only integration check also restored saved keys and decrypted both
+direct and group text history. Live sending, fresh group-key registration, and
+token rotation still need validation. Tests of outgoing message construction,
+capability fallback, blocked contacts, persistent sequencing, and failed-send
+handling use fakes and never transmit a message.
 
-Sending, decrypted message history, live events, attachments, multiple accounts,
-and Linux/Windows credential storage are subsequent milestones. Detailed progress
+To repeat the live read check after signing in (requires recent encrypted direct
+and group conversations):
+
+```sh
+LINE_CLI_LIVE_READ=1 go test ./internal/messaging -run '^TestLiveHistory$' -v -count=1 -timeout=4m
+```
+
+This explicitly enabled test reads active chat previews and a bounded history
+sample, logs only counts/statuses, and skips automatically during ordinary tests.
+
+Live events, attachments, multiple accounts, and Linux/Windows credential storage
+are subsequent milestones. Detailed progress
 is tracked in the local, Git-ignored `PLAN.md`.

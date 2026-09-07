@@ -20,6 +20,15 @@ type API interface {
 	GetAllContactIds() ([]string, error)
 	GetContactsV2([]string) (*line.ContactsResponse, error)
 	GetMessageBoxes(line.MessageBoxesOptions) (*line.MessageBoxesResponse, error)
+	GetRecentMessagesV2(string, int) ([]*line.Message, error)
+	GetBlockedContactIds() ([]string, error)
+	NegotiateE2EEPublicKey(string) (*line.E2EEPublicKey, error)
+	GetE2EEPublicKey(string, int, int) (*line.E2EEPublicKey, error)
+	GetE2EEGroupSharedKey(string, int) (*line.E2EEGroupSharedKey, error)
+	GetLastE2EEGroupSharedKey(string) (*line.E2EEGroupSharedKey, error)
+	GetChats([]string, bool, bool) (*line.GetChatsResponse, error)
+	RegisterE2EEGroupKey(int, string, []string, []int, []string) error
+	SendMessage(int64, *line.Message) (*line.Message, error)
 }
 
 type Manager struct {
@@ -149,8 +158,17 @@ func refreshAt(now time.Time, token *line.TokenV3IssueResult) time.Time {
 }
 
 // Do is for read-only calls. The caller must hold Lock across the whole command.
-// Retrying mutations will need explicit request-sequence handling in milestone 2.
 func (m *Manager) Do(call func(API) error) error {
+	return m.do(call, true)
+}
+
+// Mutate refreshes expired credentials before the call but never replays it.
+// A lost response may mean the server already accepted the mutation.
+func (m *Manager) Mutate(call func(API) error) error {
+	return m.do(call, false)
+}
+
+func (m *Manager) do(call func(API) error, retry bool) error {
 	s, err := m.Store.Load()
 	if err != nil {
 		return err
@@ -174,7 +192,7 @@ func (m *Manager) Do(call func(API) error) error {
 	if line.IsLoggedOut(err) {
 		return m.invalidate(s)
 	}
-	if !refreshed && line.IsAuthError(err) && s.RefreshToken != "" {
+	if retry && !refreshed && line.IsAuthError(err) && s.RefreshToken != "" {
 		api, err = m.refresh(s, api)
 		if err != nil {
 			return err
@@ -222,10 +240,50 @@ func remoteError(action string, err error) error {
 	if err == nil {
 		return nil
 	}
-	if line.IsAuthError(err) {
-		return fmt.Errorf("LINE %s requires authentication; run line login", action)
+	return &RemoteError{Action: action, cause: err}
+}
+
+// RemoteError preserves protocol classification internally, while its printable
+// message never contains raw response bodies, tokens, or message contents.
+type RemoteError struct {
+	Action string
+	cause  error
+}
+
+func (e *RemoteError) Error() string {
+	if line.IsAuthError(e.cause) {
+		return fmt.Sprintf("LINE %s requires authentication; run line login", e.Action)
 	}
-	// Upstream errors may embed raw server bodies and credentials. Never print
-	// those bodies; command context gives a useful, non-secret diagnostic.
-	return fmt.Errorf("LINE %s failed; check your connection and LINE account settings", action)
+	return fmt.Sprintf("LINE %s failed; check your connection and LINE account settings", e.Action)
+}
+func (e *RemoteError) Unwrap() error { return e.cause }
+
+// ProtocolError is for classification only. Never log or display its result.
+func ProtocolError(err error) error {
+	var remote *RemoteError
+	if errors.As(err, &remote) {
+		return remote.cause
+	}
+	return err
+}
+
+// ReserveSequence writes before the network send and is never rolled back.
+// Caller must hold Lock. Keep request IDs in LINE's signed 32-bit range.
+func (m *Manager) ReserveSequence() (int64, error) {
+	s, err := m.Store.Load()
+	if err != nil {
+		return 0, err
+	}
+	if s.Invalidated {
+		return 0, errors.New("LINE session was logged out; run line login")
+	}
+	next := max(m.Now().UnixMilli()%1_000_000_000, s.LastReqSeq+1, 1)
+	if next > 2_147_483_647 {
+		return 0, errors.New("request sequence exhausted; run line login")
+	}
+	s.LastReqSeq = next
+	if err := m.Store.Save(s); err != nil {
+		return 0, err
+	}
+	return next, nil
 }

@@ -40,6 +40,7 @@ func main() {
 	// out of both terminal output and pipelines; CLI errors provide safe context.
 	log.SetOutput(io.Discard)
 	app := &cli.App{
+		In:  os.Stdin,
 		Out: os.Stdout, Err: os.Stderr, Version: version,
 		Manager: session.NewManager(session.KeychainStore{}), Lock: session.Lock,
 		Password: func() (string, error) {

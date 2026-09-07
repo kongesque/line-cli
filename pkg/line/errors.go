@@ -9,10 +9,38 @@ import (
 )
 
 var (
+	// ErrE2EEDisabled distinguishes explicit capability responses from missing
+	// or malformed keys. Callers must not downgrade encryption on the latter.
+	ErrE2EEDisabled          = errors.New("letter sealing is explicitly unavailable")
 	ErrNoUsableE2EEPublicKey = errors.New("no usable E2EE public key")
 	ErrNoUsableE2EEGroupKey  = errors.New("no usable E2EE group key")
 	ErrGroupKeyNotFound      = errors.New("group key not found")
 )
+
+// IsE2EEDisabled accepts explicit capability responses only. Unlike the legacy
+// IsNoUsable helpers it excludes authentication failures and malformed keys.
+func IsE2EEDisabled(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrE2EEDisabled) {
+		return true
+	}
+	msg := err.Error()
+	start := strings.IndexByte(msg, '{')
+	if start < 0 {
+		return false
+	}
+	var response struct {
+		Code int               `json:"code"`
+		Data talkExceptionData `json:"data"`
+	}
+	if json.Unmarshal([]byte(msg[start:]), &response) != nil || response.Code != 10051 || !strings.EqualFold(response.Data.Name, "TalkException") {
+		return false
+	}
+	return (response.Data.Code == 98 && strings.Contains(strings.ToLower(response.Data.Reason), "member settings off")) ||
+		(response.Data.Code == 100 && strings.EqualFold(strings.TrimSpace(response.Data.Reason), "exceed max member"))
+}
 
 // IsRefreshRequired returns true when LINE reports that the access token must
 // be refreshed before the request can be retried.
@@ -243,7 +271,7 @@ func parseE2EEGroupKeyError(method, message string, rawData json.RawMessage) err
 		if talk.Code == 5 {
 			return fmt.Errorf("%w: %s", ErrGroupKeyNotFound, talk.Reason)
 		}
-		return fmt.Errorf("%w: %s", ErrNoUsableE2EEGroupKey, talk.Reason)
+		return fmt.Errorf("%w: %w: %s", ErrNoUsableE2EEGroupKey, ErrE2EEDisabled, talk.Reason)
 	}
 	return fmt.Errorf("%s failed: %s", method, message)
 }

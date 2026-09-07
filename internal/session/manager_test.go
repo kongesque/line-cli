@@ -212,3 +212,25 @@ func TestDoBoundsRefreshRetries(t *testing.T) {
 		t.Fatal("unbounded refresh retry")
 	}
 }
+
+func TestMutateNeverReplaysAnAuthFailure(t *testing.T) {
+	s := &memoryStore{state: &State{AccessToken: "old", RefreshToken: "refresh"}}
+	f := &fakeAPI{}
+	calls := 0
+	err := testManager(s, f).Mutate(func(API) error { calls++; return errors.New(`{"code":119}`) })
+	if err == nil || calls != 1 || f.refreshCalls != 0 {
+		t.Fatal("mutation was replayed")
+	}
+}
+
+func TestReserveSequencePersistsAndStopsAtProtocolLimit(t *testing.T) {
+	s := &memoryStore{state: &State{AccessToken: "token", LastReqSeq: 2_147_483_646}}
+	m := testManager(s, &fakeAPI{})
+	seq, err := m.ReserveSequence()
+	if err != nil || seq != 2_147_483_647 || s.state.LastReqSeq != seq {
+		t.Fatal("sequence not persisted")
+	}
+	if _, err := m.ReserveSequence(); err == nil {
+		t.Fatal("sequence overflow accepted")
+	}
+}

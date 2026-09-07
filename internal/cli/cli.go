@@ -22,16 +22,19 @@ Commands:
   whoami    [--json]           Show your LINE profile
   contacts  [--json]           List contacts and their LINE IDs
   chats     [--json]           List chat IDs and unread counts
+  messages  CHAT [--limit N] [--json]  Read recent text messages
+  send      CHAT --text TEXT [--json] Send text (--stdin also supported)
   logout                      Delete the locally saved session
   version                     Print build version
   help                        Show this help
 
 Session secrets are stored in macOS Keychain. Passwords are never saved.
 Login uses LINE's Chrome session and may replace an extension/bridge session.
-Encrypted messages, sending, and live events are planned; see PLAN.md.
+Live events and media are planned; see PLAN.md.
 `
 
 type App struct {
+	In       io.Reader
 	Out      io.Writer
 	Err      io.Writer
 	Manager  *session.Manager
@@ -55,6 +58,8 @@ func (a *App) Run(args []string) error {
 		command = "version"
 	}
 	switch command {
+	case "messages", "send":
+		return a.messageCommand(command, args[1:])
 	case "help", "version":
 		if len(args) != 1 {
 			return errors.New("unexpected arguments; run line help")

@@ -20,6 +20,7 @@ type State struct {
 	ExportedKeys map[string]string `json:"exported_keys,omitempty"`
 	RefreshAt    time.Time         `json:"refresh_at,omitempty"`
 	Invalidated  bool              `json:"invalidated,omitempty"`
+	LastReqSeq   int64             `json:"last_req_seq,omitempty"`
 }
 
 type Store interface {

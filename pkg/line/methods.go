@@ -214,6 +214,12 @@ func parseE2EEPublicKey(rawData []byte) (*E2EEPublicKey, error) {
 	if err := json.Unmarshal(rawData, &data); err != nil {
 		return nil, err
 	}
+	if version, ok := data["specVersion"].(float64); ok && version == -1 {
+		return nil, fmt.Errorf("%w: %w", ErrNoUsableE2EEPublicKey, ErrE2EEDisabled)
+	}
+	if allowed, ok := data["allowedTypes"].([]any); ok && len(allowed) == 0 {
+		return nil, fmt.Errorf("%w: %w", ErrNoUsableE2EEPublicKey, ErrE2EEDisabled)
+	}
 
 	var findString func(any) string
 	findString = func(v any) string {
