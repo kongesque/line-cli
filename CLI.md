@@ -80,9 +80,10 @@ go build -trimpath -o bin/line ./cmd/line
 ```
 
 Tests use fake API and credential-store implementations; they never log into LINE,
-send messages, or read/write your Keychain. The native Keychain adapter is compiled
-as part of the macOS build. Live authentication and Keychain persistence still
-need validation with a real account after reviewing the Chrome-session behavior.
+send messages, or read/write your Keychain. After a user completed interactive
+login, separate CLI processes successfully loaded the saved Keychain session and
+ran `whoami`, `contacts --json`, and `chats --json` against LINE on 2026-09-07.
+Live token rotation and encrypted message decryption still need validation.
 
 Sending, decrypted message history, live events, attachments, multiple accounts,
 and Linux/Windows credential storage are subsequent milestones. Detailed progress
