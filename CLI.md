@@ -195,6 +195,9 @@ This confirms server acceptance of a plaintext send; recipient delivery/read sta
 was not checked. The user subsequently reported an encrypted direct send selected
 by exact chat name, with a server message ID and `encrypted: true`. This verifies
 server acceptance of encrypted sending; the user also confirmed recipient-side delivery.
+The user also reported an encrypted group send with a server message ID and
+`encrypted: true`. Group recipient delivery was not confirmed, and the result
+does not distinguish existing-key reuse from fresh group-key registration.
 Live fresh group-key registration and token rotation still need validation.
 Tests of outgoing message construction,
 capability fallback, blocked contacts, persistent sequencing, and failed-send
