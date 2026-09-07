@@ -62,6 +62,8 @@ type Crypto interface {
 	DecryptGroupMessage(*line.Message, string) (string, int, error)
 	EncryptMessageV2(string, string, int, string, int, int, int, string) ([]string, error)
 	EncryptGroupMessage(string, string, string) ([]string, error)
+	EncryptMessageV2Raw(string, string, int, string, int, int, int, []byte) ([]string, error)
+	EncryptGroupMessageRaw(string, string, int, []byte) ([]string, error)
 	GenerateGroupKey() (int, error)
 	WrapGroupKeyForMember(string, int) (string, error)
 }
@@ -106,15 +108,18 @@ func newClient(manager *session.Manager, factory func() (Crypto, error)) (*Clien
 }
 
 type Message struct {
-	ID          string      `json:"id"`
-	From        string      `json:"from"`
-	To          string      `json:"to"`
-	CreatedTime json.Number `json:"created_time"`
-	ContentType int         `json:"content_type"`
-	Text        string      `json:"text"`
-	Encrypted   bool        `json:"encrypted"`
-	Status      string      `json:"status"`
-	Error       string      `json:"error,omitempty"`
+	FileName    string                 `json:"file_name,omitempty"`
+	ID          string                 `json:"id"`
+	From        string                 `json:"from"`
+	To          string                 `json:"to"`
+	CreatedTime json.Number            `json:"created_time"`
+	ContentType int                    `json:"content_type"`
+	Text        string                 `json:"text"`
+	Encrypted   bool                   `json:"encrypted"`
+	Status      string                 `json:"status"`
+	Error       string                 `json:"error,omitempty"`
+	ReplyTo     string                 `json:"reply_to,omitempty"`
+	Reactions   []line.MessageReaction `json:"reactions,omitempty"`
 }
 
 func (c *Client) History(chat string, limit int) ([]Message, error) {
@@ -146,8 +151,11 @@ func (c *Client) Decode(chat string, msg *line.Message) Message {
 		timestamp = "0"
 	}
 	item := Message{ID: msg.ID, From: msg.From, To: msg.To, CreatedTime: timestamp, ContentType: msg.ContentType,
+		ReplyTo: msg.RelatedMessageID, Reactions: msg.Reactions,
 		Encrypted: len(msg.Chunks) > 0 || msg.ContentMetadata["e2eeVersion"] != ""}
-	if msg.ContentType != 0 {
+	if msg.ContentType == 14 {
+		item.Status, item.FileName = "attachment", msg.ContentMetadata["FILE_NAME"]
+	} else if msg.ContentType != 0 {
 		item.Status = "unsupported"
 	} else if !item.Encrypted {
 		item.Status, item.Text = "plaintext", msg.Text
@@ -162,7 +170,7 @@ func (c *Client) Decode(chat string, msg *line.Message) Message {
 	return item
 }
 
-func (c *Client) decrypt(chat string, msg *line.Message) (string, error) {
+func (c *Client) decryptPayload(chat string, msg *line.Message) (string, error) {
 	if c.crypto == nil {
 		return "", errors.New("letter sealing keys unavailable; run line login")
 	}
@@ -199,6 +207,14 @@ func (c *Client) decrypt(chat string, msg *line.Message) (string, error) {
 	if err != nil {
 		return "", errors.New("letter sealing decryption failed; the required device keys may be unavailable")
 	}
+	return payload, nil
+}
+
+func (c *Client) decrypt(chat string, msg *line.Message) (string, error) {
+	payload, err := c.decryptPayload(chat, msg)
+	if err != nil {
+		return "", err
+	}
 	var body struct {
 		Text *string `json:"text"`
 	}
@@ -219,11 +235,32 @@ type SendResult struct {
 // Send sends exactly once after read-only preparation, encrypting unless the
 // account or peer explicitly lacks Letter Sealing support. Caller holds Lock.
 func (c *Client) Send(chat, text string) (*SendResult, error) {
+	return c.SendReply(chat, text, "")
+}
+
+func (c *Client) SendReply(chat, text, replyTo string) (*SendResult, error) {
+	return c.send(chat, text, replyTo, nil)
+}
+
+func (c *Client) SendFile(chat string, file Attachment, replyTo string) (*SendResult, error) {
+	return c.send(chat, "", replyTo, &file)
+}
+
+func (c *Client) send(chat, text, replyTo string, file *Attachment) (*SendResult, error) {
 	if err := ValidateChatID(chat); err != nil {
 		return nil, err
 	}
-	if err := ValidateText(text); err != nil {
+	if file == nil {
+		if err := ValidateText(text); err != nil {
+			return nil, err
+		}
+	} else if err := file.Validate(); err != nil {
 		return nil, err
+	}
+	if replyTo != "" {
+		if err := ValidateMessageID(replyTo); err != nil {
+			return nil, err
+		}
 	}
 	if c.keyError != nil {
 		return nil, c.keyError
@@ -242,6 +279,14 @@ func (c *Client) Send(chat, text string) (*SendResult, error) {
 	}
 	plain := c.state.NoE2EE
 	groupKeyRegistered := false
+	metadata := make(map[string]string)
+	contentType := 0
+	if file != nil {
+		contentType = 14
+		metadata["FILE_NAME"] = file.Name
+		metadata["FILE_SIZE"] = strconv.Itoa(len(file.Data))
+		metadata["contentType"] = "14"
+	}
 	var chunks []string
 	var err error
 	if !plain && kind == 0 {
@@ -256,7 +301,15 @@ func (c *Client) Send(chat, text string) (*SendResult, error) {
 				return nil, errors.New("own Letter Sealing key is unavailable; run line login")
 			}
 			peer, _ := key.KeyID.Int64()
-			chunks, err = c.crypto.EncryptMessageV2(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 0, text)
+			if file == nil {
+				chunks, err = c.crypto.EncryptMessageV2(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 0, text)
+			} else {
+				var payload []byte
+				payload, err = c.uploadFile(file, metadata)
+				if err == nil {
+					chunks, err = c.crypto.EncryptMessageV2Raw(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 14, payload)
+				}
+			}
 		}
 	} else if !plain {
 		err = c.groupKey(chat, 0)
@@ -270,10 +323,21 @@ func (c *Client) Send(chat, text string) (*SendResult, error) {
 		if errors.Is(err, errNoLetterSealing) {
 			plain, err = true, nil
 		} else if err == nil {
-			chunks, err = c.crypto.EncryptGroupMessage(chat, c.state.MID, text)
+			if file == nil {
+				chunks, err = c.crypto.EncryptGroupMessage(chat, c.state.MID, text)
+			} else {
+				var payload []byte
+				payload, err = c.uploadFile(file, metadata)
+				if err == nil {
+					chunks, err = c.crypto.EncryptGroupMessageRaw(chat, c.state.MID, 14, payload)
+				}
+			}
 		}
 	}
 	if err != nil {
+		if file != nil {
+			return nil, errors.New("could not prepare encrypted attachment; no message was sent, but an uploaded file may remain; check connectivity, chat membership, and Letter Sealing keys")
+		}
 		return nil, errors.New("could not prepare encrypted message; nothing was sent; check chat membership and Letter Sealing keys")
 	}
 	if !plain && len(chunks) != 5 {
@@ -285,7 +349,12 @@ func (c *Client) Send(chat, text string) (*SendResult, error) {
 	}
 	now := c.Session.Now().UnixMilli()
 	msg := &line.Message{ID: fmt.Sprintf("local-%d", now), From: c.state.MID, To: chat, ToType: kind,
-		CreatedTime: json.Number(strconv.FormatInt(now, 10)), ContentType: 0, ContentMetadata: make(map[string]string)}
+		CreatedTime: json.Number(strconv.FormatInt(now, 10)), ContentType: contentType, HasContent: file != nil, ContentMetadata: metadata}
+	if replyTo != "" {
+		msg.RelatedMessageID = replyTo
+		msg.MessageRelationType = 3
+		msg.RelatedMessageServiceCode = 1
+	}
 	if plain {
 		msg.Text = text
 	} else {
@@ -299,6 +368,11 @@ func (c *Client) Send(chat, text string) (*SendResult, error) {
 	}
 	if sent == nil || sent.ID == "" {
 		return nil, errors.New("send returned no message ID; delivery may have occurred; inspect history before retrying")
+	}
+	if plain && file != nil {
+		if err := c.Session.Mutate(func(api session.API) error { return api.UploadOBSPlain(file.Data, sent.ID, "file") }); err != nil {
+			return nil, fmt.Errorf("message %s was created but file upload did not return success; inspect LINE before retrying: %w", sent.ID, err)
+		}
 	}
 	return &SendResult{ID: sent.ID, ChatID: chat, Encrypted: !plain, GroupKeyRegistered: groupKeyRegistered, RequestSequence: seq}, nil
 }

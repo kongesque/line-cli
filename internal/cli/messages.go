@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -27,11 +29,16 @@ func (a *App) messageCommand(command string, args []string) error {
 	limit := 20
 	var text string
 	var stdin bool
+	var replyTo string
+	var filePath string
+	var attachment *messaging.Attachment
 	if command == "messages" {
 		fs.IntVar(&limit, "limit", 20, "recent messages to fetch (1–100)")
 	} else {
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
+		fs.StringVar(&filePath, "file", "", "send a generic file attachment (up to 20 MiB)")
+		fs.StringVar(&replyTo, "reply-to", "", "reply to this message ID")
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -51,15 +58,54 @@ func (a *App) messageCommand(command string, args []string) error {
 		return errors.New("limit must be between 1 and 100")
 	}
 	if command == "send" {
-		hasText := false
+		if replyTo != "" {
+			if err := messaging.ValidateMessageID(replyTo); err != nil {
+				return err
+			}
+		}
+		hasText, hasFile := false, false
 		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "file" {
+				hasFile = true
+			}
 			if f.Name == "text" {
 				hasText = true
 			}
 		})
-		if hasText == stdin {
-			return errors.New("provide exactly one of --text TEXT or --stdin")
+		sources := 0
+		for _, enabled := range []bool{hasText, stdin, hasFile} {
+			if enabled {
+				sources++
+			}
 		}
+		if sources != 1 {
+			return errors.New("provide exactly one of --text TEXT, --stdin, or --file PATH")
+		}
+		if hasFile {
+			file, err := os.Open(filePath)
+			if err != nil {
+				return fmt.Errorf("open attachment: %w", err)
+			}
+			info, err := file.Stat()
+			if err != nil {
+				file.Close()
+				return err
+			}
+			if !info.Mode().IsRegular() || info.Size() > messaging.MaxAttachmentBytes {
+				file.Close()
+				return errors.New("attachment must be a regular file no larger than 20 MiB")
+			}
+			data, err := io.ReadAll(io.LimitReader(file, messaging.MaxAttachmentBytes+1))
+			file.Close()
+			if err != nil {
+				return err
+			}
+			attachment = &messaging.Attachment{Name: filepath.Base(filePath), Data: data}
+			if err := attachment.Validate(); err != nil {
+				return err
+			}
+		}
+
 		if stdin {
 			if a.In == nil {
 				return errors.New("stdin is unavailable")
@@ -73,8 +119,10 @@ func (a *App) messageCommand(command string, args []string) error {
 			}
 			text = string(data)
 		}
-		if err := messaging.ValidateText(text); err != nil {
-			return err
+		if attachment == nil {
+			if err := messaging.ValidateText(text); err != nil {
+				return err
+			}
 		}
 	}
 	unlock, err := a.Lock()
@@ -91,7 +139,12 @@ func (a *App) messageCommand(command string, args []string) error {
 		return err
 	}
 	if command == "send" {
-		result, err := client.Send(chat, text)
+		var result *messaging.SendResult
+		if attachment != nil {
+			result, err = client.SendFile(chat, *attachment, replyTo)
+		} else {
+			result, err = client.SendReply(chat, text, replyTo)
+		}
 		if err != nil {
 			return err
 		}
@@ -127,6 +180,9 @@ func (a *App) messageCommand(command string, args []string) error {
 		fmt.Fprintln(tw, "ID\tFROM\tSTATUS\tTEXT")
 		for _, message := range messages {
 			text := message.Text
+			if message.Status == "attachment" {
+				text = "[file: " + message.FileName + "]"
+			}
 			if message.Status == "unsupported" {
 				text = fmt.Sprintf("[content type %d]", message.ContentType)
 			}

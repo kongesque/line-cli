@@ -1,7 +1,8 @@
 # LINE CLI
 
 A standalone command-line client built on `beeper/line`. Supports account login,
-contact/chat discovery, recent text history, text sending, and live events. It uses your personal LINE
+contact/chat discovery, recent history, text and file sending, replies, reactions,
+unsend, and live events. It uses your personal LINE
 account and does not require a Matrix homeserver or Beeper account.
 
 ## Build
@@ -39,6 +40,12 @@ rebuilding or moving the binary may cause another access prompt.
 ./bin/line messages CHAT_ID --limit 20 --json
 ./bin/line send CHAT_ID --text "Hello" --json
 ./bin/line send CHAT_ID --stdin < message.txt
+./bin/line send "Alice" --text "Yes, that works" --reply-to MESSAGE_ID
+./bin/line send "Alice" --file ./report.pdf
+./bin/line download "Alice" --message MESSAGE_ID --output ./received.pdf
+./bin/line react "Alice" --message MESSAGE_ID --reaction love
+./bin/line react "Alice" --message MESSAGE_ID --remove
+./bin/line unsend "Alice" --message MY_MESSAGE_ID
 
 ./bin/line watch --json
 ./bin/line watch --json --timeout 30s
@@ -91,7 +98,7 @@ active and inactive conversations, case-insensitively, before applying the limit
 Names remain in memory only. Message previews are used for timestamps; no message
 text is displayed or saved by this command. Missing names show a full ID instead.
 
-`messages` and `send` accept a unique, exact chat name. Quote names containing
+`messages`, `send`, `download`, `react`, and `unsend` accept a unique, exact chat name. Quote names containing
 spaces. Matching ignores case; partial names and duplicate names are rejected.
 Use `chats --search TEXT --show-ids` to choose a full ID if names overlap. A full
 ID also lets you address contacts without an existing chat. Standard LINE IDs
@@ -122,9 +129,42 @@ because the message may already have been delivered. Sends and key registration
 are not automatically replayed after errors. This version does not persist an
 outbox or provide exactly-once delivery across manual retries.
 
-`--text` and `--stdin` are mutually exclusive. Input must be nonempty UTF-8 text
+Choose exactly one of `--text`, `--stdin`, or `--file`. Text input must be nonempty UTF-8 text
 within the CLI's 10,000 UTF-16-unit limit. Stdin preserves newlines and avoids
 placing the text directly in process arguments or shell history.
+
+## Files and message actions
+
+Use a numeric message ID from `messages --json` for the examples above.
+`send --reply-to ID` attaches a reply reference to text or a file. LINE validates
+the reference; if it rejects the reply, the CLI reports the error without retrying
+as an unrelated message.
+
+`send --file PATH` sends a generic file attachment up to 20 MiB, retaining its
+base filename. Pictures, video, and audio sent this way appear as files; specialized
+media rendering is future work. The command uses Letter Sealing under the same
+rules as text. Each media HTTP request has a two-minute timeout.
+
+`download CHAT --message ID --output PATH` saves a generic file attachment up to
+20 MiB. It authenticates encrypted file bytes before saving, writes through a
+temporary file, and never overwrites an existing destination. Choose an existing
+parent directory on a filesystem supporting hard links. File names in remote
+metadata never control the output path. Downloading does not mark a message read.
+
+Encrypted files upload before their message is sent; plaintext files upload after
+LINE creates the message. A failed operation can therefore leave an unattached
+encrypted upload or a plaintext message without its file. The CLI reports failure
+and does not automatically retry, zip, or resend the file. Inspect LINE before
+retrying an uncertain result.
+
+`react` accepts `like`, `love`, `laugh`, `surprise`, `sad`, or `angry` and their
+matching emoji. `--remove` removes your reaction. Custom reactions are not included.
+`unsend` retracts one of your own messages, subject to LINE's server rules.
+Both commands check that the message is in the selected chat, reserve a persistent
+request sequence, and attempt the mutation once. They do not automatically retry.
+
+`download`, `react`, and `unsend` currently find their target within the chat's
+100 most recent messages. Older targets return an explicit not-found error.
 
 `logout` removes the locally saved session. It does **not** revoke the session on
 LINE's servers. The upstream remote logout method is currently unimplemented.
@@ -179,11 +219,15 @@ status 1; help and successful commands return 0.
   `name` and, when available, `updated_at` (Unix milliseconds). JSON search results
   are unlimited unless `--limit` is supplied. `--show-ids` affects human output only.
 - `messages --json`: message ID, sender/recipient, timestamp, content type, text,
-  encryption flag, and status (`plaintext`, `decrypted`, `unsupported`, or
-  `decryption_failed`). Images, stickers, and other non-text content are listed
-  by type; their payloads are not decoded in this milestone.
+  encryption flag, and status (`plaintext`, `decrypted`, `attachment`, `unsupported`,
+  or `decryption_failed`). Optional fields include `reply_to`, `reactions`, and
+  `file_name`. An `attachment` status identifies a generic file; it does not claim
+  the file was downloaded or decrypted. Images, stickers, and other content are
+  listed by type.
 - `send --json`: server message ID, chat ID, encryption flag,
   `group_key_registered` boolean, and request sequence.
+- `download --json`: local path, byte count, and message ID.
+- `react --json` / `unsend --json`: action, chat ID, message ID, and request sequence.
 - `watch --json`: a stream of newline-delimited events as described above.
 
 If some history entries cannot be decrypted, the command still writes the full
@@ -250,7 +294,10 @@ LINE_CLI_LIVE_WATCH=1 go test ./internal/events -run '^TestLiveWatch$' -v -count
 This test updates the saved watch cursor and discards event output. It logs only
 startup timing and frame counts; it sends no messages and skips unless enabled.
 
-Attachments and multiple accounts are subsequent milestones. Detailed progress
+File transfers, reply construction, reactions, unsend, size limits, tamper detection,
+and failed-mutation behavior have automated tests using fake APIs. These new
+operations have not yet been tested against a live LINE account.
+Specialized image/video/audio handling and multiple accounts remain future work. Detailed progress
 is tracked in the local, Git-ignored `PLAN.md`.
 
 ## CLI builds and CI
@@ -258,7 +305,9 @@ is tracked in the local, Git-ignored `PLAN.md`.
 `.github/workflows/cli.yml` tests CLI/protocol packages on Linux, macOS, and
 Windows. The separate `cli-release.yml` workflow builds amd64/arm64 artifacts
 for all three platforms on a `cli-v*` tag or manual dispatch. Each artifact
-contains the executable, license, usage guide, and SHA-256 checksum. These are
+contains a `.tar.gz` archive with the executable, license, usage guide, and
+SHA-256 checksum. Extract the archive before running the CLI; Unix executable
+permissions are preserved inside it. These are
 workflow artifacts; the workflow does not publish a GitHub Release or sign/notarize
 binaries. The existing Matrix executable and bridge workflow remain separate.
 

@@ -26,6 +26,9 @@ Commands:
   messages  CHAT [--limit N] [--json]  Read recent text messages
   send      CHAT --text TEXT [--json] Send text (--stdin also supported)
   watch     [--json]           Stream live events; Ctrl-C stops
+  react     CHAT --message ID --reaction NAME  React (--remove to undo)
+  unsend    CHAT --message ID  Unsend one of your own recent messages
+  download  CHAT --message ID --output PATH  Save a file attachment
   logout                      Delete the locally saved session
   version                     Print build version
   help                        Show this help
@@ -35,7 +38,7 @@ Run line chats --help for search, limits, and IDs.
 
 Session secrets use OS-protected credential storage. Passwords are never saved.
 Login uses LINE's Chrome session and may replace an extension/bridge session.
-Media is planned; see PLAN.md.
+Send accepts --file PATH and --reply-to MESSAGE_ID; see line send --help.
 `
 
 type App struct {
@@ -65,6 +68,10 @@ func (a *App) Run(args []string) error {
 		command = "version"
 	}
 	switch command {
+	case "download":
+		return a.downloadCommand(args[1:])
+	case "react", "unsend":
+		return a.actionCommand(command, args[1:])
 	case "watch":
 		return a.watchCommand(args[1:])
 	case "chats":

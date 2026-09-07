@@ -34,6 +34,12 @@ type API interface {
 	GetChats([]string, bool, bool) (*line.GetChatsResponse, error)
 	RegisterE2EEGroupKey(int, string, []string, []int, []string) error
 	SendMessage(int64, *line.Message) (*line.Message, error)
+	React(int64, string, line.ReactionType) error
+	CancelReaction(int64, string) error
+	UnsendMessage(int64, string) error
+	UploadOBSWithSID([]byte, string) (string, error)
+	UploadOBSPlain([]byte, string, string) error
+	DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error)
 }
 
 type Manager struct {
@@ -45,8 +51,12 @@ type Manager struct {
 
 func NewManager(store Store) *Manager {
 	return &Manager{
-		Store:      store,
-		NewClient:  func(token string) API { return line.NewClient(token) },
+		Store: store,
+		NewClient: func(token string) API {
+			client := line.NewClient(token)
+			client.OBSClient.Timeout = 2 * time.Minute
+			return client
+		},
 		ExportKeys: exportKeys,
 		Now:        time.Now,
 	}

@@ -45,8 +45,10 @@ jobs:
           else
             shasum -a 256 "line$extension" > SHA256SUMS
           fi
+          cd ..
+          tar -czf "line-$GOOS-$GOARCH.tar.gz" -C dist .
       - uses: actions/upload-artifact@v4
         with:
           name: line-${{ matrix.target }}-${{ matrix.arch }}
-          path: dist/
+          path: line-${{ matrix.target }}-${{ matrix.arch }}.tar.gz
           if-no-files-found: error

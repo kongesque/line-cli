@@ -52,8 +52,10 @@ type Client struct {
 }
 
 type OBSDownloadOptions struct {
-	TID    string
-	OBSPop string
+	// MaxBytes bounds the downloaded object when positive; zero preserves bridge behavior.
+	MaxBytes int64
+	TID      string
+	OBSPop   string
 }
 
 type cachedChannelAccessToken struct {
@@ -850,7 +852,7 @@ func (c *Client) downloadOBSWithServiceAndSIDOptions(ctx context.Context, servic
 		err = c.checkOBSObjectReady(ctx, objectInfoURL, obsToken, messageID)
 		if err == nil {
 			var data []byte
-			data, err = c.downloadOBSObject(ctx, obsURL, obsToken, messageID)
+			data, err = c.downloadOBSObject(ctx, obsURL, obsToken, messageID, opts.MaxBytes)
 			if err == nil {
 				return data, nil
 			}
@@ -915,7 +917,7 @@ func (c *Client) checkOBSObjectReady(ctx context.Context, obsURL, obsToken, mess
 	}
 }
 
-func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messageID string) ([]byte, error) {
+func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messageID string, maxBytes int64) ([]byte, error) {
 	req, err := c.newOBSDownloadRequest(ctx, obsURL, obsToken, messageID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OBS download request: %w", err)
@@ -924,7 +926,15 @@ func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messag
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
 	}
-	body, readErr := io.ReadAll(resp.Body)
+	var reader io.Reader = resp.Body
+	if maxBytes > 0 {
+		reader = io.LimitReader(resp.Body, maxBytes+1)
+	}
+	body, readErr := io.ReadAll(reader)
+	if maxBytes > 0 && int64(len(body)) > maxBytes {
+		resp.Body.Close()
+		return nil, errors.New("OBS object exceeds download size limit")
+	}
 	resp.Body.Close()
 	if readErr != nil {
 		return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)

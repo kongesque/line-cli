@@ -40,6 +40,28 @@ func obsResponse(status int, body string) *http.Response {
 	}
 }
 
+func TestDownloadOBSHonorsOptionalSizeLimit(t *testing.T) {
+	installCachedOBSToken(t)
+	client := NewClient("line-token")
+	client.OBSClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "object_info.obs") {
+			return obsResponse(http.StatusOK, `{"status":"exist","encodeStatus":"done"}`), nil
+		}
+		return obsResponse(http.StatusOK, "12345"), nil
+	})}
+	if _, err := client.DownloadOBSWithSIDOptions(context.Background(), "oid", "123", "emf", OBSDownloadOptions{MaxBytes: 4}); err == nil {
+		t.Fatal("oversized object accepted")
+	}
+	data, err := client.DownloadOBSWithSIDOptions(context.Background(), "oid", "123", "emf", OBSDownloadOptions{MaxBytes: 5})
+	if err != nil || string(data) != "12345" {
+		t.Fatal("exact-limit object failed", err)
+	}
+	data, err = client.DownloadOBSWithSIDOptions(context.Background(), "oid", "123", "emf", OBSDownloadOptions{})
+	if err != nil || string(data) != "12345" {
+		t.Fatal("default bridge behavior changed", err)
+	}
+}
+
 func TestDownloadOBSPlainMatchesChromeRequestFlow(t *testing.T) {
 	installCachedOBSToken(t)
 

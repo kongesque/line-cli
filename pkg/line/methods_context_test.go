@@ -21,6 +21,7 @@ func testRPCContextCancellation(t *testing.T, method string, call func(*Client, 
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	result := make(chan error, 1)
 	go func() {
 		result <- call(client, ctx)
@@ -28,7 +29,9 @@ func testRPCContextCancellation(t *testing.T, method string, call func(*Client, 
 
 	select {
 	case <-requestStarted:
-	case <-time.After(time.Second):
+	// The first signed request initializes crypto, which can take longer under
+	// the race detector on a busy runner. Cancellation itself stays bounded below.
+	case <-time.After(10 * time.Second):
 		t.Fatalf("%s request did not start", method)
 	}
 	cancel()
