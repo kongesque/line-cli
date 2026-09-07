@@ -21,12 +21,15 @@ Commands:
   login     --email ADDRESS    Sign in with password and phone verification
   whoami    [--json]           Show your LINE profile
   contacts  [--json]           List contacts and their LINE IDs
-  chats     [--json]           List chat IDs and unread counts
+  chats     [--search NAME]    Show recent conversations by name
   messages  CHAT [--limit N] [--json]  Read recent text messages
   send      CHAT --text TEXT [--json] Send text (--stdin also supported)
   logout                      Delete the locally saved session
   version                     Print build version
   help                        Show this help
+
+CHAT accepts a full ID or a unique exact chat name (quote names with spaces).
+Run line chats --help for search, limits, and IDs.
 
 Session secrets are stored in macOS Keychain. Passwords are never saved.
 Login uses LINE's Chrome session and may replace an extension/bridge session.
@@ -58,6 +61,8 @@ func (a *App) Run(args []string) error {
 		command = "version"
 	}
 	switch command {
+	case "chats":
+		return a.chatCommand(args[1:])
 	case "messages", "send":
 		return a.messageCommand(command, args[1:])
 	case "help", "version":
@@ -70,7 +75,7 @@ func (a *App) Run(args []string) error {
 		}
 		_, err := io.WriteString(a.Out, help)
 		return err
-	case "login", "whoami", "contacts", "chats", "logout":
+	case "login", "whoami", "contacts", "logout":
 	default:
 		return errors.New("unknown command; run line help")
 	}
@@ -82,7 +87,7 @@ func (a *App) Run(args []string) error {
 	if command == "login" {
 		fs.StringVar(&email, "email", "", "LINE account email (required)")
 	}
-	if command == "whoami" || command == "contacts" || command == "chats" {
+	if command == "whoami" || command == "contacts" {
 		fs.BoolVar(&jsonOutput, "json", false, "write JSON to stdout")
 	}
 	if err := fs.Parse(args[1:]); err != nil {
@@ -139,20 +144,6 @@ func (a *App) Run(args []string) error {
 		fmt.Fprintln(tw, "ID\tNAME")
 		for _, contact := range contacts {
 			fmt.Fprintf(tw, "%s\t%s\n", terminalText(contact.Mid), terminalText(contact.EffectiveDisplayName()))
-		}
-		return tw.Flush()
-	case "chats":
-		chats, err := a.chats()
-		if err != nil {
-			return err
-		}
-		if jsonOutput {
-			return a.json(chats)
-		}
-		tw := tabwriter.NewWriter(a.Out, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tUNREAD")
-		for _, chat := range chats {
-			fmt.Fprintf(tw, "%s\t%s\n", terminalText(chat.ID), terminalText(chat.UnreadCount.String()))
 		}
 		return tw.Flush()
 	}
@@ -233,13 +224,18 @@ type Chat struct {
 	ID          string      `json:"id"`
 	Type        int         `json:"type"`
 	UnreadCount json.Number `json:"unread_count"`
+	Name        string      `json:"name,omitempty"`
+	UpdatedAt   int64       `json:"updated_at,omitempty"`
 }
 
-func (a *App) chats() ([]Chat, error) {
+func (a *App) chatBoxes(active, recent bool) ([]Chat, error) {
 	result := make([]Chat, 0)
 	seen := make(map[string]bool)
 	cursors := make(map[string]bool)
-	options := line.MessageBoxesOptions{MessageBoxCountLimit: 100, WithUnreadCount: true}
+	options := line.MessageBoxesOptions{MessageBoxCountLimit: 100, WithUnreadCount: true, ActiveOnly: active}
+	if recent {
+		options.LastMessagesPerMessageBoxCount = 1
+	}
 	for {
 		var response *line.MessageBoxesResponse
 		if err := a.Manager.Do(func(api session.API) (err error) { response, err = api.GetMessageBoxes(options); return }); err != nil {
@@ -254,7 +250,17 @@ func (a *App) chats() ([]Chat, error) {
 				if unread == "" {
 					unread = "0"
 				}
-				result = append(result, Chat{ID: box.ID, Type: box.MidType, UnreadCount: unread})
+				chat := Chat{ID: box.ID, Type: box.MidType, UnreadCount: unread}
+				if recent {
+					if box.LastDeliveredMessageID != nil {
+						chat.UpdatedAt, _ = box.LastDeliveredMessageID.DeliveredTime.Int64()
+					}
+					for _, message := range box.LastMessages {
+						ts, _ := message.CreatedTime.Int64()
+						chat.UpdatedAt = max(chat.UpdatedAt, ts)
+					}
+				}
+				result = append(result, chat)
 				seen[box.ID] = true
 			}
 		}

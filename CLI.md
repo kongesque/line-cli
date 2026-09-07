@@ -25,12 +25,17 @@ rebuilding or moving the binary may cause another access prompt.
 ./bin/line whoami
 ./bin/line contacts
 ./bin/line chats
+./bin/line chats --search "Alice"
+./bin/line chats --all --limit 50
+./bin/line chats --show-ids
 
 ./bin/line whoami --json
 ./bin/line contacts --json
 ./bin/line chats --json
 
-# Replace CHAT_ID with an ID from contacts or chats.
+# Use a unique exact name (case-insensitive), or a full ID.
+./bin/line messages "Alice" --limit 20
+./bin/line send "Family group" --text "Hello"
 ./bin/line messages CHAT_ID --limit 20 --json
 ./bin/line send CHAT_ID --text "Hello" --json
 ./bin/line send CHAT_ID --stdin < message.txt
@@ -58,6 +63,20 @@ Letter Sealing keys from Keychain and fetches the exact device/group keys needed
 for each message. Reading does not mark messages read, register group keys, or
 save message history locally. Older messages can remain unreadable when their
 original device keys are no longer available.
+
+`chats` shows the 20 most recently active conversations, with contact/group names,
+unread counts, chat type, and last activity in your local time. `--limit 0` shows
+all rows; `--all` includes inactive chats. `--search TEXT` searches names across
+active and inactive conversations, case-insensitively, before applying the limit.
+Names remain in memory only. Message previews are used for timestamps; no message
+text is displayed or saved by this command. Missing names show a full ID instead.
+
+`messages` and `send` accept a unique, exact chat name. Quote names containing
+spaces. Matching ignores case; partial names and duplicate names are rejected.
+Use `chats --search TEXT --show-ids` to choose a full ID if names overlap. A full
+ID also lets you address contacts without an existing chat. Standard LINE IDs
+are recognized automatically; `id:CHAT_ID` explicitly selects an ID with another
+format. Name selection uses current LINE names, so use IDs in long-lived scripts.
 
 `send` supports direct chats, rooms, and groups. It checks blocked contacts for
 direct messages and encrypts using Letter Sealing when available. Plaintext is
@@ -90,9 +109,11 @@ status 1; help and successful commands return 0.
 
 - `whoami --json`: LINE profile fields, including `mid` and `displayName`.
 - `contacts --json`: contacts sorted by effective display name, including `mid`.
-- `chats --json`: objects with `id`, `type`, and `unread_count`. This initial
-  command lists IDs and unread counts; it does not resolve chat titles or decode
-  message previews.
+- `chats --json`: preserves the original unlimited list of all chats with `id`,
+  `type`, and `unread_count`, in server order. An explicit `--limit` caps it.
+  Adding `--search TEXT` resolves and filters names, sorts newest first, and adds
+  `name` and, when available, `updated_at` (Unix milliseconds). JSON search results
+  are unlimited unless `--limit` is supplied. `--show-ids` affects human output only.
 - `messages --json`: message ID, sender/recipient, timestamp, content type, text,
   encryption flag, and status (`plaintext`, `decrypted`, `unsupported`, or
   `decryption_failed`). Images, stickers, and other non-text content are listed

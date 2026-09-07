@@ -19,7 +19,10 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(a.Err)
-	fs.Usage = func() { fmt.Fprintf(a.Err, "Usage: line %s CHAT [options]\n", command); fs.PrintDefaults() }
+	fs.Usage = func() {
+		fmt.Fprintf(a.Err, "Usage: line %s CHAT [options]\nCHAT is a full ID or unique exact name. Quote names with spaces.\n", command)
+		fs.PrintDefaults()
+	}
 	jsonOutput := fs.Bool("json", false, "write JSON to stdout")
 	limit := 20
 	var text string
@@ -39,9 +42,9 @@ func (a *App) messageCommand(command string, args []string) error {
 	if chat == "" && fs.NArg() == 1 {
 		chat = fs.Arg(0)
 	} else if fs.NArg() != 0 {
-		return errors.New("unexpected arguments; place options after the chat ID")
+		return errors.New("unexpected arguments; place options after the chat name or ID")
 	}
-	if err := messaging.ValidateChatID(chat); err != nil {
+	if err := validateSelector(chat); err != nil {
 		return err
 	}
 	if limit < 1 || limit > 100 {
@@ -79,6 +82,10 @@ func (a *App) messageCommand(command string, args []string) error {
 		return err
 	}
 	defer unlock()
+	chat, err = a.resolveChat(chat)
+	if err != nil {
+		return err
+	}
 	client, err := messaging.New(a.Manager)
 	if err != nil {
 		return err
