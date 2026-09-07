@@ -209,10 +209,11 @@ func (c *Client) decrypt(chat string, msg *line.Message) (string, error) {
 }
 
 type SendResult struct {
-	ID              string `json:"id"`
-	ChatID          string `json:"chat_id"`
-	Encrypted       bool   `json:"encrypted"`
-	RequestSequence int64  `json:"request_sequence"`
+	ID                 string `json:"id"`
+	ChatID             string `json:"chat_id"`
+	Encrypted          bool   `json:"encrypted"`
+	GroupKeyRegistered bool   `json:"group_key_registered"`
+	RequestSequence    int64  `json:"request_sequence"`
 }
 
 // Send sends exactly once after read-only preparation, encrypting unless the
@@ -240,6 +241,7 @@ func (c *Client) Send(chat, text string) (*SendResult, error) {
 		}
 	}
 	plain := c.state.NoE2EE
+	groupKeyRegistered := false
 	var chunks []string
 	var err error
 	if !plain && kind == 0 {
@@ -261,6 +263,7 @@ func (c *Client) Send(chat, text string) (*SendResult, error) {
 		if errors.Is(err, errGroupKeyMissing) || errors.Is(err, e2ee.ErrMissingOwnPrivateKey) {
 			err = c.registerGroupKey(chat)
 			if err == nil {
+				groupKeyRegistered = true
 				err = c.groupKey(chat, 0)
 			}
 		}
@@ -297,5 +300,5 @@ func (c *Client) Send(chat, text string) (*SendResult, error) {
 	if sent == nil || sent.ID == "" {
 		return nil, errors.New("send returned no message ID; delivery may have occurred; inspect history before retrying")
 	}
-	return &SendResult{ID: sent.ID, ChatID: chat, Encrypted: !plain, RequestSequence: seq}, nil
+	return &SendResult{ID: sent.ID, ChatID: chat, Encrypted: !plain, GroupKeyRegistered: groupKeyRegistered, RequestSequence: seq}, nil
 }

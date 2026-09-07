@@ -95,6 +95,14 @@ For a group without a usable shared key, an explicit send may register a fresh
 group key for all current members. If LINE does not provide complete membership,
 the CLI fails rather than creating a key for an incomplete member list.
 
+To verify which path a send used, include `--json` and inspect
+`group_key_registered`. `true` means LINE accepted a new group-key registration
+during that send. With `encrypted: true` for a group, `false` means an existing
+key was reused. This field is also `false` for direct sends and sends without
+registration. Human output labels encrypted group sends as either “new group key
+registered” or “existing group key.” The field is observational: it does not force
+key creation. Older send results cannot establish which path ran.
+
 Request sequences are saved before transmission and shared across CLI processes.
 A send is attempted once; if its response is lost, inspect history before retrying
 because the message may already have been delivered. Sends and key registration
@@ -161,7 +169,8 @@ status 1; help and successful commands return 0.
   encryption flag, and status (`plaintext`, `decrypted`, `unsupported`, or
   `decryption_failed`). Images, stickers, and other non-text content are listed
   by type; their payloads are not decoded in this milestone.
-- `send --json`: server message ID, chat ID, encryption flag, and request sequence.
+- `send --json`: server message ID, chat ID, encryption flag,
+  `group_key_registered` boolean, and request sequence.
 - `watch --json`: a stream of newline-delimited events as described above.
 
 If some history entries cannot be decrypted, the command still writes the full

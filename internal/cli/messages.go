@@ -102,6 +102,11 @@ func (a *App) messageCommand(command string, args []string) error {
 		if !result.Encrypted {
 			mode = "plaintext: Letter Sealing unavailable"
 		}
+		if result.GroupKeyRegistered {
+			mode += "; new group key registered"
+		} else if result.Encrypted && (chatKind(chat) == "Group" || chatKind(chat) == "Room") {
+			mode += "; existing group key"
+		}
 		_, err = fmt.Fprintf(a.Out, "Sent %s (%s)\n", terminalText(result.ID), mode)
 		return err
 	}

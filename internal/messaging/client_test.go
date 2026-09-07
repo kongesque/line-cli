@@ -327,8 +327,33 @@ func TestGroupSendRegistersCompleteMembershipIncludingSelf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Encrypted || f.registrations != 1 || strings.Join(f.registeredMembers, ",") != "u-peer,u-self" || len(f.registeredKeys) != 2 || len(f.registeredWrapped) != 2 || f.sent.ToType != 2 {
+	if !result.Encrypted || !result.GroupKeyRegistered || f.registrations != 1 || strings.Join(f.registeredMembers, ",") != "u-peer,u-self" || len(f.registeredKeys) != 2 || len(f.registeredWrapped) != 2 || f.sent.ToType != 2 {
 		t.Fatal("incomplete group registration")
+	}
+	// The following send reuses the key; registration is per-send, not per-client.
+	result, err = c.Send("c-group", "another message")
+	if err != nil || result.GroupKeyRegistered || !result.Encrypted || f.registrations != 1 {
+		t.Fatal("key reuse reported a fresh registration", err)
+	}
+}
+
+func TestSendJSONReportsGroupKeyReuseAndNonGroupSends(t *testing.T) {
+	for _, tc := range []struct {
+		chat  string
+		plain bool
+	}{
+		{"c-group", false}, {"u-peer", false}, {"c-group", true},
+	} {
+		c, f, _, _ := setup(t, tc.plain)
+		f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
+		result, err := c.Send(tc.chat, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(result)
+		if err != nil || !strings.Contains(string(data), `"group_key_registered":false`) || f.registrations != 0 {
+			t.Fatal("send incorrectly reported or attempted group registration")
+		}
 	}
 }
 
