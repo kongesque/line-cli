@@ -192,8 +192,11 @@ An opt-in read-only integration check also restored saved keys and decrypted bot
 direct and group text history. On 2026-09-07, the user also reported a successful
 live direct text send: the CLI returned a server message ID with `encrypted: false`.
 This confirms server acceptance of a plaintext send; recipient delivery/read status
-was not checked. Live encrypted sending, fresh group-key registration, and token
-rotation still need validation. Tests of outgoing message construction,
+was not checked. The user subsequently reported an encrypted direct send selected
+by exact chat name, with a server message ID and `encrypted: true`. This verifies
+server acceptance of encrypted sending; recipient-side delivery remains unconfirmed.
+Live fresh group-key registration and token rotation still need validation.
+Tests of outgoing message construction,
 capability fallback, blocked contacts, persistent sequencing, and failed-send
 handling use fakes and never transmit a message.
 
