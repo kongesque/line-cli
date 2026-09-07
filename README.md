@@ -1,3 +1,10 @@
+# LINE CLI development
+
+This checkout adds a standalone Go CLI alongside the upstream Matrix bridge.
+See [CLI.md](CLI.md) for build instructions and available commands. Implementation
+progress is tracked in the local, Git-ignored `PLAN.md`. The original bridge
+documentation is preserved below.
+
 # matrix-line-messenger
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/highesttt/matrix-line-messenger)](https://goreportcard.com/report/github.com/highesttt/matrix-line-messenger)

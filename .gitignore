@@ -7,6 +7,7 @@
 
 /matrix-line*
 /start
+/bin/
 
 /docs
 
@@ -26,3 +27,5 @@
 
 # internal tools
 /tools
+
+PLAN.md
