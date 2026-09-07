@@ -10,9 +10,9 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/highesttt/matrix-line-messenger/internal/session"
-	"github.com/highesttt/matrix-line-messenger/pkg/e2ee"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/internal/session"
+	"github.com/kongesque/line-cli/pkg/e2ee"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 const MaxTextUnits = 10000

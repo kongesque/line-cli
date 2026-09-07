@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/highesttt/matrix-line-messenger/internal/session"
+	"github.com/kongesque/line-cli/internal/session"
 )
 
 type liveAPI struct {

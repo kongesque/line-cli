@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
-	"github.com/highesttt/matrix-line-messenger/pkg/ltsm"
+	"github.com/kongesque/line-cli/pkg/line"
+	"github.com/kongesque/line-cli/pkg/ltsm"
 )
 
 func TestIsFatalLTSMError(t *testing.T) {

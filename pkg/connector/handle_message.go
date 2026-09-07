@@ -18,10 +18,10 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/connector/handlers"
-	"github.com/highesttt/matrix-line-messenger/pkg/e2ee"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
-	"github.com/highesttt/matrix-line-messenger/pkg/ltsm"
+	"github.com/kongesque/line-cli/pkg/connector/handlers"
+	"github.com/kongesque/line-cli/pkg/e2ee"
+	"github.com/kongesque/line-cli/pkg/line"
+	"github.com/kongesque/line-cli/pkg/ltsm"
 )
 
 const (

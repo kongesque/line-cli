@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/highesttt/matrix-line-messenger/internal/session"
-	gen "github.com/highesttt/matrix-line-messenger/pkg"
-	"github.com/highesttt/matrix-line-messenger/pkg/e2ee"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/internal/session"
+	gen "github.com/kongesque/line-cli/pkg"
+	"github.com/kongesque/line-cli/pkg/e2ee"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 var (

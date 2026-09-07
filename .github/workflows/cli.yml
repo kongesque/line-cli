@@ -1,0 +1,41 @@
+name: LINE CLI checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test CLI and protocol packages
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go test ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
+          else
+            go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
+          fi
+          go vet ./internal/... ./cmd/line ./pkg/line
+      - name: Format and static analysis
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          test -z "$(gofmt -l internal cmd/line)"
+          go run honnef.co/go/tools/cmd/staticcheck@latest ./internal/... ./cmd/line ./pkg/line
+      - name: Build CLI
+        shell: bash
+        run: go build -trimpath -o bin/ ./cmd/line

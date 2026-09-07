@@ -5,8 +5,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/highesttt/matrix-line-messenger/internal/session"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/internal/session"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 // Explicitly opt in after signing in. Reports aggregate statuses only. Does not

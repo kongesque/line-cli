@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/ltsm"
+	"github.com/kongesque/line-cli/pkg/ltsm"
 )
 
 func TestBuildLoginSecretMatchesNodeAlgorithm(t *testing.T) {

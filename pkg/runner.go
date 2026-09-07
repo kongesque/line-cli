@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/ltsm"
+	"github.com/kongesque/line-cli/pkg/ltsm"
 )
 
 type Runner struct {

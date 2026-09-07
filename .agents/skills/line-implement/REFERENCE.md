@@ -159,7 +159,7 @@ Run the relevant subset, then the broader checks when practical:
 
 ```bash
 go fmt ./...
-goimports -local "github.com/highesttt/matrix-line-messenger" -w .
+goimports -local "github.com/kongesque/line-cli" -w .
 go test ./...
 go vet $(go list ./... | grep -v /ltsm)
 staticcheck $(go list ./... | grep -v /ltsm)

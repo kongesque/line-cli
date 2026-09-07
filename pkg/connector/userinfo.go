@@ -15,8 +15,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/connector/handlers"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/connector/handlers"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 var _ bridgev2.IdentifierResolvingNetworkAPI = (*LineClient)(nil)

@@ -11,7 +11,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/event"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 // ConvertVideo converts a LINE video message to a Matrix video message.

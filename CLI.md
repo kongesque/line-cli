@@ -6,9 +6,9 @@ account and does not require a Matrix homeserver or Beeper account.
 
 ## Build
 
-Requirements: macOS, Go 1.26 or newer, and Xcode Command Line Tools (`xcode-select
---install`). CGO must be enabled to access macOS Keychain. This CLI does not need
-libolm, Docker, or the Matrix bridge configuration.
+Requirements: Go 1.26 or newer. macOS builds also need Xcode Command Line Tools
+(`xcode-select --install`) and CGO for Keychain access. Linux and Windows builds
+support `CGO_ENABLED=0`. The CLI does not require libolm or a Matrix server.
 
 ```sh
 go build -trimpath -o bin/line ./cmd/line
@@ -56,9 +56,22 @@ existing LINE Chrome extension or bridge session. The CLI stops using credential
 when LINE reports a forced logout; it does not automatically sign back in.
 
 Session data (tokens, verification certificate, account identity, exported Letter
-Sealing keys) is kept in a single macOS Keychain generic-password item:
-service `io.github.kongesque.line-cli`, account `default`. One LINE account is
-supported in this milestone. A process lock in the user's cache directory
+Sealing keys) uses OS-protected storage for one LINE account:
+
+- macOS: Keychain item, service `io.github.kongesque.line-cli`, account `default`.
+- Linux: Secret Service through `secret-tool`, storing a random wrapping key under service
+  `io.github.kongesque.line-cli.encryption`, account `default`. The session is
+  AES-GCM encrypted at `$XDG_CONFIG_HOME/line-cli/session.enc` (normally
+  `~/.config/line-cli/session.enc`). This avoids the helper's 8KiB secret limit. Install `libsecret-tools` (Debian/Ubuntu) and run an unlocked Secret
+  Service keyring in your desktop D-Bus session. A headless session without that
+  service cannot save credentials; there is no plaintext fallback.
+- Windows: DPAPI encrypted session at `%LOCALAPPDATA%\line-cli\session.dpapi`,
+  protected for the current Windows user. Tokens and large exported key sets are
+  encrypted before writing; updates replace the ciphertext file atomically.
+
+The backends follow [GNOME libsecret](https://github.com/GNOME/libsecret/blob/main/tool/secret-tool.c)
+and [Microsoft DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata).
+A process lock in the user's cache directory
 serializes session updates to protect token rotation and logout. The watcher uses
 short session locks, so other commands can run while its stream is open. A second
 watcher is rejected to protect the shared resume position.
@@ -66,7 +79,7 @@ Initialization and individual key/authentication lookups may briefly return a
 session-busy error to another command; retry that command when the lookup ends.
 
 `messages` reads 1–100 recent messages in the order returned by LINE. It restores
-Letter Sealing keys from Keychain and fetches the exact device/group keys needed
+Letter Sealing keys from credential storage and fetches the exact device/group keys needed
 for each message. Reading does not mark messages read, register group keys, or
 save message history locally. Older messages can remain unreadable when their
 original device keys are no longer available.
@@ -113,14 +126,14 @@ outbox or provide exactly-once delivery across manual retries.
 within the CLI's 10,000 UTF-16-unit limit. Stdin preserves newlines and avoids
 placing the text directly in process arguments or shell history.
 
-`logout` removes the local Keychain item. It does **not** revoke the session on
+`logout` removes the locally saved session. It does **not** revoke the session on
 LINE's servers. The upstream remote logout method is currently unimplemented.
 
 ## Live events
 
 `watch` writes one JSON object per line to stdout. Status and reconnect messages
 go to stderr. The first run starts at LINE's current operation revision; later
-runs resume the revision saved in Keychain. Use `--from-now` to discard the saved
+runs resume the revision saved with the session. Use `--from-now` to discard the saved
 position and start at the current revision. `--limit N` stops after N emitted
 events; `--timeout 30s` stops after a duration. Ctrl-C/SIGTERM stop cleanly with
 exit status 0. Watch output is always NDJSON (`--json` is optional).
@@ -150,7 +163,7 @@ probes Talk authentication every 30 seconds. Token rotation preserves the cursor
 forced logout stops the watcher. Local logout or a new login stops an existing
 watcher at its next event or probe. Watch never sends messages, marks them read,
 or registers group keys. Only the resume revision and a local login-generation
-identifier are added to Keychain; event payloads are not saved by the CLI.
+identifier are added to credential storage; event payloads are not saved by the CLI.
 
 ## Output
 
@@ -237,6 +250,18 @@ LINE_CLI_LIVE_WATCH=1 go test ./internal/events -run '^TestLiveWatch$' -v -count
 This test updates the saved watch cursor and discards event output. It logs only
 startup timing and frame counts; it sends no messages and skips unless enabled.
 
-Attachments, multiple accounts, and Linux/Windows credential storage
-are subsequent milestones. Detailed progress
+Attachments and multiple accounts are subsequent milestones. Detailed progress
 is tracked in the local, Git-ignored `PLAN.md`.
+
+## CLI builds and CI
+
+`.github/workflows/cli.yml` tests CLI/protocol packages on Linux, macOS, and
+Windows. The separate `cli-release.yml` workflow builds amd64/arm64 artifacts
+for all three platforms on a `cli-v*` tag or manual dispatch. Each artifact
+contains the executable, license, usage guide, and SHA-256 checksum. These are
+workflow artifacts; the workflow does not publish a GitHub Release or sign/notarize
+binaries. The existing Matrix executable and bridge workflow remain separate.
+
+Linux/Windows binaries were cross-built from macOS. Linux keyring integration,
+Windows native DPAPI execution, and the new GitHub workflows still need their
+first native/hosted run; cross-compilation alone does not verify those runtimes.

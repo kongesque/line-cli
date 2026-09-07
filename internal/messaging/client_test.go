@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/highesttt/matrix-line-messenger/internal/session"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/internal/session"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 var testPublicKey = base64.StdEncoding.EncodeToString(make([]byte, 32))

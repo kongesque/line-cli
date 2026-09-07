@@ -11,7 +11,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 func TestEnsureValidTokenReturnsLoggedOutWithoutRelogin(t *testing.T) {

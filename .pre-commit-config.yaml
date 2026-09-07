@@ -15,7 +15,7 @@ repos:
         exclude: "pb\\.go$"
         args:
           - "-local"
-          - "github.com/highesttt/matrix-line-messenger"
+          - "github.com/kongesque/line-cli"
           - "-w"
 
   - repo: local

@@ -11,9 +11,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/highesttt/matrix-line-messenger/internal/messaging"
-	"github.com/highesttt/matrix-line-messenger/internal/session"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/internal/messaging"
+	"github.com/kongesque/line-cli/internal/session"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 func (a *App) chatCommand(args []string) error {

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/e2ee"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/e2ee"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 // API is the portion of the upstream client used by the standalone CLI.

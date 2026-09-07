@@ -13,8 +13,8 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/highesttt/matrix-line-messenger/internal/cli"
-	"github.com/highesttt/matrix-line-messenger/internal/session"
+	"github.com/kongesque/line-cli/internal/cli"
+	"github.com/kongesque/line-cli/internal/session"
 )
 
 var version = "dev"

@@ -12,8 +12,8 @@ import (
 	"text/tabwriter"
 	"unicode"
 
-	"github.com/highesttt/matrix-line-messenger/internal/session"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/internal/session"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 const help = `Usage: line <command> [options]
@@ -33,7 +33,7 @@ Commands:
 CHAT accepts a full ID or a unique exact chat name (quote names with spaces).
 Run line chats --help for search, limits, and IDs.
 
-Session secrets are stored in macOS Keychain. Passwords are never saved.
+Session secrets use OS-protected credential storage. Passwords are never saved.
 Login uses LINE's Chrome session and may replace an extension/bridge session.
 Media is planned; see PLAN.md.
 `
@@ -177,7 +177,7 @@ func (a *App) login(email string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(a.Out, "Signed in as %s (%s). Session saved to macOS Keychain.\n", terminalText(profile.DisplayName), terminalText(profile.Mid))
+	_, err = fmt.Fprintf(a.Out, "Signed in as %s (%s). Session saved securely.\n", terminalText(profile.DisplayName), terminalText(profile.Mid))
 	return err
 }
 

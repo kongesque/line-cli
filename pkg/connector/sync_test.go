@@ -17,7 +17,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 func TestMakeMemberChangeEventPreservesChangeSender(t *testing.T) {

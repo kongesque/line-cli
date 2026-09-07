@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/highesttt/matrix-line-messenger/internal/messaging"
+	"github.com/kongesque/line-cli/internal/messaging"
 )
 
 func (a *App) messageCommand(command string, args []string) error {

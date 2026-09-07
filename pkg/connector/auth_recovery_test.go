@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 var (

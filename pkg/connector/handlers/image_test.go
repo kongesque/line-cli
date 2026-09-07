@@ -3,7 +3,7 @@ package handlers
 import (
 	"testing"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 func TestLineImageDownloadSourcePrefersPublicResource(t *testing.T) {

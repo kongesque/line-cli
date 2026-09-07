@@ -3,7 +3,7 @@ package connector
 import (
 	"context"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 var updateSettingsAttributes2WithClient = func(

@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	gen "github.com/highesttt/matrix-line-messenger/pkg"
-	"github.com/highesttt/matrix-line-messenger/pkg/line/password"
-	"github.com/highesttt/matrix-line-messenger/pkg/line/secret"
+	gen "github.com/kongesque/line-cli/pkg"
+	"github.com/kongesque/line-cli/pkg/line/password"
+	"github.com/kongesque/line-cli/pkg/line/secret"
 )
 
 const (

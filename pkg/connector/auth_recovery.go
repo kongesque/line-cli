@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 type lineCallDeps[T any] struct {

@@ -8,8 +8,8 @@ import (
 
 	"maunium.net/go/mautrix/bridgev2/networkid"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/e2ee"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/e2ee"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 const noE2EETTL = 1 * time.Hour

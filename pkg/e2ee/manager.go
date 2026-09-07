@@ -13,9 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	gen "github.com/highesttt/matrix-line-messenger/pkg"
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
-	"github.com/highesttt/matrix-line-messenger/pkg/ltsm"
+	gen "github.com/kongesque/line-cli/pkg"
+	"github.com/kongesque/line-cli/pkg/line"
+	"github.com/kongesque/line-cli/pkg/ltsm"
 )
 
 var (

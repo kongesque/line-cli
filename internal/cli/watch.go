@@ -6,8 +6,8 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/highesttt/matrix-line-messenger/internal/events"
-	"github.com/highesttt/matrix-line-messenger/internal/session"
+	"github.com/kongesque/line-cli/internal/events"
+	"github.com/kongesque/line-cli/internal/session"
 )
 
 func (a *App) watchCommand(args []string) error {

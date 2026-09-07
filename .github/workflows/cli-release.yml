@@ -1,0 +1,52 @@
+name: LINE CLI release artifacts
+
+on:
+  push:
+    tags: ['cli-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, target: linux, arch: amd64, cgo: '0'}
+          - {os: ubuntu-latest, target: linux, arch: arm64, cgo: '0'}
+          - {os: windows-latest, target: windows, arch: amd64, cgo: '0'}
+          - {os: windows-latest, target: windows, arch: arm64, cgo: '0'}
+          - {os: macos-latest, target: darwin, arch: arm64, cgo: '1'}
+          - {os: macos-latest, target: darwin, arch: amd64, cgo: '1'}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build release
+        shell: bash
+        env:
+          GOOS: ${{ matrix.target }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          mkdir -p dist
+          extension=""
+          if [ "$GOOS" = "windows" ]; then extension=".exe"; fi
+          go build -trimpath -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" -o "dist/line$extension" ./cmd/line
+          cp LICENSE CLI.md dist/
+          cd dist
+          if command -v sha256sum >/dev/null; then
+            sha256sum "line$extension" > SHA256SUMS
+          else
+            shasum -a 256 "line$extension" > SHA256SUMS
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: line-${{ matrix.target }}-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error

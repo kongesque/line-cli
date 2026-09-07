@@ -85,7 +85,7 @@ Support Matrix group avatar changes by matching LINE Chrome Extension traffic.
    - Run:
      ```
      go fmt ./...
-     goimports -local "github.com/highesttt/matrix-line-messenger" -w .
+     goimports -local "github.com/kongesque/line-cli" -w .
      go test ./...
      go vet $(go list ./... | grep -v /ltsm)
      ```

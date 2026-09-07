@@ -13,7 +13,7 @@ import (
 
 	"maunium.net/go/mautrix/bridgev2"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 func TestSubmitUserInputLogsStructuredLoginErrorWithoutCredentials(t *testing.T) {

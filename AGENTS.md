@@ -30,7 +30,7 @@ docker compose up --build
 **Formatting/Linting (via pre-commit):**
 ```bash
 go fmt ./...
-goimports -local "github.com/highesttt/matrix-line-messenger" -w .
+goimports -local "github.com/kongesque/line-cli" -w .
 staticcheck $(go list ./... | grep -v /ltsm)
 go vet $(go list ./... | grep -v /ltsm)
 ```

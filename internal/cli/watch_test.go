@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/highesttt/matrix-line-messenger/internal/session"
+	"github.com/kongesque/line-cli/internal/session"
 )
 
 func TestWatchArgumentsBeforeSession(t *testing.T) {

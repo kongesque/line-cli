@@ -3,7 +3,7 @@ package main
 import (
 	"maunium.net/go/mautrix/bridgev2/matrix/mxmain"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/connector"
+	"github.com/kongesque/line-cli/pkg/connector"
 )
 
 // Information to find out exactly which commit the bridge was built from.

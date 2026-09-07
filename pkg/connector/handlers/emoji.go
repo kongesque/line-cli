@@ -15,7 +15,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/event"
 
-	"github.com/highesttt/matrix-line-messenger/pkg/line"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 // tryUploadEmoji downloads a sticon from the LINE CDN, uploads it to Matrix,
