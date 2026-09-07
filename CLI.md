@@ -145,8 +145,11 @@ send messages, or read/write your Keychain. After a user completed interactive
 login, separate CLI processes successfully loaded the saved Keychain session and
 ran `whoami`, `contacts --json`, and `chats --json` against LINE on 2026-09-07.
 An opt-in read-only integration check also restored saved keys and decrypted both
-direct and group text history. Live sending, fresh group-key registration, and
-token rotation still need validation. Tests of outgoing message construction,
+direct and group text history. On 2026-09-07, the user also reported a successful
+live direct text send: the CLI returned a server message ID with `encrypted: false`.
+This confirms server acceptance of a plaintext send; recipient delivery/read status
+was not checked. Live encrypted sending, fresh group-key registration, and token
+rotation still need validation. Tests of outgoing message construction,
 capability fallback, blocked contacts, persistent sequencing, and failed-send
 handling use fakes and never transmit a message.
 
