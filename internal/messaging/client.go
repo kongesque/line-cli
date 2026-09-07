@@ -133,27 +133,33 @@ func (c *Client) History(chat string, limit int) ([]Message, error) {
 		if msg == nil {
 			continue
 		}
-		timestamp := msg.CreatedTime
-		if timestamp == "" {
-			timestamp = "0"
-		}
-		item := Message{ID: msg.ID, From: msg.From, To: msg.To, CreatedTime: timestamp, ContentType: msg.ContentType,
-			Encrypted: len(msg.Chunks) > 0 || msg.ContentMetadata["e2eeVersion"] != ""}
-		if msg.ContentType != 0 {
-			item.Status = "unsupported"
-		} else if !item.Encrypted {
-			item.Status, item.Text = "plaintext", msg.Text
-		} else {
-			text, err := c.decrypt(chat, msg)
-			if err != nil {
-				item.Status, item.Error = "decryption_failed", err.Error()
-			} else {
-				item.Status, item.Text = "decrypted", text
-			}
-		}
-		result = append(result, item)
+		result = append(result, c.Decode(chat, msg))
 	}
 	return result, nil
+}
+
+// Decode converts a non-nil history or stream message to safe CLI output.
+// The caller holds the session lock; key lookups never register group keys.
+func (c *Client) Decode(chat string, msg *line.Message) Message {
+	timestamp := msg.CreatedTime
+	if timestamp == "" {
+		timestamp = "0"
+	}
+	item := Message{ID: msg.ID, From: msg.From, To: msg.To, CreatedTime: timestamp, ContentType: msg.ContentType,
+		Encrypted: len(msg.Chunks) > 0 || msg.ContentMetadata["e2eeVersion"] != ""}
+	if msg.ContentType != 0 {
+		item.Status = "unsupported"
+	} else if !item.Encrypted {
+		item.Status, item.Text = "plaintext", msg.Text
+	} else {
+		text, err := c.decrypt(chat, msg)
+		if err != nil {
+			item.Status, item.Error = "decryption_failed", err.Error()
+		} else {
+			item.Status, item.Text = "decrypted", text
+		}
+	}
+	return item
 }
 
 func (c *Client) decrypt(chat string, msg *line.Message) (string, error) {

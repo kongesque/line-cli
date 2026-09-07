@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -24,6 +25,7 @@ Commands:
   chats     [--search NAME]    Show recent conversations by name
   messages  CHAT [--limit N] [--json]  Read recent text messages
   send      CHAT --text TEXT [--json] Send text (--stdin also supported)
+  watch     [--json]           Stream live events; Ctrl-C stops
   logout                      Delete the locally saved session
   version                     Print build version
   help                        Show this help
@@ -33,18 +35,20 @@ Run line chats --help for search, limits, and IDs.
 
 Session secrets are stored in macOS Keychain. Passwords are never saved.
 Login uses LINE's Chrome session and may replace an extension/bridge session.
-Live events and media are planned; see PLAN.md.
+Media is planned; see PLAN.md.
 `
 
 type App struct {
-	In       io.Reader
-	Out      io.Writer
-	Err      io.Writer
-	Manager  *session.Manager
-	Lock     func() (func(), error)
-	Password func() (string, error)
-	Continue func() error
-	Version  string
+	Context   context.Context
+	WatchLock func() (func(), error)
+	In        io.Reader
+	Out       io.Writer
+	Err       io.Writer
+	Manager   *session.Manager
+	Lock      func() (func(), error)
+	Password  func() (string, error)
+	Continue  func() error
+	Version   string
 }
 
 // Run validates command arguments before accessing Keychain or the network.
@@ -61,6 +65,8 @@ func (a *App) Run(args []string) error {
 		command = "version"
 	}
 	switch command {
+	case "watch":
+		return a.watchCommand(args[1:])
 	case "chats":
 		return a.chatCommand(args[1:])
 	case "messages", "send":

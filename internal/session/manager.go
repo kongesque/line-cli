@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"strconv"
@@ -10,11 +12,14 @@ import (
 	"github.com/highesttt/matrix-line-messenger/pkg/line"
 )
 
-// API is the portion of the upstream client needed by the first CLI milestone.
+// API is the portion of the upstream client used by the standalone CLI.
 type API interface {
 	Login(email, password, certificate string) (*line.LoginResult, error)
 	WaitForLogin(verifier string, noE2EE bool) (*line.LoginResult, error)
 	GetProfile() (*line.Profile, error)
+	GetProfileContext(context.Context) (*line.Profile, error)
+	GetLastOpRevisionContext(context.Context) (int64, error)
+	ListenSSE(context.Context, int64, func(string, string)) error
 	GetEncryptedIdentityV3() (*line.EncryptedIdentityV3, error)
 	RefreshAccessToken(string) (*line.TokenV3IssueResult, error)
 	GetAllContactIds() ([]string, error)
@@ -107,7 +112,7 @@ func (m *Manager) finishLogin(email, token string, noE2EE bool, res *line.LoginR
 	if profile == nil || profile.Mid == "" {
 		return nil, errors.New("LINE did not return an account ID")
 	}
-	s := &State{Version: 1, AccessToken: token, Certificate: res.Certificate,
+	s := &State{Generation: rand.Text(), Version: 1, AccessToken: token, Certificate: res.Certificate,
 		MID: profile.Mid, Email: email, NoE2EE: noE2EE}
 	if res.TokenV3IssueResult != nil {
 		s.RefreshToken = res.TokenV3IssueResult.RefreshToken
@@ -234,6 +239,16 @@ func (m *Manager) invalidate(s *State) error {
 		return err
 	}
 	return errors.New("LINE logged out this session, possibly because another Chrome client signed in; run line login")
+}
+
+// MarkLoggedOut invalidates the current session without attempting token refresh.
+// The caller holds Lock and has verified the failing stream used this session.
+func (m *Manager) MarkLoggedOut() error {
+	s, err := m.Store.Load()
+	if err != nil {
+		return err
+	}
+	return m.invalidate(s)
 }
 
 func remoteError(action string, err error) error {

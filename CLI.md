@@ -1,7 +1,7 @@
 # LINE CLI
 
 A standalone command-line client built on `beeper/line`. Supports account login,
-contact/chat discovery, recent text history, and text sending. It uses your personal LINE
+contact/chat discovery, recent text history, text sending, and live events. It uses your personal LINE
 account and does not require a Matrix homeserver or Beeper account.
 
 ## Build
@@ -40,6 +40,9 @@ rebuilding or moving the binary may cause another access prompt.
 ./bin/line send CHAT_ID --text "Hello" --json
 ./bin/line send CHAT_ID --stdin < message.txt
 
+./bin/line watch --json
+./bin/line watch --json --timeout 30s
+
 ./bin/line logout
 ```
 
@@ -56,7 +59,11 @@ Session data (tokens, verification certificate, account identity, exported Lette
 Sealing keys) is kept in a single macOS Keychain generic-password item:
 service `io.github.kongesque.line-cli`, account `default`. One LINE account is
 supported in this milestone. A process lock in the user's cache directory
-serializes commands to protect token rotation and logout.
+serializes session updates to protect token rotation and logout. The watcher uses
+short session locks, so other commands can run while its stream is open. A second
+watcher is rejected to protect the shared resume position.
+Initialization and individual key/authentication lookups may briefly return a
+session-busy error to another command; retry that command when the lookup ends.
 
 `messages` reads 1–100 recent messages in the order returned by LINE. It restores
 Letter Sealing keys from Keychain and fetches the exact device/group keys needed
@@ -101,6 +108,42 @@ placing the text directly in process arguments or shell history.
 `logout` removes the local Keychain item. It does **not** revoke the session on
 LINE's servers. The upstream remote logout method is currently unimplemented.
 
+## Live events
+
+`watch` writes one JSON object per line to stdout. Status and reconnect messages
+go to stderr. The first run starts at LINE's current operation revision; later
+runs resume the revision saved in Keychain. Use `--from-now` to discard the saved
+position and start at the current revision. `--limit N` stops after N emitted
+events; `--timeout 30s` stops after a duration. Ctrl-C/SIGTERM stop cleanly with
+exit status 0. Watch output is always NDJSON (`--json` is optional).
+
+Event formats:
+
+- `message`: `revision` (a decimal string), LINE operation `type` (25 sent,
+  26 received), `chat_id`, and a `message` object with the same fields/statuses as
+  history. Letter Sealing text uses the same exact device/group-key decoder.
+- `operation`: `revision` and LINE operation `type` for other notifications.
+  This milestone does not interpret their parameters or emit raw payloads.
+- `resync_required`: `revision` is the next position requested by LINE's fullSync.
+  There may be missing events; refresh chats and recent history to inspect current
+  state. The watcher reports this gap and continues from that revision. It does
+  not reconstruct an unlimited history or claim lossless delivery.
+
+Replayed revisions are suppressed. Each resume checkpoint is saved only after
+the complete JSON line is written. If the process crashes between writing and
+saving, the last event can repeat; consumers should deduplicate by `revision`.
+Successfully writing stdout does not confirm that a downstream consumer processed
+the event. Broken output, invalid events, and checkpoint failures stop the watcher.
+Unreadable encrypted messages are emitted with `decryption_failed` and an empty
+text field, and their revisions are checkpointed; they are not retried forever.
+
+The watcher reconnects with a delay of 1–30 seconds after disconnections and
+probes Talk authentication every 30 seconds. Token rotation preserves the cursor;
+forced logout stops the watcher. Local logout or a new login stops an existing
+watcher at its next event or probe. Watch never sends messages, marks them read,
+or registers group keys. Only the resume revision and a local login-generation
+identifier are added to Keychain; event payloads are not saved by the CLI.
+
 ## Output
 
 Read commands print tables by default. With `--json`, stdout contains one JSON
@@ -119,6 +162,7 @@ status 1; help and successful commands return 0.
   `decryption_failed`). Images, stickers, and other non-text content are listed
   by type; their payloads are not decoded in this milestone.
 - `send --json`: server message ID, chat ID, encryption flag, and request sequence.
+- `watch --json`: a stream of newline-delimited events as described above.
 
 If some history entries cannot be decrypted, the command still writes the full
 JSON array with per-message errors and exits 1. It never substitutes encrypted
@@ -163,6 +207,21 @@ LINE_CLI_LIVE_READ=1 go test ./internal/messaging -run '^TestLiveHistory$' -v -c
 This explicitly enabled test reads active chat previews and a bounded history
 sample, logs only counts/statuses, and skips automatically during ordinary tests.
 
-Live events, attachments, multiple accounts, and Linux/Windows credential storage
+Watcher tests cover revision replay, resume after interrupted output, fullSync
+gaps, token refresh, forced logout, session replacement, group-key changes, and
+concurrent session updates. A read-only live check on 2026-09-07 received an SSE
+keepalive and successfully queried the account while the stream was open.
+Separate CLI checks verified timeout, restart, Ctrl-C, and rejection of a second
+watcher. No message events arrived during these short checks, so live message-event
+delivery remains unverified. To repeat the bounded stream/concurrency check:
+
+```sh
+LINE_CLI_LIVE_WATCH=1 go test ./internal/events -run '^TestLiveWatch$' -v -count=1 -timeout=55s
+```
+
+This test updates the saved watch cursor and discards event output. It logs only
+startup timing and frame counts; it sends no messages and skips unless enabled.
+
+Attachments, multiple accounts, and Linux/Windows credential storage
 are subsequent milestones. Detailed progress
 is tracked in the local, Git-ignored `PLAN.md`.

@@ -186,6 +186,20 @@ func TestHistoryFetchesHistoricalGroupKeyWithoutRegistration(t *testing.T) {
 	}
 }
 
+func TestStreamDecodeHandlesGroupKeyChangesAndOldKeyReplay(t *testing.T) {
+	c, f, crypto, _ := setup(t, false)
+	for _, id := range []int{33, 34, 33} {
+		f.group = &line.E2EEGroupSharedKey{GroupKeyID: id, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
+		msg := c.Decode("c-group", &line.Message{From: "u-peer", To: "c-group", ToType: 2, Chunks: encryptedChunks(22, id)})
+		if msg.Status != "decrypted" {
+			t.Fatal("group key change broke decoding", msg.Error)
+		}
+	}
+	if len(crypto.unwrapped) != 2 || crypto.unwrapped[0] != 33 || crypto.unwrapped[1] != 34 || len(f.groupIDs) != 2 || f.registrations != 0 {
+		t.Fatal("did not preserve exact old/new group keys, or registered during read")
+	}
+}
+
 func TestHistoryNeverExposesCiphertextAsText(t *testing.T) {
 	c, f, crypto, _ := setup(t, false)
 	crypto.decryptErr = errors.New("raw-secret-response")

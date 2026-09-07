@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -19,9 +20,16 @@ import (
 var version = "dev"
 
 func main() {
+	ctx := context.Background()
+	watching := len(os.Args) > 1 && os.Args[1] == "watch"
+	if watching {
+		var stop context.CancelFunc
+		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+	}
 	// ReadPassword temporarily disables echo. Restore the original terminal on
 	// Ctrl-C/SIGTERM as well as normal return, including during phone polling.
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	if !watching && term.IsTerminal(int(os.Stdin.Fd())) {
 		if state, err := term.GetState(int(os.Stdin.Fd())); err == nil {
 			signals := make(chan os.Signal, 1)
 			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
@@ -40,6 +48,7 @@ func main() {
 	// out of both terminal output and pipelines; CLI errors provide safe context.
 	log.SetOutput(io.Discard)
 	app := &cli.App{
+		Context: ctx, WatchLock: session.WatchLock,
 		In:  os.Stdin,
 		Out: os.Stdout, Err: os.Stderr, Version: version,
 		Manager: session.NewManager(session.KeychainStore{}), Lock: session.Lock,
