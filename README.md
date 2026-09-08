@@ -42,9 +42,6 @@ Building from source requires **Git and Go 1.26 or newer**. Check Go with
 `go version`. The commands below install the executable; they do not sign in or
 send messages. Shell examples use zsh/bash unless labeled PowerShell.
 
-The guided commands described here are currently on `feat/cli`. The clone
-commands below select that branch.
-
 ### macOS
 
 Install Xcode Command Line Tools if they are missing:
@@ -56,7 +53,7 @@ xcode-select --install
 Then clone and install:
 
 ```sh
-git clone --branch feat/cli https://github.com/kongesque/line-cli.git
+git clone https://github.com/kongesque/line-cli.git
 cd line-cli
 ./install.sh
 line help
@@ -89,7 +86,7 @@ or unlock a keyring. A headless/SSH session without that service cannot store
 credentials; there is no plaintext fallback.
 
 ```sh
-git clone --branch feat/cli https://github.com/kongesque/line-cli.git
+git clone https://github.com/kongesque/line-cli.git
 cd line-cli
 CGO_ENABLED=0 ./install.sh
 export PATH="$HOME/.local/bin:$PATH"
@@ -105,7 +102,7 @@ keyring.
 Build into a user-owned directory:
 
 ```powershell
-git clone --branch feat/cli https://github.com/kongesque/line-cli.git
+git clone https://github.com/kongesque/line-cli.git
 cd line-cli
 $lineBin = Join-Path $env:LOCALAPPDATA 'Programs\line-cli'
 New-Item -ItemType Directory -Force $lineBin | Out-Null
