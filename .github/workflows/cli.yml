@@ -36,6 +36,28 @@ jobs:
         run: |
           test -z "$(gofmt -l internal cmd/line)"
           go run honnef.co/go/tools/cmd/staticcheck@latest ./internal/... ./cmd/line ./pkg/line
+      - name: Native Linux Secret Service integration
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gnome-keyring libsecret-tools dbus
+          keyring_test_dir=$(mktemp -d)
+          trap 'rm -rf "$keyring_test_dir"' EXIT
+          export XDG_DATA_HOME="$keyring_test_dir/data"
+          export XDG_RUNTIME_DIR="$keyring_test_dir/run"
+          mkdir -p "$XDG_DATA_HOME" "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          export LINE_CLI_TEST_SECRET_SERVICE=1
+          dbus-run-session -- bash -eu -c '
+            printf %s ci-synthetic-keyring-password | gnome-keyring-daemon --unlock --components=secrets
+            gnome-keyring-daemon --start --components=secrets
+            go test -v -count=1 ./internal/session -run "^TestLinuxNativeSecretService$"
+          '
+      - name: Native Windows DPAPI integration
+        if: runner.os == 'Windows'
+        shell: bash
+        run: go test -v -count=1 ./internal/session -run '^TestDPAPISessionRoundtripReplacementAndTampering$'
       - name: Build CLI
         shell: bash
         run: go build -trimpath -o bin/ ./cmd/line

@@ -295,8 +295,12 @@ This test updates the saved watch cursor and discards event output. It logs only
 startup timing and frame counts; it sends no messages and skips unless enabled.
 
 File transfers, reply construction, reactions, unsend, size limits, tamper detection,
-and failed-mutation behavior have automated tests using fake APIs. These new
-operations have not yet been tested against a live LINE account.
+and failed-mutation behavior have automated tests using fake APIs. On 2026-09-08,
+an explicitly authorized live group test also verified encrypted text/reply
+acceptance and restored reply references, encrypted file upload/download with an
+exact byte comparison, reaction add/remove visible in history, and unsend of all
+three test-created messages. A final history check found none of those message IDs.
+This verifies the server/history roundtrip; it does not assert recipient read status.
 Specialized image/video/audio handling and multiple accounts remain future work. Detailed progress
 is tracked in the local, Git-ignored `PLAN.md`.
 
@@ -309,8 +313,17 @@ contains a `.tar.gz` archive with the executable, license, usage guide, and
 SHA-256 checksum. Extract the archive before running the CLI; Unix executable
 permissions are preserved inside it. These are
 workflow artifacts; the workflow does not publish a GitHub Release or sign/notarize
-binaries. The existing Matrix executable and bridge workflow remain separate.
+binaries. The existing Matrix executable remains separate. Bridge lint/build
+checks run on the fork; Beeper registry publication and deployment run only in
+the upstream `beeper/line` repository.
 
-Linux/Windows binaries were cross-built from macOS. Linux keyring integration,
-Windows native DPAPI execution, and the new GitHub workflows still need their
-first native/hosted run; cross-compilation alone does not verify those runtimes.
+Linux/Windows binaries were cross-built from macOS. The first
+[CLI workflow run for the extensions](https://github.com/kongesque/line-cli/actions/runs/34161385528)
+passed on Linux, macOS, and Windows, including native Windows DPAPI roundtrip,
+replacement, tamper rejection, and deletion using synthetic credentials.
+
+The CLI workflow also includes an opt-in native Linux Secret Service test. It
+starts a disposable GNOME keyring on a private D-Bus session and uses synthetic
+credentials to check large sessions, reload, replacement, ciphertext protection,
+tamper rejection, and deletion. Normal local tests skip that integration test;
+do not enable `LINE_CLI_TEST_SECRET_SERVICE=1` against your personal keyring.
