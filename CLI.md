@@ -7,6 +7,15 @@ account and does not require a Matrix homeserver or Beeper account.
 
 ## Build
 
+On macOS, the recommended installation is Homebrew:
+
+```sh
+brew install kongesque/tap/line-cli
+```
+
+The formula builds from the tagged source and installs the `line` command.
+Upgrade it with `brew upgrade line-cli`.
+
 Requirements: Go 1.26 or newer. macOS builds also need Xcode Command Line Tools
 (`xcode-select --install`) and CGO for Keychain access. Linux and Windows builds
 support `CGO_ENABLED=0`. The CLI does not require libolm or a Matrix server.
