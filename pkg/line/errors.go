@@ -105,21 +105,6 @@ func IsAuthError(err error) bool {
 	return IsRefreshRequired(err) || IsLoggedOut(err) || IsUnauthorizedStatus(err)
 }
 
-// IsNoUsableE2EEPublicKey returns true when a peer has Letter Sealing disabled
-// (negotiateE2EEPublicKey returns empty allowedTypes / specVersion -1, or no key data).
-func IsNoUsableE2EEPublicKey(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, ErrNoUsableE2EEPublicKey) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "missing fields (pub=false keyID=-1") ||
-		strings.Contains(msg, "missing fields (pub=false keyID=0") ||
-		(strings.Contains(msg, "\"allowedTypes\":[]") && strings.Contains(msg, "\"specVersion\":-1"))
-}
-
 // IsGroupKeyNotFound returns true when the error is specifically code 5 "not found"
 // from getE2EEGroupSharedKey / getLastE2EEGroupSharedKey — meaning no group key has been
 // registered yet, but E2EE is supported. Callers should attempt to register a key.
@@ -176,18 +161,6 @@ type talkExceptionData struct {
 	Message string `json:"message"`
 	Code    int    `json:"code"`
 	Reason  string `json:"reason"`
-}
-
-// IsGroupKeyNotRegisteredError returns true when SendMessage returns code 99
-// "group key is not registered". This means a group key must be registered before
-// sending any message (even plain text) to this group.
-func IsGroupKeyNotRegisteredError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "\"code\":99,") &&
-		strings.Contains(msg, "group key is not registered")
 }
 
 // IsTalkExceptionNotFound returns true when LINE wraps a TalkException code 5

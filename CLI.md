@@ -59,7 +59,7 @@ The password is used only for that invocation and is never saved. This version
 requires interactive login; there is no password command-line flag.
 
 LINE allows one Chrome-style client session. Signing in here may replace an
-existing LINE Chrome extension or bridge session. The CLI stops using credentials
+existing LINE Chrome-style session. The CLI stops using credentials
 when LINE reports a forced logout; it does not automatically sign back in.
 
 Session data (tokens, verification certificate, account identity, exported Letter
@@ -313,9 +313,8 @@ contains a `.tar.gz` archive with the executable, license, usage guide, and
 SHA-256 checksum. Extract the archive before running the CLI; Unix executable
 permissions are preserved inside it. These are
 workflow artifacts; the workflow does not publish a GitHub Release or sign/notarize
-binaries. The existing Matrix executable remains separate. Bridge lint/build
-checks run on the fork; Beeper registry publication and deployment run only in
-the upstream `beeper/line` repository.
+binaries. Only the standalone CLI is built and distributed; the inherited Matrix
+connector, Docker deployment, and registry workflows have been removed.
 
 Linux/Windows binaries were cross-built from macOS. The first
 [CLI workflow run for the extensions](https://github.com/kongesque/line-cli/actions/runs/34161385528)

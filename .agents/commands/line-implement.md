@@ -1,18 +1,18 @@
-Implement a matrix-line feature by capturing and mimicking LINE Chrome Extension behavior.
+Implement a LINE CLI feature by capturing and mimicking LINE Chrome Extension behavior.
 
 ## Input
 
 Use the provided feature goal, for example:
 
 ```
-Support Matrix group avatar changes by matching LINE Chrome Extension traffic.
+Support LINE group avatar changes by matching LINE Chrome Extension traffic.
 ```
 
 ## What to do
 
-1. **Understand the goal and the current bridge first.**
+1. **Understand the goal and the current CLI first.**
    - Read `AGENTS.md`/`CLAUDE.md`, `docs/protocol/README.md`, relevant endpoint docs, and `docs/protocol/gap-analysis.md`.
-   - Inspect the likely implementation surface in `pkg/line/`, `pkg/connector/`, and existing tests.
+   - Inspect the likely implementation surface in `pkg/line/`, `internal/messaging/`, and existing tests.
    - If existing protocol docs already answer the feature, implement from docs and code without a new capture.
 
 2. **Write a capture contract before launching Chrome.**
@@ -22,7 +22,7 @@ Support Matrix group avatar changes by matching LINE Chrome Extension traffic.
    - request argument shape and ordering
    - response wrapper shape, headers, and error behavior
    - resulting SSE/operation events, revisions, message metadata, and local state changes
-   - what values the bridge must persist or expose afterward
+   - what values the CLI must persist or expose afterward
 
 3. **Check LINE Chrome Extension version drift.**
    - Compare the installed/staged extension `manifest.json` version against
@@ -39,11 +39,11 @@ Support Matrix group avatar changes by matching LINE Chrome Extension traffic.
    - Do not commit raw capture files, Chrome profiles, screenshots, QR codes, or parsed JSON.
    - Do not request, store, or automate the LINE password.
    - The user performs LINE login manually, including email/password, QR, PIN, 2FA, and mobile approval.
-   - Do not run the bridge and LINE Chrome Extension simultaneously unless the user explicitly accepts session invalidation.
+   - Do not run the CLI and LINE Chrome Extension simultaneously unless the user explicitly accepts session invalidation.
    - Prefer the persistent capture Chrome profile from `scripts/line-chrome-capture.sh`. Use the user's normal Chrome profile only after explicit approval.
 
 5. **Run the capture.**
-   - Check for running Chrome and `matrix-line` processes; warn before closing or stopping anything.
+   - Check for running Chrome and `line watch` processes; warn before closing or stopping anything.
    - Start capture:
      ```
      umask 077
@@ -72,12 +72,12 @@ Support Matrix group avatar changes by matching LINE Chrome Extension traffic.
      ```
    - Read raw files only locally and only when redacted output loses information needed for implementation.
    - Quote or document only redacted snippets.
-   - Compare against `pkg/line/methods.go`, `pkg/line/client.go`, `pkg/line/sse.go`, and the relevant `pkg/connector/` flow.
-   - Produce an evidence table: Chrome behavior, bridge behavior, implementation delta, files to change.
+   - Compare against `pkg/line/methods.go`, `pkg/line/client.go`, `pkg/line/sse.go`, and the relevant `internal/messaging/` flow.
+   - Produce an evidence table: Chrome behavior, CLI behavior, implementation delta, files to change.
 
-7. **Implement religiously.**
+7. **Implement the verified behavior.**
    - Match the Chrome Extension's endpoint path, service/method name, argument order, headers, request body shape, response handling, and fallback behavior.
-   - Preserve existing bridge architecture: Thrift/API code in `pkg/line`, Matrix-facing behavior in `pkg/connector`, E2EE behavior in `pkg/e2ee`/`pkg/ltsm`.
+   - Preserve existing CLI architecture: Thrift/API code in `pkg/line`, command behavior in `internal/cli` and messaging in `internal/messaging`, E2EE behavior in `pkg/e2ee`/`pkg/ltsm`.
    - Update protocol docs only with redacted request/response/event evidence.
    - Add or update focused tests for parsing, request construction, event handling, persistence, and fallback/error behavior.
 

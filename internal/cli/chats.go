@@ -165,7 +165,7 @@ func (a *App) nameChats(chats []Chat) error {
 			names[id] = wrapper.Contact.EffectiveDisplayName()
 		}
 	}
-	// Match the upstream bridge's group lookup batch size.
+	// Use the validated LINE group lookup batch size.
 	for start := 0; start < len(groups); start += 20 {
 		var response *line.GetChatsResponse
 		if err := a.Manager.Do(func(api session.API) (err error) {

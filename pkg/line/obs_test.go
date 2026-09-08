@@ -58,7 +58,7 @@ func TestDownloadOBSHonorsOptionalSizeLimit(t *testing.T) {
 	}
 	data, err = client.DownloadOBSWithSIDOptions(context.Background(), "oid", "123", "emf", OBSDownloadOptions{})
 	if err != nil || string(data) != "12345" {
-		t.Fatal("default bridge behavior changed", err)
+		t.Fatal("unbounded download behavior changed", err)
 	}
 }
 

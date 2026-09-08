@@ -12,7 +12,7 @@ repos:
     rev: v1.0.0-rc.4
     hooks:
       - id: go-imports
-        exclude: "pb\\.go$"
+        exclude: "(pb\\.go$|^pkg/ltsm/)"
         args:
           - "-local"
           - "github.com/kongesque/line-cli"
@@ -32,9 +32,3 @@ repos:
         language: system
         pass_filenames: false
         types: [go]
-
-  - repo: https://github.com/beeper/pre-commit-go
-    rev: v0.4.2
-    hooks:
-      - id: zerolog-ban-msgf
-      - id: zerolog-use-stringer

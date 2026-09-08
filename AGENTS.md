@@ -1,82 +1,56 @@
-# CLAUDE.md
+# LINE CLI contributor guidance
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Project
 
-## Project Overview
+A standalone Go CLI for a personal LINE account. It identifies as a LINE Chrome
+Extension client, so logging in can replace an existing Chrome-style session.
+This repository contains no Matrix connector or homeserver integration.
 
-A Matrix bridge for LINE Messenger using mautrix-go (bridgev2). It bridges messages between Matrix clients and LINE, supporting both Letter Sealing ON (E2EE) and OFF accounts.
+## Build and checks
 
-The bridge identifies as a LINE Chrome Extension client, so it cannot coexist with an actual Chrome Extension session.
+Requirements: Go 1.26+. macOS needs CGO and Xcode Command Line Tools for Keychain.
+Linux and Windows support CGO_ENABLED=0. No libolm or ffmpeg is required.
 
-## Build & Development
-
-**Requirements:** Go 1.26+, libolm (`libolm-dev` on Ubuntu, `olm` via Homebrew on macOS)
-
-**Build:**
-```bash
+```sh
 ./build.sh
+./bin/line help
+go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
+goimports -local "github.com/kongesque/line-cli" -w internal cmd/line pkg/line pkg/e2ee pkg/runner.go
+go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
+staticcheck ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
 ```
 
-**Run:**
-```bash
-cd data && ../matrix-line
-```
+The runner and LTSM regression suites can be run separately with
+`go test ./pkg ./pkg/ltsm`; some crypto stress tests are slow. Exclude generated
+`pkg/ltsm` from vet/staticcheck. Do not edit `pkg/ltsm/wbc_generated.go` or its
+embedded `data/` files.
 
-**Docker:**
-```bash
-docker compose up --build
-```
+## Package layout
 
-**Formatting/Linting (via pre-commit):**
-```bash
-go fmt ./...
-goimports -local "github.com/kongesque/line-cli" -w .
-staticcheck $(go list ./... | grep -v /ltsm)
-go vet $(go list ./... | grep -v /ltsm)
-```
+- `cmd/line`: executable, terminal handling, and exit status.
+- `internal/cli`: argument parsing, chat selection, readable/JSON output.
+- `internal/session`: login, credential storage, process locks, token refresh,
+  saved keys, and persistent request sequences.
+- `internal/messaging`: history/decryption, sends/replies, generic files,
+  reactions, unsend, and peer/group key negotiation.
+- `internal/events`: SSE, reconnect, deduplication, and revision checkpoints.
+- `pkg/line`: LINE HTTP/Thrift APIs, OBS transfers, and SSE transport.
+- `pkg/e2ee`: Letter Sealing manager.
+- `pkg/runner.go` and `pkg/ltsm`: shared signing/crypto runtime.
 
-Note: `staticcheck` and `go vet` exclude the `pkg/ltsm` package (transpiled WASM code). Imports must use `-local` flag to group project-local imports correctly.
+## Behavior and validation
 
-## Architecture
+Preserve explicit capability checks before plaintext fallback. Missing or malformed
+keys and transport failures must not silently downgrade encryption. Only an
+explicit send may register a group key, and it needs complete membership.
+Remote mutations are attempted once with a persisted request sequence; reads can
+recover authentication and retry. Never add automatic mutation retries.
 
-```
-Matrix Client <-> mautrix bridgev2 framework <-> LineConnector/LineClient <-> LINE API
-```
+Ordinary tests use synthetic data and fake APIs. Linux native keyring integration
+requires a disposable private D-Bus session; Windows DPAPI tests use temporary
+files. Live LINE tests require explicit authorization for the recipient, content,
+and actions. Do not print credentials, encrypted chunks, or raw server bodies.
 
-### Key Packages
-
-- **`cmd/matrix-line/`** — Entry point, uses `mautrix.BridgeMain`
-- **`pkg/connector/`** — Bridge logic implementing `bridgev2.NetworkConnector` and `bridgev2.NetworkAPI`
-  - `connector.go` — `LineConnector`: bridge initialization, login flow management
-  - `client.go` — `LineClient`: token management, polling, message routing
-  - `handle_message.go` / `send_message.go` — Inbound/outbound message conversion
-  - `e2ee_keys.go` — Peer key negotiation and group key fetching
-  - `media.go` — Media upload/download with E2EE support
-  - `sync.go` — Chat prefetching and long-poll event loop
-- **`pkg/line/`** — HTTP client for LINE's Thrift-based API
-  - `client.go` / `methods.go` — API calls (login, messaging, contacts, groups)
-  - `sse.go` — Server-sent events for long-polling
-  - `password/` — RSA password encryption for login
-  - `secret/` — E2EE secret generation for login handshake
-- **`pkg/e2ee/`** — E2EE encryption/decryption manager wrapping the LTSM runtime
-- **`pkg/ltsm/`** — Transpiled WASM module for LINE's white-box crypto (do not edit `wbc_generated.go`)
-
-### E2EE Design
-
-Two login paths exist:
-- **LSON (type 2):** Full E2EE — generates keypair, exchanges encrypted keychain, enables Curve25519-based message encryption
-- **LSOFF (type 0):** Fallback when LINE error 89 indicates E2EE not supported
-
-Message encryption is hybrid:
-- Pure Go Curve25519 for known key material
-- WASM-transpiled white-box crypto for SKB-wrapped keys
-- V1 (AES-256-CBC + MAC) and V2 encryption schemes
-- Graceful fallback to plaintext when peer/group doesn't support E2EE
-
-### Token Management
-
-`LineClient` implements proactive token refresh based on server-provided duration, with automatic recovery on expiry (refresh token -> re-authentication). Token expiry is detected via LINE error codes 119 and 10051.
-
-## Logging
-
-Uses `zerolog`. Pre-commit hooks enforce: no `Msgf` (use `Msg` with structured fields), use `Stringer` interface where applicable.
+Keep upstream copyright/license notices and protocol provenance. Consult the
+repo-local LINE implementation skill when new behavior needs protocol evidence.
+CLI usage and validation notes are in CLI.md. PLAN.md is local and Git-ignored.

@@ -130,7 +130,7 @@ func (c *Client) registerGroupKey(chat string) error {
 		}
 	}
 	// LINE may omit the caller from MemberMids. Add it explicitly, but reject
-	// empty/self-only maps without the upstream bridge's Matrix fallback.
+	// empty/self-only maps: the CLI has no other source for membership.
 	if len(members) == 0 {
 		return errors.New("complete group membership unavailable; cannot register a group key")
 	}

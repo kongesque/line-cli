@@ -1,16 +1,16 @@
 ---
 name: line-implement
-description: Plans and implements matrix-line bridge features by inspecting bridge code, deriving the missing LINE Chrome Extension evidence, securely capturing/analyzing traffic, and coding behavior to match Chrome. Use when implementing LINE protocol features, mimicking LINE Chrome Extension APIs, or investigating matrix-line behavior from network captures.
+description: Plans and implements LINE CLI CLI features by inspecting CLI code, deriving the missing LINE Chrome Extension evidence, securely capturing/analyzing traffic, and coding behavior to match Chrome. Use when implementing LINE protocol features, mimicking LINE Chrome Extension APIs, or investigating LINE CLI behavior from network captures.
 ---
 
 # Line Implement
 
 ## Quick Start
 
-Use this for the Matrix LINE bridge when a feature goal depends on exact LINE
+Use this for the standalone LINE CLI when a feature goal depends on exact LINE
 Chrome Extension behavior.
 
-1. Confirm the repo is `beeper-line`/`matrix-line-messenger`; read `AGENTS.md`.
+1. Confirm the repo is `kongesque/line-cli`; read `AGENTS.md`.
 2. Treat `.agents` as the repo-local source of truth. Read
    `.agents/commands/line-implement.md` if present. `.claude/commands` may exist
    only as a compatibility symlink to `.agents/commands`.
@@ -24,10 +24,10 @@ Chrome Extension behavior.
 ## Required Loop
 
 1. Convert the user's feature goal into a capture contract.
-2. Compare existing protocol docs and bridge implementation.
+2. Compare existing protocol docs and CLI implementation.
 3. Use secure Chrome/CDP capture only for missing evidence.
 4. Parse and redact captures before quoting, documenting, or sharing details.
-5. Implement the bridge to match Chrome's endpoint, headers, argument shape,
+5. Implement the CLI to match Chrome's endpoint, headers, argument shape,
    response handling, events, and fallback behavior.
 6. Run focused tests plus repo formatting/linting commands.
 

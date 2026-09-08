@@ -39,7 +39,7 @@ func (f Attachment) Validate() error {
 	return nil
 }
 
-// The existing bridge uses FileEncryption HKDF, AES-CTR, then HMAC-SHA256.
+// LINE file encryption uses FileEncryption HKDF, AES-CTR, then HMAC-SHA256.
 func fileKeys(material []byte) (cipher.Block, []byte, []byte, error) {
 	if len(material) != 32 {
 		return nil, nil, nil, errors.New("invalid attachment key material")

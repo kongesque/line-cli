@@ -37,7 +37,7 @@ CHAT accepts a full ID or a unique exact chat name (quote names with spaces).
 Run line chats --help for search, limits, and IDs.
 
 Session secrets use OS-protected credential storage. Passwords are never saved.
-Login uses LINE's Chrome session and may replace an extension/bridge session.
+Login uses LINE's Chrome session and may replace another Chrome-style session.
 Send accepts --file PATH and --reply-to MESSAGE_ID; see line send --help.
 `
 
@@ -164,7 +164,7 @@ func (a *App) Run(args []string) error {
 }
 
 func (a *App) login(email string) error {
-	fmt.Fprintln(a.Err, "Signing in may replace your existing LINE Chrome extension or bridge session.")
+	fmt.Fprintln(a.Err, "Signing in may replace your existing LINE Chrome-style session.")
 	password, err := a.Password()
 	if err != nil {
 		return err

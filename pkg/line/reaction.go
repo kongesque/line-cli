@@ -121,11 +121,3 @@ var PredefinedReactionName = map[int]string{
 	6: "SAD",
 	7: "ANGRY",
 }
-
-func ParseReactionParam2(data string) (*ReactionPayload, error) {
-	var p ReactionPayload
-	if err := json.Unmarshal([]byte(data), &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
-}

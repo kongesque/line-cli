@@ -52,7 +52,7 @@ type Client struct {
 }
 
 type OBSDownloadOptions struct {
-	// MaxBytes bounds the downloaded object when positive; zero preserves bridge behavior.
+	// MaxBytes bounds the downloaded object when positive; zero leaves the object size unbounded.
 	MaxBytes int64
 	TID      string
 	OBSPop   string
@@ -513,7 +513,7 @@ func (c *Client) RefreshAccessToken(refreshToken string) (*TokenV3IssueResult, e
 	// returns HTTP 200 with a non-token body (e.g. an error JSON that doesn't
 	// match TokenV3IssueResult), in which case the unmarshal silently yields a
 	// zeroed struct. Without this guard the caller would clear the in-memory
-	// access token and the bridge would silently go into a "not logged in"
+	// access token and the client would silently go into a "not logged in"
 	// state on the next API call.
 	if res.AccessToken == "" {
 		return nil, fmt.Errorf("refresh response missing access token: %s", string(respBytes))
@@ -847,7 +847,7 @@ func (c *Client) downloadOBSWithServiceAndSIDOptions(ctx context.Context, servic
 
 	// Chrome preflights object_info.obs before downloading media. This is
 	// important because a missing object and an object that is still encoding
-	// require different bridge behavior.
+	// require different client behavior.
 	for attempt := 0; attempt <= obsMaxRetries; attempt++ {
 		err = c.checkOBSObjectReady(ctx, objectInfoURL, obsToken, messageID)
 		if err == nil {

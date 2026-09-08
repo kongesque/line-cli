@@ -30,19 +30,19 @@ Use the provided path to a net-log JSON file. If no path is provided, default to
    - **Secondary API** (`legy-jp.line-apps.com`): Link previews and page info. Compare against `pkg/line/client.go` (GetPageInfo).
 
 4. For each interesting request, explain:
-   - What the bridge equivalent is (or note if it's not implemented yet)
+   - What the CLI equivalent is (or note if it's not implemented yet)
    - The request/response structure
    - Any headers that carry protocol-specific meaning
 
-5. Highlight any **unimplemented** endpoints or behaviors that differ from what the bridge currently does. Cross-reference with `pkg/line/methods.go` and `pkg/connector/`.
+5. Highlight any **unimplemented** endpoints or behaviors that differ from what the CLI currently does. Cross-reference with `pkg/line/methods.go` and `internal/messaging/`.
 
 6. After presenting the analysis, ask the user if they want to clean up the capture files (`/tmp/line-chrome-extension-capture/`). Warn that the raw net-log and parsed output contain sensitive data (auth tokens in `X-Line-Access` headers, message IDs, etc.) and should not be left on disk or committed to the repository. If the user agrees, delete the entire capture directory.
 
 ## LINE protocol context
 
-- The bridge identifies as LINE Chrome Extension: header `x-line-application` contains the app version string.
+- The CLI identifies as LINE Chrome Extension: header `x-line-application` contains the app version string.
 - Thrift RPC uses HTTP POST to `line-chrome-gw.line-apps.com/api/talk/thrift/Talk/<Service>/<Method>`.
 - Auth token is in `x-line-access` header.
 - E2EE messages have `chunks` field containing encrypted content (base64 segments).
-- Operations have numeric `type` codes — see `pkg/connector/sync.go` and `pkg/connector/handle_message.go` for the operation type switch.
+- Operations have numeric `type` codes — see `internal/events/watch.go` and `internal/messaging/client.go` for the operation type switch.
 - Body content in the parsed output may be base64-encoded binary (Thrift serialization). Note the method name from headers rather than trying to decode the binary body.

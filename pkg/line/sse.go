@@ -23,14 +23,10 @@ var ErrSSEIdleTimeout = errors.New("SSE idle timeout")
 const maxSSEErrorBodyBytes = 4096
 
 // LINE advertises a 140s polling timeout. The extra 10s lets a normal
-// server-driven close arrive before the bridge declares the stream idle.
+// server-driven close arrive before the client declares the stream idle.
 const defaultSSEIdleTimeout = 150 * time.Second
 
 var sseIdleTimeout = defaultSSEIdleTimeout
-
-func IsSSEIdleTimeout(err error) bool {
-	return errors.Is(err, ErrSSEIdleTimeout)
-}
 
 // ListenSSE connects to the Event Stream and blocks
 func (c *Client) ListenSSE(ctx context.Context, localRev int64, callback func(event, data string)) error {

@@ -1,13 +1,11 @@
 *.yaml
-!example-config.yaml
 !.pre-commit-config.yaml
 
 *.db*
 *.log*
 
-/matrix-line*
-/start
 /bin/
+/dist/
 
 /docs
 

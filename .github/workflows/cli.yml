@@ -29,13 +29,13 @@ jobs:
           else
             go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
           fi
-          go vet ./internal/... ./cmd/line ./pkg/line
+          go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
       - name: Format and static analysis
         if: runner.os == 'Linux'
         shell: bash
         run: |
           test -z "$(gofmt -l internal cmd/line)"
-          go run honnef.co/go/tools/cmd/staticcheck@latest ./internal/... ./cmd/line ./pkg/line
+          go run honnef.co/go/tools/cmd/staticcheck@latest ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
       - name: Native Linux Secret Service integration
         if: runner.os == 'Linux'
         shell: bash

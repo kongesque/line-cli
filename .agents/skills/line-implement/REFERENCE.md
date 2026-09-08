@@ -12,7 +12,7 @@ Start with:
 - `docs/protocol/endpoints/README.md`
 - `docs/protocol/gap-analysis.md`
 - `pkg/line/methods.go`, `pkg/line/client.go`, `pkg/line/sse.go`
-- likely `pkg/connector/*` files for the Matrix-facing feature
+- likely `internal/cli`, `internal/messaging`, or `internal/events` files for the feature
 
 Do not capture if the current protocol docs already provide enough evidence.
 Use `.agents` as the repo-local source of truth. `.claude/commands` is a
@@ -64,7 +64,7 @@ E2EE metadata.
 - Prefer the persistent dedicated Chrome profile created by `scripts/line-chrome-capture.sh`
   at `~/.cache/line-chrome-extension-capture/chrome-debug-profile`.
 - Ask before using the user's normal Chrome profile.
-- Ask before stopping a running bridge or invalidating an active LINE session.
+- Ask before stopping a running CLI or invalidating an active LINE session.
 - Keep remote debugging local and close Chrome after capture.
 - If the user asks to set up the capture browser, installing the official LINE
   Chrome Extension is in scope. Verify extension ID
@@ -134,7 +134,7 @@ Build an evidence table with:
 - response status, wrapper code/message/data, and important headers
 - SSE/operation event type, params, revisions, message metadata, LOC_KEYs, and
   localRev/chat revision changes
-- Chrome behavior vs bridge behavior
+- Chrome behavior vs CLI behavior
 - implementation delta and files to change
 
 For Thrift payloads, prefer structured decoded data when available. If only
@@ -144,14 +144,14 @@ observable response/event behavior, then map to existing Go request builders.
 ## Implementation Rules
 
 - Put LINE API/client behavior in `pkg/line`.
-- Put Matrix bridge behavior and portal/message handling in `pkg/connector`.
+- Put CLI commands in `internal/cli` and message handling in `internal/messaging`.
 - Keep E2EE behavior in `pkg/e2ee` and avoid editing generated `pkg/ltsm/wbc_generated.go`.
 - Match Chrome's method names, endpoint paths, arg order, header semantics,
   body shape, retry/fallback behavior, and event interpretation.
 - Prefer existing request helpers and local patterns over new abstractions.
 - Add protocol docs for new endpoint behavior using only redacted evidence.
 - Add focused tests for request construction, response parsing, event handling,
-  persistence, and user-visible bridge behavior.
+  persistence, and user-visible CLI behavior.
 
 ## Verification
 

@@ -21,18 +21,6 @@ const obsTokenBuffer = 30 * time.Second
 
 const defaultChannelTokenLifetime = 5 * time.Minute
 
-// InvalidateOBSTokenCache clears the cached OBS access token. The OBS token is
-// derived from the main LINE access token; when the latter is rotated (refresh
-// or re-login) any previously-issued OBS token is invalidated server-side, but
-// the cache here would keep handing it out until its original TTL expires.
-// Callers must invoke this after any successful re-authentication.
-func InvalidateOBSTokenCache() {
-	obsTokenMu.Lock()
-	obsTokenCache = ""
-	obsTokenExpiry = time.Time{}
-	obsTokenMu.Unlock()
-}
-
 // LoginV2 performs the loginV2 RPC call to authenticate a user
 func (c *Client) LoginV2(email, password, certificate, secret string) ([]byte, error) {
 	return c.LoginV2WithType(2, email, password, certificate, secret)
@@ -419,7 +407,7 @@ func (c *Client) UpdateSettingsAttributes2Context(ctx context.Context, reqSeq in
 	}
 	if wrapper.Code != 0 {
 		// Preserve the response data because TalkException details contain the
-		// error code used by connector-level auth recovery.
+		// error code used by caller-level auth recovery.
 		return fmt.Errorf("updateSettingsAttributes2 failed: code %d message %s data %s", wrapper.Code, wrapper.Message, string(wrapper.Data))
 	}
 	return nil
@@ -941,7 +929,7 @@ type ChatInvitationRequest struct {
 	ChatMid string `json:"chatMid"`
 }
 
-// AcceptChatInvitation accepts a pending invitation into a LINE group chat (the bridge user
+// AcceptChatInvitation accepts a pending invitation into a LINE group chat (the account
 // joins the chat).
 func (c *Client) AcceptChatInvitation(reqSeq int64, chatMid string) error {
 	_, err := c.callRPC("TalkService", "acceptChatInvitation", ChatInvitationRequest{ReqSeq: reqSeq, ChatMid: chatMid})
