@@ -20,6 +20,8 @@ type chatAPI struct {
 	nameError error
 }
 
+func (f *chatAPI) GetAllContactIds() ([]string, error) { return nil, nil }
+
 func (f *chatAPI) GetMessageBoxes(options line.MessageBoxesOptions) (*line.MessageBoxesResponse, error) {
 	f.options = append(f.options, options)
 	return &line.MessageBoxesResponse{MessageBoxes: f.boxes}, nil

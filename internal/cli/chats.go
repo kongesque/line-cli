@@ -216,17 +216,29 @@ func (a *App) resolveChat(selector string) (string, error) {
 		return "", err
 	}
 	var matches []string
+	seen := make(map[string]bool)
 	for _, chat := range chats {
 		if strings.EqualFold(chat.Name, selector) {
 			matches = append(matches, chat.ID)
+			seen[chat.ID] = true
+		}
+	}
+	contacts, err := a.contacts()
+	if err != nil {
+		return "", err
+	}
+	for _, contact := range contacts {
+		if strings.EqualFold(contact.EffectiveDisplayName(), selector) && !seen[contact.Mid] {
+			matches = append(matches, contact.Mid)
+			seen[contact.Mid] = true
 		}
 	}
 	switch len(matches) {
 	case 0:
-		return "", errors.New("no chat has that exact name; use line chats --search NAME --show-ids, then copy the full name or ID")
+		return "", errors.New("no chat or contact has that exact name; use line chats --search NAME or line contacts --search NAME --show-ids")
 	case 1:
 		return matches[0], nil
 	default:
-		return "", fmt.Errorf("%d chats have that name; use line chats --search NAME --show-ids and choose a full ID", len(matches))
+		return "", fmt.Errorf("%d chats or contacts have that name; use --show-ids with line chats or line contacts and choose a full ID", len(matches))
 	}
 }

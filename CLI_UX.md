@@ -1,7 +1,10 @@
 # Friendly command-line design
 
-Status: proposed UX; the interactive flows below are not implemented yet.
-Existing commands and JSON contracts remain the compatibility baseline.
+Status: implemented with a line-based chooser. CLI.md is the usage reference.
+Existing command flags and JSON contracts remain the compatibility baseline.
+Human history uses absolute local dates and native terminal wrapping. Chat tables
+retain their established column order and absolute timestamps. Choosers load the
+chat/contact directory once, then filter/page locally without holding a session lock.
 
 ## Core experience
 
@@ -143,7 +146,7 @@ Choose a chat
 
   1  Family group
   2  Alice
-  3  คุณแฟน
+  3  GF
 
 Chat (number or search text): 2
 To: Alice
@@ -199,10 +202,11 @@ operation, detecting an account change instead of sending from the wrong account
 
 ## Implementation order and acceptance
 
-1. Add terminal-aware prompts, email entry, cancellation, and the shared chooser.
-2. Connect bare `messages`/`send` and `send CHAT` to those prompts.
-3. Make account, contacts, and history output readable; add opt-in IDs and sender names.
-4. Simplify help and document installing `line` on PATH.
+1. Done: terminal-aware prompts, email entry, cancellation, and the shared chooser.
+2. Done: bare `messages`/`send` and `send CHAT` use those prompts.
+3. Done: account, contacts, and history output with opt-in IDs and sender names.
+4. Done: core/additional help, install.sh, and PATH documentation.
+5. Added: guided message selection for reactions, downloads, and own-message unsend.
 
 Verify each bare command in a terminal, duplicate names, no matches, Unicode names,
 EOF/Ctrl-C, expired/replaced sessions, and redirected input. Keep fake-API regression

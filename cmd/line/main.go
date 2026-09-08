@@ -48,7 +48,8 @@ func main() {
 	// out of both terminal output and pipelines; CLI errors provide safe context.
 	log.SetOutput(io.Discard)
 	app := &cli.App{
-		Context: ctx, WatchLock: session.WatchLock,
+		Interactive: term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())),
+		Context:     ctx, WatchLock: session.WatchLock,
 		In:  os.Stdin,
 		Out: os.Stdout, Err: os.Stderr, Version: version,
 		Manager: session.NewManager(session.KeychainStore{}), Lock: session.Lock,
@@ -78,6 +79,10 @@ func main() {
 		},
 	}
 	if err := app.Run(os.Args[1:]); err != nil {
+		if errors.Is(err, cli.ErrCancelled) {
+			fmt.Fprintln(os.Stderr, "Cancelled.")
+			return
+		}
 		fmt.Fprintln(os.Stderr, "line:", err)
 		os.Exit(1)
 	}

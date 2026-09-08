@@ -13,15 +13,20 @@ Windows uses the current user's DPAPI credential protection.
 ```sh
 git clone https://github.com/kongesque/line-cli.git
 cd line-cli
-./build.sh
-./bin/line login --email you@example.com
-./bin/line chats
-./bin/line messages "Chat name" --limit 10
-./bin/line send "Chat name" --text "Hello"
+./install.sh
+line login
+line chats
+line messages
+line send
 ```
 
 In Windows PowerShell, build with `go build -trimpath -o bin/line.exe ./cmd/line`
 and run `.\bin\line.exe`.
+
+The installer uses `~/.local/bin`; add it to PATH if the installer reports it is
+missing. Use `./install.sh --force` for updates. You can also keep using
+`./build.sh` and `./bin/line`. Guided prompts require a terminal; explicit flags
+and `--json` remain available for scripts.
 
 Use a unique exact chat name or a full chat ID. Run `line help` or see
 [CLI.md](CLI.md) for all commands, storage setup, JSON output, limits, and validation.

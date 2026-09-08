@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/kongesque/line-cli/internal/messaging"
 )
@@ -32,6 +31,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	var replyTo string
 	var filePath string
 	var attachment *messaging.Attachment
+	showIDs := fs.Bool("show-ids", false, "show message IDs in human output")
 	if command == "messages" {
 		fs.IntVar(&limit, "limit", 20, "recent messages to fetch (1–100)")
 	} else {
@@ -51,9 +51,13 @@ func (a *App) messageCommand(command string, args []string) error {
 	} else if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; place options after the chat name or ID")
 	}
-	if err := validateSelector(chat); err != nil {
-		return err
+	guided := a.Interactive && !*jsonOutput && !stdin
+	if chat != "" || !guided {
+		if err := validateSelector(chat); err != nil {
+			return err
+		}
 	}
+	promptText := false
 	if limit < 1 || limit > 100 {
 		return errors.New("limit must be between 1 and 100")
 	}
@@ -78,9 +82,10 @@ func (a *App) messageCommand(command string, args []string) error {
 				sources++
 			}
 		}
-		if sources != 1 {
+		if sources != 1 && !(sources == 0 && guided) {
 			return errors.New("provide exactly one of --text TEXT, --stdin, or --file PATH")
 		}
+		promptText = sources == 0 && guided
 		if hasFile {
 			file, err := os.Open(filePath)
 			if err != nil {
@@ -119,13 +124,37 @@ func (a *App) messageCommand(command string, args []string) error {
 			}
 			text = string(data)
 		}
-		if attachment == nil {
+		if attachment == nil && !promptText {
 			if err := messaging.ValidateText(text); err != nil {
 				return err
 			}
 		}
 	}
-	unlock, err := a.Lock()
+	displayChat := strings.TrimPrefix(chat, "id:")
+	if guided && (chat == "" || promptText) {
+		var err error
+		chat, displayChat, err = a.selectChat(chat)
+		if err != nil {
+			return err
+		}
+		if promptText {
+			fmt.Fprintln(a.Err, "To: "+terminalText(displayChat))
+			for {
+				text, err = a.ask("Message (Enter to send; Ctrl-C to cancel): ")
+				if err != nil {
+					return err
+				}
+				if strings.TrimSpace(text) != "" {
+					break
+				}
+				fmt.Fprintln(a.Err, "Message cannot be empty.")
+			}
+			if err := messaging.ValidateText(text); err != nil {
+				return err
+			}
+		}
+	}
+	unlock, err := a.lock()
 	if err != nil {
 		return err
 	}
@@ -151,16 +180,19 @@ func (a *App) messageCommand(command string, args []string) error {
 		if *jsonOutput {
 			return a.json(result)
 		}
-		mode := "Letter Sealing"
+		mode := "encrypted"
 		if !result.Encrypted {
-			mode = "plaintext: Letter Sealing unavailable"
+			mode = "not encrypted (Letter Sealing unavailable)"
 		}
-		if result.GroupKeyRegistered {
+		if *showIDs && result.GroupKeyRegistered {
 			mode += "; new group key registered"
-		} else if result.Encrypted && (chatKind(chat) == "Group" || chatKind(chat) == "Room") {
+		} else if *showIDs && result.Encrypted && (chatKind(chat) == "Group" || chatKind(chat) == "Room") {
 			mode += "; existing group key"
 		}
-		_, err = fmt.Fprintf(a.Out, "Sent %s (%s)\n", terminalText(result.ID), mode)
+		_, err = fmt.Fprintf(a.Out, "Sent to %s · %s\n", terminalText(displayChat), mode)
+		if err == nil && *showIDs {
+			_, err = fmt.Fprintln(a.Out, "ID: "+terminalText(result.ID))
+		}
 		return err
 	}
 	messages, err := client.History(chat, limit)
@@ -176,22 +208,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	if *jsonOutput {
 		err = a.json(messages)
 	} else {
-		tw := tabwriter.NewWriter(a.Out, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tFROM\tSTATUS\tTEXT")
-		for _, message := range messages {
-			text := message.Text
-			if message.Status == "attachment" {
-				text = "[file: " + message.FileName + "]"
-			}
-			if message.Status == "unsupported" {
-				text = fmt.Sprintf("[content type %d]", message.ContentType)
-			}
-			if message.Error != "" {
-				text = "[" + message.Error + "]"
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", terminalText(message.ID), terminalText(message.From), message.Status, terminalText(text))
-		}
-		err = tw.Flush()
+		err = a.renderMessages(displayChat, messages, *showIDs)
 	}
 	if err != nil {
 		return err

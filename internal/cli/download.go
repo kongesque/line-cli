@@ -38,14 +38,41 @@ func (a *App) downloadCommand(args []string) error {
 	} else if fs.NArg() != 0 {
 		return errors.New("unexpected download arguments")
 	}
-	if err := validateSelector(chat); err != nil {
-		return err
+	guided := a.Interactive && !*jsonOutput
+	if chat != "" || !guided {
+		if err := validateSelector(chat); err != nil {
+			return err
+		}
 	}
-	if err := messaging.ValidateMessageID(*id); err != nil {
-		return err
+	if *id != "" || !guided {
+		if err := messaging.ValidateMessageID(*id); err != nil {
+			return err
+		}
 	}
-	if *output == "" {
+	if *output == "" && !guided {
 		return errors.New("download requires --output PATH")
+	}
+	if guided && (chat == "" || *id == "" || *output == "") {
+		var err error
+		chat, _, err = a.selectChat(chat)
+		if err != nil {
+			return err
+		}
+		if *id == "" {
+			*id, err = a.selectMessage(chat, "download")
+			if err != nil {
+				return err
+			}
+		}
+		if *output == "" {
+			*output, err = a.ask("Save file to: ")
+			if err != nil {
+				return err
+			}
+			if *output == "" {
+				return errors.New("output path cannot be empty")
+			}
+		}
 	}
 	if _, err := os.Lstat(*output); err == nil {
 		return errors.New("output already exists; choose a new path")
@@ -58,7 +85,7 @@ func (a *App) downloadCommand(args []string) error {
 	}
 	defer os.Remove(f.Name())
 	defer f.Close()
-	unlock, err := a.Lock()
+	unlock, err := a.lock()
 	if err != nil {
 		return err
 	}

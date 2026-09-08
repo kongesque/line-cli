@@ -19,6 +19,55 @@ go build -trimpath -o bin/line ./cmd/line
 Keep the executable at a stable path. macOS may ask you to allow Keychain access;
 rebuilding or moving the binary may cause another access prompt.
 
+To use `line` from any directory on macOS/Linux:
+
+```sh
+./install.sh
+line help
+```
+
+This builds and installs into `~/.local/bin` without changing your shell settings.
+If needed, add `export PATH="$HOME/.local/bin:$PATH"` to your shell configuration.
+Use `./install.sh --force` to update an existing installation or pass a different
+destination directory. On Windows, place `bin/line.exe` in a user-owned directory
+on PATH; PowerShell can invoke it as `line` once that directory is on PATH.
+
+## Guided commands
+
+In an interactive terminal, these commands work without flags:
+
+```sh
+line login
+line whoami
+line contacts
+line chats
+line messages
+line send
+line logout
+```
+
+`login` prompts for an email and masked password; an existing valid session can
+be kept without signing in again. `messages` and `send` offer a searchable chat
+chooser when no chat is given. `send "Alice"` prompts for text. The prompt clearly
+labels Enter as sending; empty input does not send. Ctrl-C, `q` in a chooser, or
+EOF before a completed input line cancels.
+
+Choosers show 20 results at a time. Enter a displayed number, a name search, or
+`/search`; use `n` and `p` for pages and `q` to cancel. `/n`, `/p`, and `/q` search
+those literal names. Numbers apply only to the current page. Duplicate names
+show full IDs for disambiguation. Chat choices include inactive conversations
+and contacts without an existing conversation.
+
+Bare `react`, `unsend`, and `download` also offer chat and message selection.
+Unsend only lists your messages and confirms a message chosen interactively;
+explicit `unsend CHAT --message ID` still executes directly. Downloads prompt
+for a destination and retain their no-overwrite behavior.
+
+Prompts require terminal stdin and stdout. They are disabled for `--json` and
+`--stdin`; scripts must provide missing arguments explicitly. Prompts go to
+stderr. Existing JSON schemas and ordering are preserved. The session lock is
+released during selection and text input, then the account is checked again.
+
 ## Commands
 
 ```sh
@@ -85,7 +134,9 @@ watcher is rejected to protect the shared resume position.
 Initialization and individual key/authentication lookups may briefly return a
 session-busy error to another command; retry that command when the lookup ends.
 
-`messages` reads 1–100 recent messages in the order returned by LINE. It restores
+`messages` reads 1–100 recent messages. JSON retains LINE's ordering; human output
+shows oldest to newest with date separators, sender names, and `You` for the
+current account. `--show-ids` reveals IDs for reply/action targets. It restores
 Letter Sealing keys from credential storage and fetches the exact device/group keys needed
 for each message. Reading does not mark messages read, register group keys, or
 save message history locally. Older messages can remain unreadable when their
@@ -119,7 +170,7 @@ To verify which path a send used, include `--json` and inspect
 `group_key_registered`. `true` means LINE accepted a new group-key registration
 during that send. With `encrypted: true` for a group, `false` means an existing
 key was reused. This field is also `false` for direct sends and sends without
-registration. Human output labels encrypted group sends as either “new group key
+registration. Human output with `send --show-ids` labels encrypted group sends as either “new group key
 registered” or “existing group key.” The field is observational: it does not force
 key creation. Older send results cannot establish which path ran.
 
@@ -129,7 +180,7 @@ because the message may already have been delivered. Sends and key registration
 are not automatically replayed after errors. This version does not persist an
 outbox or provide exactly-once delivery across manual retries.
 
-Choose exactly one of `--text`, `--stdin`, or `--file`. Text input must be nonempty UTF-8 text
+Outside guided text entry, choose exactly one of `--text`, `--stdin`, or `--file`. Text input must be nonempty UTF-8 text
 within the CLI's 10,000 UTF-16-unit limit. Stdin preserves newlines and avoids
 placing the text directly in process arguments or shell history.
 
@@ -207,7 +258,11 @@ identifier are added to credential storage; event payloads are not saved by the 
 
 ## Output
 
-Read commands print tables by default. With `--json`, stdout contains one JSON
+Read commands print readable text by default. `whoami` and `contacts` hide IDs
+unless `--show-ids` is supplied. Contacts show 20 names by default, support
+`--search TEXT` and `--limit N` (`0` for all), and remain unlimited in JSON unless
+a limit is explicit. Message text preserves line breaks and wraps in the terminal.
+With `--json`, stdout contains one JSON
 value and stderr contains diagnostics. Empty lists are `[]`. Errors return exit
 status 1; help and successful commands return 0.
 
