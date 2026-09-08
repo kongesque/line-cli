@@ -38,6 +38,38 @@ for login approval. This CLI currently stores **one account** per OS user.
 
 ## Install
 
+### Download a release (no Go required)
+
+Download an archive from [GitHub Releases](https://github.com/kongesque/line-cli/releases/latest).
+Choose `darwin` for macOS, `linux` for Linux, or `windows` for Windows. Choose
+`arm64` for Apple Silicon/ARM64, or `amd64` for Intel/AMD 64-bit computers.
+
+Extract the archive into a new directory. For example, on an Apple Silicon Mac:
+
+```sh
+mkdir line-cli-release
+tar -xzf ~/Downloads/line-darwin-arm64.tar.gz -C line-cli-release
+cd line-cli-release
+shasum -a 256 -c SHA256SUMS
+mkdir -p "$HOME/.local/bin"
+install -m 755 line "$HOME/.local/bin/line"
+export PATH="$HOME/.local/bin:$PATH"
+line version
+```
+
+On Linux, substitute your Linux archive and use `sha256sum -c SHA256SUMS`.
+You still need the Secret Service setup described below. On Windows, extract
+with `tar -xzf .\line-windows-amd64.tar.gz`, compare `Get-FileHash .\line.exe
+-Algorithm SHA256` with `SHA256SUMS`, and move `line.exe` into a directory on your
+user Path. The PowerShell section below shows a suitable directory.
+
+The install command replaces an existing binary at that path. The archives also
+include the user guide and license. Binaries are unsigned and not notarized;
+macOS may require approval in Privacy & Security before first use. Keep the
+binary at a stable path for Keychain access. Source builds remain an option below.
+
+### Build from source
+
 Building from source requires **Git and Go 1.26 or newer**. Check Go with
 `go version`. The commands below install the executable; they do not sign in or
 send messages. Shell examples use zsh/bash unless labeled PowerShell.
@@ -140,7 +172,7 @@ The installer refuses to replace an existing executable unless you pass `--force
 The [release workflow](.github/workflows/cli-release.yml) can build amd64 and
 arm64 archives for macOS, Linux, and Windows on a `cli-v*` tag or manual dispatch.
 When a run provides artifacts, extract its `.tar.gz` archive before using the
-binary. It includes `LICENSE`, `CLI.md`, and `SHA256SUMS` for the executable.
+binary. It includes `LICENSE`, `README.md`, `CLI.md`, and `SHA256SUMS` for the executable.
 These are workflow artifacts, not automatically published GitHub Releases.
 The workflow does not sign or notarize binaries.
 
