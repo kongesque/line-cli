@@ -1,8 +1,9 @@
-# LINE CLI
+# LINE CLI: Personal LINE Messaging from the Terminal
 
-LINE CLI is an unofficial command-line client for personal LINE accounts.
+**LINE CLI** is an unofficial command-line client for personal LINE accounts.
 Use LINE from your terminal to read and send messages, share files, reply,
-react, unsend, watch live events, and automate workflows with JSON.
+react, unsend, watch live events, and automate scripts and AI agent workflows
+with JSON.
 
 Unlike LINE Messaging API tools, LINE CLI works with your personal LINE account
 rather than a bot account.
