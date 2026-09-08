@@ -60,15 +60,17 @@ brew upgrade line-cli
 ### Linux and Windows
 
 Download the archive for your operating system and architecture from
-[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest). Verify
-the included `SHA256SUMS` before installing `line` or `line.exe`.
+[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest).
+Download `SHA256SUMS.txt` from the same release to verify the archive. After
+extracting it, use the included `SHA256SUMS` to verify `line` or `line.exe`.
+See the [release installation guide](CLI.md#install-release-binaries) for commands.
 
 Release binaries are currently unsigned. macOS users should prefer Homebrew;
 browser-downloaded macOS binaries require manual approval in Privacy & Security.
 
 ### Build from source
 
-Building requires Git and Go 1.26 or newer:
+Building requires Git and Go 1.26 or newer. On macOS/Linux:
 
 ```sh
 git clone https://github.com/kongesque/line-cli.git
@@ -76,6 +78,9 @@ cd line-cli
 ./install.sh
 line help
 ```
+
+On Windows, use the [PowerShell build and install commands](CLI.md#windows-powershell).
+`install.sh` requires a POSIX shell and does not run natively in PowerShell.
 
 See the [installation guide](CLI.md#build) for Linux keyring requirements,
 Windows PowerShell instructions, PATH setup, and manual builds.

@@ -62,8 +62,9 @@ brew upgrade line-cli
 
 ดาวน์โหลดไฟล์สำหรับระบบปฏิบัติการและสถาปัตยกรรมของคุณจาก
 [GitHub Releases](https://github.com/kongesque/line-cli/releases/latest)
-ตรวจสอบความถูกต้องด้วยไฟล์ `SHA256SUMS` ที่แนบมาก่อนติดตั้ง `line` หรือ
-`line.exe`
+ดาวน์โหลด `SHA256SUMS.txt` จากรีลีสเดียวกันเพื่อตรวจสอบไฟล์ archive
+หลังแตกไฟล์แล้ว ใช้ `SHA256SUMS` ที่อยู่ภายในเพื่อตรวจสอบ `line` หรือ `line.exe`
+ดูคำสั่งได้ใน[คู่มือการติดตั้งจากรีลีส](CLI.md#install-release-binaries)
 
 ไฟล์ไบนารีของรีลีสยังไม่มีลายเซ็น ผู้ใช้ macOS ควรติดตั้งผ่าน Homebrew
 ส่วนไฟล์ไบนารีสำหรับ macOS ที่ดาวน์โหลดผ่านเบราว์เซอร์จะต้องอนุญาตด้วยตนเองใน
@@ -71,7 +72,7 @@ Privacy & Security
 
 ### สร้างจากซอร์สโค้ด
 
-ต้องติดตั้ง Git และ Go 1.26 ขึ้นไป:
+ต้องติดตั้ง Git และ Go 1.26 ขึ้นไป สำหรับ macOS/Linux:
 
 ```sh
 git clone https://github.com/kongesque/line-cli.git
@@ -79,6 +80,9 @@ cd line-cli
 ./install.sh
 line help
 ```
+
+สำหรับ Windows ให้ใช้[คำสั่ง build และติดตั้งด้วย PowerShell](CLI.md#windows-powershell)
+สคริปต์ `install.sh` ต้องใช้ POSIX shell และไม่สามารถรันใน PowerShell ได้โดยตรง
 
 ดูข้อกำหนดเกี่ยวกับ keyring บน Linux วิธีใช้ PowerShell บน Windows
 การตั้งค่า PATH และการสร้างด้วยตนเองได้ที่

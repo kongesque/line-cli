@@ -20,6 +20,10 @@ Requirements: Go 1.26 or newer. macOS builds also need Xcode Command Line Tools
 (`xcode-select --install`) and CGO for Keychain access. Linux and Windows builds
 support `CGO_ENABLED=0`. The CLI does not require libolm or a Matrix server.
 
+### macOS/Linux
+
+From the repository directory:
+
 ```sh
 go build -trimpath -o bin/line ./cmd/line
 ./bin/line help
@@ -38,8 +42,94 @@ line help
 This builds and installs into `~/.local/bin` without changing your shell settings.
 If needed, add `export PATH="$HOME/.local/bin:$PATH"` to your shell configuration.
 Use `./install.sh --force` to update an existing installation or pass a different
-destination directory. On Windows, place `bin/line.exe` in a user-owned directory
-on PATH; PowerShell can invoke it as `line` once that directory is on PATH.
+destination directory.
+
+### Windows PowerShell
+
+Install Git and Go 1.26 or newer, then run these commands in PowerShell.
+`build.sh` and `install.sh` require a POSIX shell and do not run natively in
+PowerShell.
+
+```powershell
+git clone https://github.com/kongesque/line-cli.git
+if ($LASTEXITCODE -ne 0) { throw "Clone failed" }
+Set-Location line-cli -ErrorAction Stop
+$env:CGO_ENABLED = "0"
+go build -trimpath -o .\bin\line.exe ./cmd/line
+if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+.\bin\line.exe help
+```
+
+Go builds for the host architecture by default (amd64 or ARM64). To install the
+binary in a user-owned directory and make `line` available on PATH:
+
+```powershell
+$installDir = Join-Path $env:LOCALAPPDATA "line-cli\bin"
+New-Item -ItemType Directory -Force -Path $installDir -ErrorAction Stop | Out-Null
+Copy-Item .\bin\line.exe (Join-Path $installDir "line.exe") -ErrorAction Stop
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($installDir -notin ($userPath -split ';')) {
+    [Environment]::SetEnvironmentVariable("Path", "$installDir;$userPath", "User")
+}
+if ($installDir -notin ($env:Path -split ';')) {
+    $env:Path = "$installDir;$env:Path"
+}
+line help
+```
+
+This updates the current PowerShell session and the user PATH for future sessions.
+Copying the binary again replaces an existing installation.
+
+## Install release binaries
+
+Download the archive for your OS and CPU architecture (amd64 for x64, arm64 for
+ARM64), plus `SHA256SUMS.txt`, from the same
+[GitHub Release](https://github.com/kongesque/line-cli/releases/latest).
+`SHA256SUMS.txt` verifies the compressed archives. The `SHA256SUMS` file inside
+each archive verifies only the extracted `line` or `line.exe` binary.
+
+On Linux, from the download directory (change `amd64` to `arm64` as needed):
+
+```sh
+archive=line-linux-amd64.tar.gz
+awk -v archive="$archive" '$2 == archive' SHA256SUMS.txt > "$archive.sha256"
+sha256sum -c "$archive.sha256" &&
+mkdir -p line-release &&
+tar -xzf "$archive" -C line-release &&
+(cd line-release && sha256sum -c SHA256SUMS) &&
+mkdir -p "$HOME/.local/bin" &&
+install -m 755 line-release/line "$HOME/.local/bin/line"
+```
+
+If needed, add `export PATH="$HOME/.local/bin:$PATH"` to your shell configuration.
+
+On Windows, run this in PowerShell from the download directory (change `amd64`
+to `arm64` as needed). It uses the `tar.exe` included in current Windows versions:
+
+```powershell
+$archive = "line-windows-amd64.tar.gz"
+$entry = @(Get-Content .\SHA256SUMS.txt -ErrorAction Stop | Where-Object {
+    ($_ -split '\s+')[1] -eq $archive
+})
+if ($entry.Count -ne 1) { throw "Expected one archive checksum" }
+$expected = ($entry[0] -split '\s+')[0]
+if ((Get-FileHash $archive -Algorithm SHA256 -ErrorAction Stop).Hash -ne $expected) {
+    throw "Archive checksum mismatch"
+}
+New-Item -ItemType Directory -Force -Path .\line-release -ErrorAction Stop | Out-Null
+tar.exe -xzf $archive -C .\line-release
+if ($LASTEXITCODE -ne 0) { throw "Extraction failed" }
+$expected = ((Get-Content .\line-release\SHA256SUMS -ErrorAction Stop) -split '\s+')[0]
+if ((Get-FileHash .\line-release\line.exe -Algorithm SHA256 -ErrorAction Stop).Hash -ne $expected) {
+    throw "Binary checksum mismatch"
+}
+.\line-release\line.exe help
+```
+
+Then use the [PowerShell installation commands](#windows-powershell) above,
+replacing the `Copy-Item` source `.\bin\line.exe` with `.\line-release\line.exe`.
+
+Keep the binary in a stable location and run `line help` to check the installation.
 
 ## Guided commands
 
@@ -374,8 +464,9 @@ is tracked in the local, Git-ignored `PLAN.md`.
 Windows. The separate `cli-release.yml` workflow builds amd64/arm64 artifacts
 for all three platforms on a `cli-v*` tag or manual dispatch. Each artifact
 contains a `.tar.gz` archive with the executable, license, usage guide, and
-SHA-256 checksum. Extract the archive before running the CLI; Unix executable
-permissions are preserved inside it. These are
+`SHA256SUMS` for the extracted executable. Published GitHub Releases also provide
+`SHA256SUMS.txt` for the archives themselves. Extract the archive before running
+the CLI; Unix executable permissions are preserved inside it. These are
 workflow artifacts; the workflow does not publish a GitHub Release or sign/notarize
 binaries. Only the standalone CLI is built and distributed; the inherited Matrix
 connector, Docker deployment, and registry workflows have been removed.
