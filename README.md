@@ -1,32 +1,41 @@
 # LINE CLI
 
-> [!IMPORTANT]
-> LINE allows one Chrome-style session. Signing in with `line` may replace an
-> existing LINE Chrome extension or another Chrome-style client session. The CLI
-> stores one account per OS user.
+LINE CLI is an unofficial command-line client for personal LINE accounts.
+Use LINE from your terminal to read and send messages, share files, reply,
+react, unsend, watch live events, and automate workflows with JSON.
 
-`line` is an unofficial LINE client for the command line. It brings your personal
-LINE account to the terminal so you can find conversations, read and send
-messages, share files, reply, react, unsend, and watch live events.
+Unlike LINE Messaging API tools, LINE CLI works with your personal LINE account
+rather than a bot account.
 
 ![LINE CLI for personal LINE messaging from the terminal](banner.png)
-
-LINE CLI supports macOS, Linux, and Windows, with Letter Sealing end-to-end
-encryption and native credential storage.
 
 [![CI](https://github.com/kongesque/line-cli/actions/workflows/cli.yml/badge.svg)](https://github.com/kongesque/line-cli/actions/workflows/cli.yml)
 [![Release](https://img.shields.io/github/v/release/kongesque/line-cli?filter=cli-v*&label=release)](https://github.com/kongesque/line-cli/releases/latest)
 [![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+LINE CLI supports macOS, Linux, and Windows, with Letter Sealing end-to-end
+encryption and native credential storage.
+
+> [!IMPORTANT]
+> LINE allows one Chrome-style session. Signing in with `line` may replace an
+> existing LINE Chrome extension or another Chrome-style client session. The CLI
+> stores one account per OS user.
+
 ## What it does
 
-- Guided chat selection for interactive terminal use
-- Contact and conversation search with recent message history
-- Text, multiline messages, replies, and generic files up to 20 MiB
-- Standard reactions and message unsend
-- JSON output for scripts and resumable NDJSON live events
-- Native credential storage through Keychain, Secret Service, or DPAPI
+- Use your personal LINE account directly from the terminal
+- Find contacts, groups, and conversations
+- Read recent message history
+- Send text and multiline messages
+- Send generic files up to 20 MiB
+- Reply to existing messages
+- Add or remove standard reactions
+- Unsend your own messages
+- Stream live LINE events as NDJSON
+- Produce JSON output for shell scripts and automation
+- Protect saved sessions with native OS credential storage
+- Use Letter Sealing encryption when supported by the conversation
 
 ## Install LINE CLI
 
