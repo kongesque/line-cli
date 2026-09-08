@@ -1,5 +1,7 @@
 # LINE CLI: Personal LINE Messaging from the Terminal
 
+[ภาษาไทย](README.th.md) | English
+
 **LINE CLI** is an unofficial command-line client for personal LINE accounts.
 Use LINE from your terminal to read and send messages, share files, reply,
 react, unsend, watch live events, and automate scripts and AI agent workflows
