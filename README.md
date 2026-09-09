@@ -1,6 +1,6 @@
 # LINE CLI: Personal LINE Messaging from the Terminal
 
-[ภาษาไทย](README.th.md) | English
+[繁體中文（台灣）](README.zh-TW.md) | [ภาษาไทย](README.th.md) | English
 
 **LINE CLI** is an unofficial command-line client for personal LINE accounts.
 Use LINE from your terminal to read and send messages, share files, reply,
@@ -42,7 +42,32 @@ encryption and native credential storage.
 
 ## Install LINE CLI
 
-### macOS with Homebrew
+### macOS and Linux
+
+Install the latest release with one command:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-release.sh | sh
+```
+
+The installer detects your OS and CPU architecture, verifies the release
+checksum, installs `line` into `~/.local/bin`, and configures `PATH` for common
+shells. Reopen your terminal if the installer asks you to.
+
+On Linux, install credential storage before `line login`. On Debian/Ubuntu:
+
+```sh
+sudo apt install libsecret-tools gnome-keyring
+```
+
+The Secret Service keyring must be running and unlocked in the same D-Bus session.
+
+> [!IMPORTANT]
+> On SSH/headless Linux, installing the packages alone is insufficient. Without
+> an unlocked Secret Service in the CLI's D-Bus session, login fails after phone
+> verification with `could not save Secret Service`.
+
+Homebrew is also available on macOS:
 
 ```sh
 brew install kongesque/tap/line-cli
@@ -57,32 +82,18 @@ Upgrade later with:
 brew upgrade line-cli
 ```
 
-### Linux
-
-Download the Linux archive and `SHA256SUMS.txt` from
-[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest), then follow
-the [Linux installation commands](CLI.md#install-release-binaries).
-
-Before `line login`, install credential storage. On Debian/Ubuntu:
-
-```sh
-sudo apt install libsecret-tools gnome-keyring
-```
-
-The Secret Service keyring must be running and unlocked in the same D-Bus session.
-
-> [!IMPORTANT]
-> On SSH/headless Linux, installing the packages alone is insufficient. Without
-> an unlocked Secret Service in the CLI's D-Bus session, login fails after phone
-> verification with `could not save Secret Service`.
-
 ### Windows (PowerShell)
 
-Download the Windows archive and `SHA256SUMS.txt` from
-[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest), then follow
-the [Windows PowerShell installation commands](CLI.md#install-release-binaries).
+Run this command in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-release.ps1 | iex
+```
+
+The installer detects your CPU architecture, verifies the release checksum,
+installs `line.exe` into your user profile, and adds it to your user `PATH`.
 Windows uses built-in DPAPI, so no keyring package is required. Release binaries
-are currently unsigned.
+are currently unsigned. If `line` is not immediately available, reopen PowerShell.
 
 ### Build from source
 
@@ -95,12 +106,12 @@ cd line-cli
 line help
 ```
 
-On Windows, use the [PowerShell build and install commands](CLI.md#windows-powershell).
+On Windows, use the [PowerShell build commands](CLI.md#build-from-source).
 `install.sh` requires a POSIX shell and does not run natively in PowerShell.
 
-Source builds have the same [Linux keyring requirements](#linux).
-See the [installation guide](CLI.md#build) for Windows PowerShell instructions,
-PATH setup, and manual builds.
+Source builds have the same Linux keyring requirements described above.
+See the [source-build guide](CLI.md#build-from-source) for Windows PowerShell
+instructions and contributor checks.
 
 ## Use LINE from the terminal
 

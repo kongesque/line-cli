@@ -61,3 +61,10 @@ jobs:
       - name: Build CLI
         shell: bash
         run: go build -trimpath -o bin/ ./cmd/line
+      - name: Validate POSIX installer
+        shell: bash
+        run: sh -n scripts/install-release.sh
+      - name: Validate PowerShell installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '[scriptblock]::Create((Get-Content -Raw scripts/install-release.ps1)) | Out-Null'

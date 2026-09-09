@@ -19,7 +19,7 @@ jobs:
           - {os: windows-latest, target: windows, arch: amd64, cgo: '0'}
           - {os: windows-latest, target: windows, arch: arm64, cgo: '0'}
           - {os: macos-latest, target: darwin, arch: arm64, cgo: '1'}
-          - {os: macos-latest, target: darwin, arch: amd64, cgo: '1'}
+          - {os: macos-15-intel, target: darwin, arch: amd64, cgo: '1'}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -52,3 +52,28 @@ jobs:
           name: line-${{ matrix.target }}-${{ matrix.arch }}
           path: line-${{ matrix.target }}-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: line-*
+          path: dist
+          merge-multiple: true
+      - name: Create archive checksums
+        working-directory: dist
+        run: sha256sum line-*.tar.gz > SHA256SUMS.txt
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          dist/line-*.tar.gz dist/SHA256SUMS.txt
+          --verify-tag
+          --generate-notes
+          --title "LINE CLI $GITHUB_REF_NAME"
