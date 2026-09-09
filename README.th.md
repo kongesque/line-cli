@@ -58,17 +58,32 @@ Homebrew จะสร้างรีลีสที่ติดแท็กจ�
 brew upgrade line-cli
 ```
 
-### Linux และ Windows
+### Linux
 
-ดาวน์โหลดไฟล์สำหรับระบบปฏิบัติการและสถาปัตยกรรมของคุณจาก
-[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest)
-ดาวน์โหลด `SHA256SUMS.txt` จากรีลีสเดียวกันเพื่อตรวจสอบไฟล์ archive
-หลังแตกไฟล์แล้ว ใช้ `SHA256SUMS` ที่อยู่ภายในเพื่อตรวจสอบ `line` หรือ `line.exe`
-ดูคำสั่งได้ใน[คู่มือการติดตั้งจากรีลีส](CLI.md#install-release-binaries)
+ดาวน์โหลดไฟล์ Linux และ `SHA256SUMS.txt` จาก
+[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest) แล้วทำตาม
+[คำสั่งติดตั้งสำหรับ Linux](CLI.md#install-release-binaries)
 
-ไฟล์ไบนารีของรีลีสยังไม่มีลายเซ็น ผู้ใช้ macOS ควรติดตั้งผ่าน Homebrew
-ส่วนไฟล์ไบนารีสำหรับ macOS ที่ดาวน์โหลดผ่านเบราว์เซอร์จะต้องอนุญาตด้วยตนเองใน
-Privacy & Security
+ก่อนรัน `line login` ให้ติดตั้งที่เก็บข้อมูลรับรอง สำหรับ Debian/Ubuntu:
+
+```sh
+sudo apt install libsecret-tools gnome-keyring
+```
+
+Secret Service keyring ต้องทำงานและปลดล็อกอยู่ใน D-Bus session เดียวกัน
+
+> [!IMPORTANT]
+> สำหรับ Linux ผ่าน SSH หรือแบบ headless การติดตั้งแพ็กเกจอย่างเดียวไม่เพียงพอ
+> หากไม่มี Secret Service ที่ปลดล็อกใน D-Bus session ของ CLI การเข้าสู่ระบบจะ
+> ล้มเหลวหลังยืนยันบนโทรศัพท์ด้วย `could not save Secret Service`
+
+### Windows (PowerShell)
+
+ดาวน์โหลดไฟล์ Windows และ `SHA256SUMS.txt` จาก
+[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest) แล้วทำตาม
+[คำสั่งติดตั้งด้วย Windows PowerShell](CLI.md#install-release-binaries)
+Windows ใช้ DPAPI ที่มีในระบบเพื่อปกป้องข้อมูลรับรองของผู้ใช้ Windows ปัจจุบัน
+จึงไม่ต้องติดตั้งแพ็กเกจ keyring เพิ่มเติม ไฟล์ไบนารีของรีลีสยังไม่มีลายเซ็น
 
 ### สร้างจากซอร์สโค้ด
 
@@ -84,8 +99,8 @@ line help
 สำหรับ Windows ให้ใช้[คำสั่ง build และติดตั้งด้วย PowerShell](CLI.md#windows-powershell)
 สคริปต์ `install.sh` ต้องใช้ POSIX shell และไม่สามารถรันใน PowerShell ได้โดยตรง
 
-ดูข้อกำหนดเกี่ยวกับ keyring บน Linux วิธีใช้ PowerShell บน Windows
-การตั้งค่า PATH และการสร้างด้วยตนเองได้ที่
+การสร้างจากซอร์สโค้ดมี[ข้อกำหนดเกี่ยวกับ keyring บน Linux](#linux) เหมือนกัน
+ดูวิธีใช้ PowerShell บน Windows การตั้งค่า PATH และการสร้างด้วยตนเองได้ที่
 [คู่มือการติดตั้ง](CLI.md#build)
 
 ## ใช้งาน LINE จากเทอร์มินัล

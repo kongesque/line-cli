@@ -57,16 +57,32 @@ Upgrade later with:
 brew upgrade line-cli
 ```
 
-### Linux and Windows
+### Linux
 
-Download the archive for your operating system and architecture from
-[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest).
-Download `SHA256SUMS.txt` from the same release to verify the archive. After
-extracting it, use the included `SHA256SUMS` to verify `line` or `line.exe`.
-See the [release installation guide](CLI.md#install-release-binaries) for commands.
+Download the Linux archive and `SHA256SUMS.txt` from
+[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest), then follow
+the [Linux installation commands](CLI.md#install-release-binaries).
 
-Release binaries are currently unsigned. macOS users should prefer Homebrew;
-browser-downloaded macOS binaries require manual approval in Privacy & Security.
+Before `line login`, install credential storage. On Debian/Ubuntu:
+
+```sh
+sudo apt install libsecret-tools gnome-keyring
+```
+
+The Secret Service keyring must be running and unlocked in the same D-Bus session.
+
+> [!IMPORTANT]
+> On SSH/headless Linux, installing the packages alone is insufficient. Without
+> an unlocked Secret Service in the CLI's D-Bus session, login fails after phone
+> verification with `could not save Secret Service`.
+
+### Windows (PowerShell)
+
+Download the Windows archive and `SHA256SUMS.txt` from
+[GitHub Releases](https://github.com/kongesque/line-cli/releases/latest), then follow
+the [Windows PowerShell installation commands](CLI.md#install-release-binaries).
+Windows uses built-in DPAPI, so no keyring package is required. Release binaries
+are currently unsigned.
 
 ### Build from source
 
@@ -82,8 +98,9 @@ line help
 On Windows, use the [PowerShell build and install commands](CLI.md#windows-powershell).
 `install.sh` requires a POSIX shell and does not run natively in PowerShell.
 
-See the [installation guide](CLI.md#build) for Linux keyring requirements,
-Windows PowerShell instructions, PATH setup, and manual builds.
+Source builds have the same [Linux keyring requirements](#linux).
+See the [installation guide](CLI.md#build) for Windows PowerShell instructions,
+PATH setup, and manual builds.
 
 ## Use LINE from the terminal
 
