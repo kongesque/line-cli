@@ -1,6 +1,6 @@
 # LINE CLI：在終端機使用個人 LINE 帳號
 
-繁體中文（台灣） | [ภาษาไทย](README.th.md) | [English](README.md)
+繁體中文（台灣） | [ภาษาไทย](README.th.md) | [日本語](README.ja.md) | [English](README.md)
 
 **LINE CLI** 是一套非官方的個人 LINE 帳號指令列用戶端。你可以直接在
 終端機讀取與傳送訊息、分享檔案、回覆、加入表情回應、收回訊息、監看
@@ -37,7 +37,7 @@ LINE CLI 支援 macOS、Linux 與 Windows，並提供 Letter Sealing 端對端�
 - 以 NDJSON 串流接收即時 LINE 事件
 - 輸出 JSON，供 shell 指令稿與自動化流程使用
 - 使用作業系統原生的認證資料儲存機制保護已儲存的工作階段
-- 在聊天室支援時使用 Letter Sealing 加密
+- 若聊天室支援，則使用 Letter Sealing 加密
 
 ## 安裝 LINE CLI
 
@@ -49,7 +49,7 @@ LINE CLI 支援 macOS、Linux 與 Windows，並提供 Letter Sealing 端對端�
 curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-release.sh | sh
 ```
 
-安裝程式會自動偵測作業系統與 CPU 架構、驗證版本校驗碼、將 `line` 安裝到
+安裝程式會自動偵測作業系統與 CPU 架構、驗證發行檔的檢查碼、將 `line` 安裝到
 `~/.local/bin`，並為常見 shell 設定 `PATH`。如果安裝程式提示，請重新開啟終端機。
 
 在 Linux 執行 `line login` 前，請先安裝認證資料儲存工具。Debian／Ubuntu 可執行：
@@ -88,7 +88,7 @@ brew upgrade line-cli
 irm https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-release.ps1 | iex
 ```
 
-安裝程式會自動偵測 CPU 架構、驗證版本校驗碼、將 `line.exe` 安裝到使用者
+安裝程式會自動偵測 CPU 架構、驗證發行檔的檢查碼、將 `line.exe` 安裝到使用者
 設定檔，並加入使用者的 `PATH`。
 Windows 使用內建的 DPAPI，因此不需要額外安裝金鑰圈套件。目前發布的
 執行檔尚未經過數位簽署。如果無法立即執行 `line`，請重新開啟 PowerShell。
@@ -112,8 +112,8 @@ Windows 請使用 [PowerShell 建置指令](CLI.md#build-from-source)。
 
 ## 在終端機使用 LINE
 
-你的 LINE 帳號必須先設定電子郵件地址與密碼。登入流程會在終端機中互動，
-並需要使用手機核准。
+你的 LINE 帳號必須先設定電子郵件地址與密碼。登入採互動式流程，且需在
+手機上核准。
 
 ```sh
 line login
@@ -123,8 +123,8 @@ line messages "Family group" --limit 10
 line send "Alice" --text "Hello!"
 ```
 
-以參數指定名稱時，名稱必須完整相符且沒有重複。若要透過互動介面選擇
-聊天室，執行指令時不要提供目標：
+以參數指定名稱時，名稱必須完全相符，且不得與其他名稱重複。若要透過
+互動介面選擇聊天室，執行指令時不要提供目標：
 
 ```sh
 line messages
@@ -162,7 +162,7 @@ JSON 資料會輸出至 stdout，診斷訊息則輸出至 stderr。匯出的訊�
 
 ## 安全性與隱私權
 
-當帳號與聊天室支援時，LINE CLI 會使用 Letter Sealing。若金鑰遺失、格式
+若帳號與聊天室皆支援，LINE CLI 會使用 Letter Sealing。若缺少金鑰、格式
 錯誤或網路傳輸失敗，原應加密的訊息不會在未告知的情況下改用明文傳送。
 傳送結果會顯示是否使用加密。
 
@@ -203,7 +203,7 @@ CI 會在 Linux、macOS 與 Windows 上執行，並包含各平台原生認證�
 
 ## 授權與來源
 
-LINE CLI 與 LINE 無關，也未獲得 LINE 認可。本專案衍生自
+LINE CLI 並非 LINE 官方產品，亦未獲得 LINE 認可。本專案衍生自
 [beeper/line](https://github.com/beeper/line)；共用的通訊協定與密碼學程式碼
 保留上游的著作權聲明及來源資訊。本專案不包含 Matrix connector 與 Beeper
 部署環境。
