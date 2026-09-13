@@ -32,6 +32,8 @@ unchanged. Results certify only the tested behavior and configuration.
 | Temporarily removed VM host secret | Existing fixture rejected; restoring the original secret restored access |
 | Reboot, boot-time system unit | Same pre-reboot fixture verified; different Linux boot ID |
 | Reboot, real cron daemon | Same pre-reboot fixture verified; different Linux boot ID |
+| Clean VM power-off followed by cold start | Original host-only and software-TPM fixtures verified |
+| Full disk copy booted in a separate VM | Original host-only fixture verified through a boot unit; JSON result collected from the VM console |
 
 The broker uses `Accept=yes` and per-connection service instances. There is no
 singleton `systemd-creds.service` to stop on this distribution. Socket denial,
@@ -75,9 +77,19 @@ initramfs for VMware NVMe compatibility.
 | Ubuntu 26.04.1 LTS (Resolute) | `7.0.0-31-generic` | `259.5-0ubuntu3.4` | Native baseline, exact round trips and negative checks passed; `host+tpm2` still returned verified `host-user` |
 | Ubuntu 24.04.4 LTS (Noble) | `6.8.0-139-generic` | `255.4-1ubuntu8.17` | Rejected before encryption: user-scoped broker feature floor was unavailable and the broker socket was absent |
 
-The Ubuntu 26.04 guest was not used to claim reboot or TPM evidence; those
-checks are represented by the Debian 13 results above. Ubuntu 24.04 confirms
-that the version floor is a runtime gate rather than a package-family guess.
+Ubuntu 26.04 additionally passed the readable wrong-UID fixture, system unit,
+socket sandbox, absent broker, and host-secret-loss checks with successful
+restoration controls. After reboot, a boot unit and real cron both verified the
+original fixture with a changed boot ID; `user@1001.service` remained inactive.
+No Ubuntu TPM claim is made. Ubuntu 24.04 confirms that the version floor is a
+runtime gate rather than a package-family guess.
+
+The Debian disk-copy result demonstrates the host-only limitation directly:
+the copied filesystem includes the system host secret and Unix account identity,
+so the original host-only credential remains recoverable. The software TPM state
+also lives on that VM disk; this experiment does not establish TPM-bound
+disk-copy resistance. Cold start means a guest power-off/power-on through the
+hypervisor, not a physical machine power cycle.
 
 ## Reproduction boundaries
 

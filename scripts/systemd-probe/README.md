@@ -2,8 +2,9 @@
 
 This experiment is separate from `cmd/line` and `internal/session`. It does not
 read LINE sessions, access Secret Service, contact LINE, or implement a storage
-backend. All keys are newly generated synthetic 32-byte values. No key, encrypted credential, raw helper diagnostic, or credential fingerprint
-is printed. Normal runs save nothing; explicit fixture enrollment persists only
+backend. All keys are newly generated synthetic 32-byte values. No key, encrypted
+credential, raw helper diagnostic, or credential fingerprint is printed.
+Normal runs save nothing; explicit fixture enrollment persists only
 the synthetic sealed blob, boot ID, and random-key digest for later verification.
 
 Run the native probe only in a **disposable booted Linux test environment**. Even
@@ -20,9 +21,10 @@ without separately arranging an appropriate test environment.
 | --- | --- |
 | Upstream credential format and user broker source | Inspected v257 format and v259 client; source links below |
 | Bounded header parser and helper subprocess | Implemented as experimental probe code |
-| Linux native user-scope round trip | Passed on Debian 13; see `RUNTIME.md` for exact build and limits |
-| Wrong-user and broker-isolation runtime checks | Passed on Debian 13, including readable wrong-UID fixture |
-| Reboot with the same enrolled blob | Passed on Debian 13 from a system unit and real cron |
+| Linux native user-scope round trip | Passed on Debian 13 and Ubuntu 26.04; Ubuntu 24.04 rejected |
+| Wrong-user and broker-isolation runtime checks | Passed on Debian 13 and Ubuntu 26.04, including readable wrong-UID fixtures |
+| Reboot with the same enrolled blob | Passed on both candidates from a system unit and real cron; Debian VM cold start also passed |
+| Complete disk copy | Separate Debian VM recovered the original host-only fixture from the copied disk |
 | Physical TPM / virtual TPM | Software TPM policy/decryption checks passed; physical TPM unverified |
 | Production headless support | Not implemented or claimed |
 
@@ -33,8 +35,8 @@ cross-built successfully. These are development checks, not native Linux evidenc
 The child-process tests exposed an existing follow-up in
 `internal/session/secret_tool_linux.go`: embedding `bytes.Buffer` promotes
 `ReadFrom`, allowing `io.Copy` to bypass a custom `Write` limit. The probe uses
-composition and tests both stdout and stderr limits. The native helper remains
-unchanged in Phase 0; its correction is recorded for Phase 1.
+composition and tests both stdout and stderr limits. Phase 1 corrects the native
+helper separately, with a real synthetic subprocess regression test.
 
 ## Local validation and cross-build
 
@@ -176,8 +178,8 @@ signed-policy masks separately; hardware binding alone is not verified boot.
 See [RUNTIME.md](RUNTIME.md) for native observations, exact versions, and the
 separation between unprivileged enrollment and administrator-sealed TPM fixtures.
 
-- Complete the candidate/unsupported platform matrix and full power-cycle checks.
-- Test a disk-only copy separately from copying software-TPM state.
+- VM cold-start and host-only disk-copy checks passed. A physical-device power
+  cycle and TPM-bound disk-copy resistance remain unverified.
 - Physical TPM enrollment, detected-but-broken firmware TPM behavior and signed
   PCR policies remain unverified. Do not enable these profiles based on parser
   fixtures, software TPM results, or capability detection alone.
