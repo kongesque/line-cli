@@ -264,6 +264,34 @@ Session updates are protected by a process lock. Other commands can run while
 `watch` is connected, although a brief session-busy error is possible during a
 credential update; retry the command after the update finishes.
 
+Login checks native storage before collecting your LINE password and again
+before contacting LINE. The check saves, reads, replaces, and removes a separate
+temporary credential item or encrypted file. It preserves the active session
+and reports cleanup failures. Existing unreadable or corrupt storage blocks
+login; restore access first, or explicitly log out to remove the local session.
+A successful check cannot guarantee a later save if storage becomes unavailable.
+If another login or logout changes the session during password input, login
+stops and asks you to start again.
+
+On Linux, the session file and both process locks share the directory
+`$XDG_CONFIG_HOME/line-cli` (normally `~/.config/line-cli`). Changing
+`XDG_CACHE_HOME` does not create a separate lock. Keep the application directory
+private (`0700`) and its files private (`0600`); unsafe ownership, file types,
+symlinks at the application directory or files, and hard-linked files are
+rejected. Existing parent directories are never automatically chmodded.
+
+Before upgrading to this lock layout, stop old CLI commands and watchers.
+Concurrent old and new binaries are unsupported. Keep lock files in place,
+including after logout. Multiple config directories are not a supported
+multi-account setup: native Linux storage uses one wrapping-key identity per
+Secret Service keyring.
+
+Linux file updates sync the temporary file before replacement and then sync
+the containing directory. An error reporting uncertain durability means the
+file may already have changed; do not restore a stale session over it. Logout
+retains the wrapping key until session removal is confirmed durable. Repeating
+local logout can finish interrupted cleanup.
+
 ```sh
 line logout
 ```
@@ -316,6 +344,12 @@ go build -trimpath -o bin/line ./cmd/line
 
 Ordinary tests use fake APIs and credentials. Live tests require explicit
 authorization and are disabled by default.
+
+Storage regressions cover failed writes and cleanup, legacy ciphertext,
+preflight before authentication, and Linux process-lock contention. Native
+Secret Service integration runs only in an explicitly enabled disposable D-Bus
+session; see the CI workflow for its isolated keyring setup. Windows CI runs
+DPAPI roundtrip and preflight tests against temporary files.
 
 ## Current limitations
 

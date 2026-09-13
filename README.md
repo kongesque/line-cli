@@ -64,8 +64,15 @@ The Secret Service keyring must be running and unlocked in the same D-Bus sessio
 
 > [!IMPORTANT]
 > On SSH/headless Linux, installing the packages alone is insufficient. Without
-> an unlocked Secret Service in the CLI's D-Bus session, login fails after phone
-> verification with `could not save Secret Service`.
+> an unlocked Secret Service in the CLI's D-Bus session, login fails its storage
+> check before requesting a LINE password or phone verification. Storage is
+> checked again after password input; later keyring or filesystem failures can
+> still prevent saving the session.
+
+Linux upgrades: stop existing CLI commands and watchers before running this
+version. Session and watch locks now live beside `session.enc` under
+`$XDG_CONFIG_HOME/line-cli` (normally `~/.config/line-cli`), independent of the
+cache directory. Concurrent old and new binaries are unsupported.
 
 Homebrew is also available on macOS:
 

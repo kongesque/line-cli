@@ -5,12 +5,20 @@ import (
 	"path/filepath"
 )
 
-func linuxStore() (secretFileStore, error) {
+func linuxSessionDir() (string, error) {
 	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(filepath.Join(dir, "line-cli"))
+}
+
+func linuxStore() (secretFileStore, error) {
+	dir, err := linuxSessionDir()
 	if err != nil {
 		return secretFileStore{}, err
 	}
-	return secretFileStore{path: filepath.Join(dir, "line-cli", "session.enc"), secrets: secretToolStore{runSecretTool}}, nil
+	return secretFileStore{path: filepath.Join(dir, "session.enc"), secrets: secretToolStore{run: runSecretTool}}, nil
 }
 func (KeychainStore) Load() (*State, error) {
 	s, err := linuxStore()

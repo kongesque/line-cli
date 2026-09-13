@@ -57,7 +57,7 @@ jobs:
       - name: Native Windows DPAPI integration
         if: runner.os == 'Windows'
         shell: bash
-        run: go test -v -count=1 ./internal/session -run '^TestDPAPISessionRoundtripReplacementAndTampering$'
+        run: go test -v -count=1 ./internal/session -run '^TestDPAPI'
       - name: Build CLI
         shell: bash
         run: go build -trimpath -o bin/ ./cmd/line

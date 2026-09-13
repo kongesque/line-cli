@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"golang.org/x/sys/unix"
 )
@@ -27,11 +28,22 @@ func WatchLock() (func(), error) {
 }
 
 func namedLock(name string) (func(), error) {
-	dir, err := os.UserCacheDir()
+	dir, err := sessionLockDir()
 	if err != nil {
 		return nil, err
 	}
-	dir = filepath.Join(dir, "line-cli")
+	if runtime.GOOS == "linux" {
+		files, err := openSessionFiles(dir, true)
+		if err != nil {
+			return nil, err
+		}
+		defer files.root.Close()
+		f, err := openPrivateFile(files.root, name, os.O_CREATE|os.O_RDWR, 0600)
+		if err != nil {
+			return nil, err
+		}
+		return lockOpenedFile(f)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -43,12 +55,25 @@ func lockFile(path string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("open session lock: %w", err)
 	}
-	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		unix.Close(fd)
+	f := os.NewFile(uintptr(fd), path)
+	info, err := f.Stat()
+	if err == nil {
+		err = privateFileInfo(info, false)
+	}
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	return lockOpenedFile(f)
+}
+
+func lockOpenedFile(f *os.File) (func(), error) {
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		f.Close()
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return nil, ErrBusy
 		}
 		return nil, fmt.Errorf("acquire session lock: %w", err)
 	}
-	return func() { unix.Close(fd) }, nil
+	return func() { f.Close() }, nil
 }

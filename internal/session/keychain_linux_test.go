@@ -31,6 +31,12 @@ func TestLinuxNativeSecretService(t *testing.T) {
 		}
 	})
 	api := KeychainStore{}
+	if err := api.Prepare(); err != nil {
+		t.Fatal("fresh native storage preflight failed", err)
+	}
+	if _, err := store.secrets.loadKey(); !errors.Is(err, ErrNotFound) {
+		t.Fatal("preflight created the default key")
+	}
 	state := &State{Version: 1, MID: "u-test", AccessToken: "synthetic-token", ExportedKeys: map[string]string{"1": strings.Repeat("synthetic-key", 4096)}}
 	if err := api.Save(state); err != nil {
 		t.Fatal(err)
@@ -46,6 +52,13 @@ func TestLinuxNativeSecretService(t *testing.T) {
 	info, err := os.Stat(store.path)
 	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatal("session file permissions must be 0600", err)
+	}
+	if err := api.Prepare(); err != nil {
+		t.Fatal("existing native storage preflight failed", err)
+	}
+	afterProbe, err := os.ReadFile(store.path)
+	if err != nil || !bytes.Equal(data, afterProbe) {
+		t.Fatal("preflight changed the saved session", err)
 	}
 	state.AccessToken = "rotated-synthetic-token"
 	if err := api.Save(state); err != nil {

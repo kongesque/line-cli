@@ -9,3 +9,4 @@ var errKeychainUnsupported = errors.New("credential storage requires macOS with 
 func (KeychainStore) Load() (*State, error) { return nil, errKeychainUnsupported }
 func (KeychainStore) Save(*State) error     { return errKeychainUnsupported }
 func (KeychainStore) Delete() error         { return errKeychainUnsupported }
+func prepareNativeStorage() error           { return errKeychainUnsupported }

@@ -28,7 +28,7 @@ func TestSecretToolUsesStdinAndSanitizesErrors(t *testing.T) {
 		}
 		return secretResult{}
 	}}
-	store := secretFileStore{path: filepath.Join(t.TempDir(), "session.enc"), secrets: helper}
+	store := secretFileStore{path: filepath.Join(t.TempDir(), "line-cli", "session.enc"), secrets: helper}
 	if err := store.Save(state); err != nil {
 		t.Fatal(err)
 	}

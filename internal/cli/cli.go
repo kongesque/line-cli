@@ -241,6 +241,23 @@ func (a *App) Run(args []string) error {
 }
 
 func (a *App) login(email string) error {
+	var before *loginStorageSnapshot
+	if a.Manager.Storage != nil {
+		unlock, err := a.lock()
+		if err != nil {
+			return err
+		}
+		err = a.Manager.PrepareStorage()
+		if err == nil {
+			var snapshot loginStorageSnapshot
+			snapshot, err = snapshotLoginStorage(a.Manager.Store)
+			before = &snapshot
+		}
+		unlock()
+		if err != nil {
+			return err
+		}
+	}
 	fmt.Fprintln(a.Err, "Signing in may replace your existing LINE Chrome-style session.")
 	password, err := a.Password()
 	if err != nil {
@@ -251,6 +268,15 @@ func (a *App) login(email string) error {
 		return err
 	}
 	defer unlock()
+	if before != nil {
+		after, err := snapshotLoginStorage(a.Manager.Store)
+		if err != nil {
+			return err
+		}
+		if after != *before {
+			return errors.New("your saved session changed during password input; run login again")
+		}
+	}
 	profile, err := a.Manager.Login(email, password, func(pin string, wait bool) error {
 		if pin != "" {
 			fmt.Fprintf(a.Err, "Open LINE on your phone and enter PIN: %s\n", terminalText(pin))
@@ -268,6 +294,26 @@ func (a *App) login(email string) error {
 	}
 	_, err = fmt.Fprintf(a.Out, "Signed in as %s. Session saved securely.\nNext: line chats\n", terminalText(profile.DisplayName))
 	return err
+}
+
+type loginStorageSnapshot struct {
+	exists          bool
+	mid, generation string
+	invalidated     bool
+}
+
+func snapshotLoginStorage(store session.Store) (loginStorageSnapshot, error) {
+	s, err := store.Load()
+	if errors.Is(err, session.ErrNotFound) {
+		return loginStorageSnapshot{}, nil
+	}
+	if err != nil {
+		return loginStorageSnapshot{}, err
+	}
+	if s == nil {
+		return loginStorageSnapshot{}, errors.New("saved session is invalid")
+	}
+	return loginStorageSnapshot{true, s.MID, s.Generation, s.Invalidated}, nil
 }
 
 func (a *App) json(value any) error {
