@@ -11,7 +11,6 @@ import (
 
 	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
-	"github.com/kongesque/line-cli/pkg/line"
 )
 
 var ErrCancelled = errors.New("cancelled")
@@ -33,14 +32,8 @@ func (a *App) keepExistingLogin() (bool, error) {
 		return false, err
 	}
 	name := "your saved account"
-	var profile *line.Profile
-	err = a.Manager.Do(func(api session.API) (err error) { profile, err = api.GetProfile(); return })
-	if err != nil {
-		unlock()
-		return false, nil
-	}
-	if profile != nil && profile.DisplayName != "" {
-		name = profile.DisplayName
+	if s.Email != "" {
+		name = s.Email
 	}
 	err = a.rememberAccount()
 	unlock()

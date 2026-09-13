@@ -3,11 +3,13 @@
 package session
 
 /*
-#cgo LDFLAGS: -framework Security -framework CoreFoundation
+#cgo LDFLAGS: -framework Security -framework CoreFoundation -framework Foundation -framework LocalAuthentication
 #include <Security/Security.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <stdlib.h>
 #include <string.h>
+void *lineNoInteractionContext(void);
+void lineReleaseContext(void *context);
 
 static CFMutableDictionaryRef sessionQuery(const char *account) {
     CFMutableDictionaryRef q = CFDictionaryCreateMutable(NULL, 0,
@@ -22,9 +24,14 @@ static CFMutableDictionaryRef sessionQuery(const char *account) {
 
 typedef struct { OSStatus status; void *data; int length; } sessionResult;
 
-static sessionResult readSession(const char *account) {
+static sessionResult readSession(const char *account, int noPrompt) {
     sessionResult result = {0, NULL, 0};
     CFMutableDictionaryRef q = sessionQuery(account);
+    if (noPrompt) {
+        void *context = lineNoInteractionContext();
+        CFDictionarySetValue(q, kSecUseAuthenticationContext, context);
+        lineReleaseContext(context);
+    }
     CFDictionarySetValue(q, kSecReturnData, kCFBooleanTrue);
     CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
     CFTypeRef value = NULL;
@@ -95,9 +102,17 @@ func prepareNativeStorage() error {
 }
 
 func (s macKeychainStore) Load() (*State, error) {
+	return s.load(false)
+}
+
+func (s macKeychainStore) load(noPrompt bool) (*State, error) {
 	account := C.CString(s.account)
 	defer C.free(unsafe.Pointer(account))
-	r := C.readSession(account)
+	var silent C.int
+	if noPrompt {
+		silent = 1
+	}
+	r := C.readSession(account, silent)
 	if r.data != nil {
 		defer C.free(r.data)
 		defer C.memset(r.data, 0, C.size_t(r.length))
@@ -106,11 +121,21 @@ func (s macKeychainStore) Load() (*State, error) {
 		return nil, ErrNotFound
 	}
 	if r.status != C.errSecSuccess {
+		if noPrompt {
+			return nil, ErrStorageUnavailable
+		}
 		return nil, fmt.Errorf("read macOS Keychain (status %d)", r.status)
 	}
 	data := C.GoBytes(r.data, r.length)
 	defer clear(data)
 	return decodeSession(data)
+}
+
+type macStatusStore struct{ macKeychainStore }
+
+func (s macStatusStore) Load() (*State, error) { return s.macKeychainStore.load(true) }
+func platformStorageStatus(check bool) (StorageStatus, error) {
+	return nativeStorageStatus(macStatusStore{macKeychainStore{"default"}}, check, func() error { return ErrReadOnlyStatus })
 }
 
 func (store macKeychainStore) Save(s *State) error {

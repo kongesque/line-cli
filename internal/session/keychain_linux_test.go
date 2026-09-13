@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -40,6 +41,10 @@ func TestLinuxNativeSecretService(t *testing.T) {
 	state := &State{Version: 1, MID: "u-test", AccessToken: "synthetic-token", ExportedKeys: map[string]string{"1": strings.Repeat("synthetic-key", 4096)}}
 	if err := api.Save(state); err != nil {
 		t.Fatal(err)
+	}
+	status, err := api.Status(false)
+	if err != nil || status.Backend != "native" || status.ReadAccess != "available" || !status.ProtectionVerified {
+		t.Fatal("native status could not verify an unlocked session", err)
 	}
 	got, err := (KeychainStore{}).Load()
 	if err != nil || got.AccessToken != state.AccessToken || got.ExportedKeys["1"] != state.ExportedKeys["1"] {
@@ -86,5 +91,43 @@ func TestLinuxNativeSecretService(t *testing.T) {
 	}
 	if err := api.Delete(); err != nil {
 		t.Fatal("repeated deletion failed", err)
+	}
+	if os.Getenv("LINE_CLI_TEST_KEYRING_LOCK") == "1" {
+		if err := api.Save(state); err != nil {
+			t.Fatal(err)
+		}
+		unlock := func() error {
+			cmd := exec.Command("gnome-keyring-daemon", "--replace", "--unlock", "--components=secrets")
+			cmd.Stdin = strings.NewReader("ci-synthetic-keyring-password")
+			return cmd.Run()
+		}
+		defer func() {
+			if err := unlock(); err != nil {
+				t.Error("restore disposable test keyring", err)
+			}
+		}()
+		// Lock the private bus's collections. Older secret-tool versions treat
+		// --collection=default as a literal name rather than the default alias.
+		if err := exec.Command("secret-tool", "lock").Run(); err != nil {
+			t.Fatal("lock disposable keyring", err)
+		}
+		status, err := api.Status(false)
+		if !errors.Is(err, ErrStorageUnavailable) || status.Configured != "present" || status.ProtectionVerified {
+			t.Fatal("locked keyring status is misleading", err)
+		}
+		if err := api.Delete(); !errors.Is(err, ErrCleanupPending) {
+			t.Fatal("locked key deletion was not retained for cleanup", err)
+		}
+		if err := unlock(); err != nil {
+			t.Fatal(err)
+		}
+		key, err := store.secrets.loadKeyWithoutUnlock()
+		clear(key)
+		if err != nil {
+			t.Fatal("disposable keyring did not unlock", err)
+		}
+		if err := api.Delete(); err != nil {
+			t.Fatal("native cleanup retry failed", err)
+		}
 	}
 }

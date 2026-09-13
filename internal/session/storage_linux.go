@@ -1,9 +1,11 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -69,6 +71,9 @@ func (s linuxStorage) openEnvelope(data []byte) (headlessEnvelope, []byte, *Stat
 }
 
 func (s linuxStorage) Load() (*State, error) {
+	if err := s.checkCleanup(); err != nil {
+		return nil, err
+	}
 	data, err := s.read()
 	if err != nil {
 		return nil, err
@@ -82,6 +87,9 @@ func (s linuxStorage) Load() (*State, error) {
 }
 
 func (s linuxStorage) Save(state *State) error {
+	if err := s.checkCleanup(); err != nil {
+		return err
+	}
 	data, err := s.read()
 	if errors.Is(err, ErrNotFound) {
 		return s.native.Save(state)
@@ -115,6 +123,9 @@ func (s linuxStorage) Save(state *State) error {
 }
 
 func (s linuxStorage) Prepare() (result error) {
+	if err := s.checkCleanup(); err != nil {
+		return err
+	}
 	data, err := s.read()
 	if errors.Is(err, ErrNotFound) {
 		return prepareSecretFileStore(s.native)
@@ -125,12 +136,16 @@ func (s linuxStorage) Prepare() (result error) {
 	if !hasEnvelopeMarker(data) {
 		return prepareSecretFileStore(s.native)
 	}
+	return s.probeEnvelope(data)
+}
+
+func (s linuxStorage) probeEnvelope(data []byte) (result error) {
 	e, key, _, err := s.openEnvelope(data)
 	if err != nil {
 		return err
 	}
 	defer clear(key)
-	files, err := s.native.files(false)
+	files, err := s.native.files(true)
 	if err != nil {
 		return err
 	}
@@ -208,8 +223,21 @@ func createHeadlessSession(ctx context.Context, state *State, provider sealedKey
 	if err != nil {
 		return nil, err
 	}
-	if !reflect.DeepEqual(state, got) {
+	if !sameStoredState(state, got) {
 		return nil, ErrStorageAuthentication
 	}
 	return data, nil
+}
+
+// Compare serialized state, not time.Time's process-local location/monotonic
+// representation or nil versus empty fields omitted by the persisted schema.
+func sameStoredState(a, b *State) bool {
+	left, err := json.Marshal(a)
+	defer clear(left)
+	if err != nil {
+		return false
+	}
+	right, err := json.Marshal(b)
+	defer clear(right)
+	return err == nil && bytes.Equal(left, right)
 }

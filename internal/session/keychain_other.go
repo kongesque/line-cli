@@ -10,3 +10,6 @@ func (KeychainStore) Load() (*State, error) { return nil, errKeychainUnsupported
 func (KeychainStore) Save(*State) error     { return errKeychainUnsupported }
 func (KeychainStore) Delete() error         { return errKeychainUnsupported }
 func prepareNativeStorage() error           { return errKeychainUnsupported }
+func platformStorageStatus(bool) (StorageStatus, error) {
+	return initialStorageStatus("native"), errKeychainUnsupported
+}

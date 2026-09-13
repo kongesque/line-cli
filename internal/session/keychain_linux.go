@@ -21,21 +21,21 @@ func linuxStore() (secretFileStore, error) {
 	return secretFileStore{path: filepath.Join(dir, "session.enc"), secrets: secretToolStore{run: runSecretTool}}, nil
 }
 func (KeychainStore) Load() (*State, error) {
-	s, err := linuxStore()
+	s, err := resolvedLinuxStorage()
 	if err != nil {
 		return nil, err
 	}
 	return s.Load()
 }
 func (KeychainStore) Save(state *State) error {
-	s, err := linuxStore()
+	s, err := resolvedLinuxStorage()
 	if err != nil {
 		return err
 	}
 	return s.Save(state)
 }
 func (KeychainStore) Delete() error {
-	s, err := linuxStore()
+	s, err := resolvedLinuxStorage()
 	if err != nil {
 		return err
 	}

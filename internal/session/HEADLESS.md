@@ -1,10 +1,10 @@
 # Headless storage engine
 
-Phase 2 implements the envelope, systemd adapter, and Linux storage resolver.
-The executable still selects native storage. Enrollment consent, CLI activation,
-status, migration, and logout cleanup receipts are subsequent phases. There is
-no `login --headless` flag yet. Never create a real headless session by manually
-replacing the session file during this development stage.
+Phases 2/3 implement the envelope, systemd adapter, persistent Linux resolver,
+headless login consent, local status, and logout cleanup receipts. Fresh native
+storage remains the default. `login --headless` explicitly enrolls host-only
+storage; existing protection is preserved on reauthentication. Migration remains
+a subsequent phase. Do not manually replace session files to change backends.
 
 ## Envelope version 1
 
@@ -89,10 +89,30 @@ Preflight uses a separate synthetic file and reports cleanup failures. A failed
 helper cannot trigger resealing, native fallback, or file replacement. An error
 after rename/directory sync is reported as uncertain durability without rollback.
 
-The candidate builder returns verified bytes without committing them. Subsequent
-enrollment/migration work must hold the session lock, obtain protection consent,
-and complete the transaction and cleanup receipt design before CLI activation.
-Stop older commands and watchers before changing formats or lock conventions.
+The candidate builder returns verified bytes without committing them. The login
+controller prepares a candidate, obtains explicit host-only consent, checks for
+changed storage around unlocked prompts, and writes only after authentication.
+An unaccepted candidate cannot pass Manager.Login preflight or Save. Migration
+will use a separate transaction. Stop older commands and watchers before changing
+formats or lock conventions.
+
+Linux logout uses an 80-byte private receipt: the 15-byte `LINECLI\0LOGOUT\0`
+marker, one backend byte (1 native / 2 headless), the 32-byte SHA-256 digest of the
+session file, and a 32-byte SHA-256 checksum of the preceding receipt bytes. The
+checksum detects corruption; it is not an authentication claim against same-user
+malware. Receipt creation, session removal, and receipt removal use durable file
+operations. A receipt survives native-key cleanup failure or uncertain removal;
+operations cannot create a new session while it remains. Logout verifies native
+key removal using non-unlocking search, because clear's missing/unlocked-item
+result alone cannot prove a locked key was deleted. An absent session without a
+receipt cannot authorize deletion of an orphaned native item.
+
+Native read-only status uses libsecret search without `--unlock`, or a per-query
+macOS LAContext with interaction disabled. Linux/macOS native write status remains
+unknown with an explicit interactive-check requirement. Windows DPAPI and headless
+write status use separate probes. See [CLI.md](../../CLI.md) for user-facing
+status fields, limits, and exit codes. Libsecret search/clear behavior was checked
+against [upstream source](https://github.com/GNOME/libsecret/blob/0.21.7/tool/secret-tool.c).
 
 Synthetic tests cover every-byte envelope tampering, every truncation, size and
 integer bounds, unknown fields, legacy compatibility, changed backend between

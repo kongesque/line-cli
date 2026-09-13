@@ -13,6 +13,14 @@ import (
 
 type dpapiStore struct{ path string }
 
+func platformStorageStatus(check bool) (StorageStatus, error) {
+	s, err := windowsStore()
+	if err != nil {
+		return initialStorageStatus("native"), err
+	}
+	return nativeStorageStatus(s, check, func() error { return prepareDPAPIStore(s) })
+}
+
 func windowsStore() (dpapiStore, error) {
 	dir, err := os.UserCacheDir()
 	if err != nil {

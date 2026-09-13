@@ -260,6 +260,53 @@ LINE CLI stores one account per operating-system user:
 | Linux | AES-GCM encrypted session file with its key in Secret Service |
 | Windows | Current-user DPAPI encrypted session file |
 
+For a fresh session on supported Linux:
+
+```sh
+line login --headless
+line auth status
+line auth status --check --json
+```
+
+Headless enrollment uses a systemd user-scoped wrapping credential and explicitly
+asks you to accept **Host key; no TPM** protection before collecting a password.
+A complete disk copy can contain the host secret needed for decryption. Root and
+malware running as the same Unix account remain outside this protection boundary.
+The current CLI enrolls host-only storage; it does not automatically try TPM
+enrollment or silently fall back from a TPM failure. Cancellation leaves no saved
+LINE session. Systemd sealing itself can initialize the system host secret through
+its broker; the CLI does not configure services, Polkit, lingering, or automation.
+
+Use the same stable Unix account and config directory for interactive commands,
+SSH, cron, and systemd jobs. The helper must be the trusted system executable,
+with user-scoped broker access. Inspected helper versions 256–259 are accepted;
+257 on Debian 13 and 259 on Ubuntu 26.04 have native VM evidence. Versions 256/258
+are source-compatible candidates, not separately runtime-validated platforms.
+Older and unreviewed newer helpers fail before authentication. UniPi and physical
+TPM behavior are not certified by these VM tests.
+
+After enrollment, ordinary commands require no storage flag. Both `line login`
+and `line login --headless` preserve existing headless protection when signing in
+again. An existing native session is never implicitly migrated or overwritten by
+`--headless`; migration is a subsequent implementation phase. To deliberately
+discard the existing local session, log out before starting a fresh login.
+
+`auth status` is local: it does not refresh tokens, check LINE validity, or ask for
+unlock input. A present but inaccessible session is reported as unreadable with
+unverified protection, not as logged out. Saved email appears only after successful
+decryption. JSON includes a schema version, configured/backend state, verified
+protection, read/write access, reboot expectation, LINE validity, and a stable
+reason code; it excludes tokens, E2EE keys, and credential blobs. Reported TPM/PCR
+metadata does not establish physical hardware or verified boot.
+
+`--check` probes a separate file for headless storage and temporary DPAPI files on
+Windows. Linux native Secret Service and macOS Keychain report
+`interactive_check_required` for write checks, because proving those writes could
+request an unlock prompt. Their read-only status remains noninteractive; native
+write probes still run during interactive login. An absent session reports
+`no_session`. Reboot access for an accessible headless session is
+`expected_not_verified`, never an unconditional readiness guarantee.
+
 Session updates are protected by a process lock. Other commands can run while
 `watch` is connected, although a brief session-busy error is possible during a
 credential update; retry the command after the update finishes.
@@ -291,6 +338,31 @@ the containing directory. An error reporting uncertain durability means the
 file may already have changed; do not restore a stale session over it. Logout
 retains the wrapping key until session removal is confirmed durable. Repeating
 local logout can finish interrupted cleanup.
+
+Linux logout first writes a private, durable `logout.pending` receipt containing
+the backend and a digest of the exact session file. It then removes the session
+durably, removes only its known wrapping artifact, verifies native-key deletion,
+and removes the receipt. Headless logout needs no broker access and never deletes
+the global system host secret or an unrelated native wrapping item. Receipt
+presence blocks login, reads, and writes until cleanup finishes. Changed files,
+malformed receipts, or unknown backend metadata require repair rather than blind
+deletion. An orphaned native item without a session or receipt is retained because
+its ownership cannot be established. Stop older binaries before using this layout.
+
+Storage failures have dedicated executable exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| 65 | Invalid format, missing key, failed authentication, or protection mismatch |
+| 69 | Storage/helper unavailable or timed out |
+| 74 | Uncertain durability or failed probe cleanup |
+| 75 | Local contention, changed storage during login, or cancelled helper |
+| 78 | Configuration, consent, migration, repair, or interactive-check requirement |
+
+Unrelated CLI/network errors retain status 1. `auth status --json` writes its
+status object even when storage is unavailable, then returns the corresponding
+nonzero exit status. Cancelling an interactive prompt retains the existing CLI
+cancellation behavior.
 
 ```sh
 line logout

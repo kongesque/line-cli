@@ -16,15 +16,6 @@ import (
 
 const systemdCredentialName = "line-cli-session-key"
 
-var (
-	ErrHeadlessUnavailable = errors.New("user-scoped systemd credential storage is unavailable")
-	ErrCredentialHelper    = errors.New("systemd credential operation failed")
-	ErrCredentialTimeout   = errors.New("systemd credential operation timed out")
-	ErrCredentialCancelled = errors.New("systemd credential operation was cancelled")
-	ErrCredentialPolicy    = errors.New("systemd credential protection does not match the required policy")
-	ErrCredentialOutput    = errors.New("systemd credential output exceeds the limit")
-)
-
 type protectionRequirement uint8
 
 const (

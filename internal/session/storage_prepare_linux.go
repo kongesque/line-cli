@@ -7,11 +7,11 @@ import (
 )
 
 func prepareNativeStorage() error {
-	store, err := linuxStore()
+	store, err := resolvedLinuxStorage()
 	if err != nil {
 		return err
 	}
-	return prepareSecretFileStore(store)
+	return store.Prepare()
 }
 
 func prepareSecretFileStore(store secretFileStore) (result error) {

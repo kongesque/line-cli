@@ -54,7 +54,7 @@ The installer detects your OS and CPU architecture, verifies the release
 checksum, installs `line` into `~/.local/bin`, and configures `PATH` for common
 shells. Reopen your terminal if the installer asks you to.
 
-On Linux, install credential storage before `line login`. On Debian/Ubuntu:
+For native Linux storage, install credential storage before `line login`. On Debian/Ubuntu:
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
@@ -73,6 +73,18 @@ Linux upgrades: stop existing CLI commands and watchers before running this
 version. Session and watch locks now live beside `session.enc` under
 `$XDG_CONFIG_HOME/line-cli` (normally `~/.config/line-cli`), independent of the
 cache directory. Concurrent old and new binaries are unsupported.
+
+For a fresh account on supported headless Linux, use `line login --headless`.
+This enrolls systemd user-scoped host-key storage after explicit acceptance of
+its weaker protection against a complete disk copy. The current enrollment flow
+does not claim TPM protection. Debian 13/systemd 257 and Ubuntu 26.04/systemd 259
+have disposable-VM validation; other machines need their own successful preflight.
+Ordinary commands and reauthentication keep the selected backend. Existing native
+sessions require migration, which is not implemented yet.
+
+`line auth status --json` checks local storage without contacting LINE.
+`line auth status --check` additionally tests headless write readiness. Reboot
+access is reported as expected but unverified for the user's installation.
 
 Homebrew is also available on macOS:
 

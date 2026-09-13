@@ -27,6 +27,10 @@ func (s *fakeSecretService) helper() secretToolStore {
 				return secretResult{output: append([]byte(nil), value...)}
 			}
 			return secretResult{code: 1}
+		case "search":
+			if value, ok := s.values[account]; ok {
+				return secretResult{output: append(append([]byte("[/synthetic]\nsecret = "), value...), '\n')}
+			}
 		case "clear":
 			clear(s.values[account])
 			delete(s.values, account)

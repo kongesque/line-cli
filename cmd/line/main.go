@@ -78,12 +78,15 @@ func main() {
 			return nil
 		},
 	}
+	if session.SupportsHeadless() {
+		app.NewHeadlessLogin = func() (session.LoginStorage, error) { return session.BeginHeadlessLogin(ctx) }
+	}
 	if err := app.Run(os.Args[1:]); err != nil {
 		if errors.Is(err, cli.ErrCancelled) {
 			fmt.Fprintln(os.Stderr, "Cancelled.")
 			return
 		}
 		fmt.Fprintln(os.Stderr, "line:", err)
-		os.Exit(1)
+		os.Exit(session.StorageExitCode(err))
 	}
 }

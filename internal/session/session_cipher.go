@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"errors"
+	"fmt"
 )
 
 // Preserve the legacy native file format; key acquisition belongs to the provider.
@@ -40,11 +41,11 @@ func decryptSession(data, key []byte) ([]byte, error) {
 		return nil, err
 	}
 	if len(data) < aead.NonceSize()+aead.Overhead() || len(data) > maxSessionBytes {
-		return nil, errors.New("invalid encrypted session")
+		return nil, ErrStorageFormat
 	}
 	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], []byte("line-cli-session-v1"))
 	if err != nil {
-		return nil, errors.New("could not authenticate encrypted session; restore storage or run line logout before signing in again")
+		return nil, fmt.Errorf("%w: restore storage or run line logout before signing in again", ErrStorageAuthentication)
 	}
 	return plain, nil
 }
