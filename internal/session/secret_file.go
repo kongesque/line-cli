@@ -42,6 +42,13 @@ func (s secretFileStore) Load() (*State, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.decode(data)
+}
+
+func (s secretFileStore) decode(data []byte) (*State, error) {
+	if hasEnvelopeMarker(data) {
+		return nil, ErrStorageFormat
+	}
 	key, err := s.secrets.loadKey()
 	if errors.Is(err, ErrNotFound) {
 		return nil, errMissingWrappingKey
@@ -72,6 +79,15 @@ func (s secretFileStore) Save(state *State) error {
 	exists, err := files.exists(filepath.Base(s.path))
 	if err != nil {
 		return err
+	}
+	if exists {
+		data, err := files.read(filepath.Base(s.path))
+		if err != nil {
+			return err
+		}
+		if hasEnvelopeMarker(data) {
+			return ErrStorageFormat
+		}
 	}
 	key, err := s.secrets.loadKey()
 	if errors.Is(err, ErrNotFound) {
