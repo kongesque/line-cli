@@ -183,6 +183,7 @@ compatibility.
 ## Current limitations
 
 - One saved account per OS user
+- LINE access tokens commonly reach a refresh boundary at around 168 hours (7 days). The CLI refreshes them automatically when possible, but a rejected or invalidated refresh token requires `line login` again.
 - Recent history only, up to 100 messages per read
 - Generic file transfer only; no stickers or specialized media messages
 - Reading messages does not mark them as read
