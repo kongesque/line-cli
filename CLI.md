@@ -260,9 +260,161 @@ LINE CLI stores one account per operating-system user:
 | Linux | AES-GCM encrypted session file with its key in Secret Service |
 | Windows | Current-user DPAPI encrypted session file |
 
-Session updates are protected by a process lock. Other commands can run while
-`watch` is connected, although a brief session-busy error is possible during a
-credential update; retry the command after the update finishes.
+Your password is used only during login and is never saved. Session updates use
+a process lock, so another command may briefly report that the session is busy.
+Retry it after the current update finishes.
+
+### Headless Linux
+
+On a supported Linux host without an unlocked Secret Service keyring, create a
+new session with:
+
+```sh
+line login --headless
+line auth status
+line auth status --check --json
+```
+
+The CLI asks you to accept **Host key; no TPM** protection before it requests
+your LINE password. This mode protects the session from other unprivileged users,
+but not from root, malware running as your Unix account, or someone with a complete
+copy of the disk. It does not claim TPM protection. Cancelling enrollment leaves
+no saved LINE session.
+
+After enrollment, ordinary commands need no storage flag. Signing in again keeps
+the selected backend. `login --headless` never converts or overwrites an existing
+native session.
+
+The trusted `/usr/bin/systemd-creds` helper and its user credential broker must
+be available. Use the same Unix account and config directory for interactive
+commands, SSH, cron, and systemd jobs. Versions 256–259 are accepted; Debian
+13/systemd 257 and Ubuntu 26.04/systemd 259 have disposable-VM validation. Other
+accepted versions still need a successful local preflight. Older and unreviewed
+newer versions are rejected. UniPi and physical TPM behavior have not been
+verified.
+
+### Check or migrate storage
+
+Status checks are local and never contact LINE:
+
+```sh
+line auth status
+line auth status --check --json
+```
+
+`auth status` does not refresh tokens or prove that the LINE session is still
+valid. It reports inaccessible storage as unreadable, not logged out. `--check`
+also tests write readiness where that can be done without an unlock prompt.
+Native Linux Secret Service and macOS Keychain therefore report
+`interactive_check_required`; their full write checks run during interactive
+login. Headless reboot access is reported as `expected_not_verified` until you
+test it on your own host.
+
+To move an accessible native Linux session to headless storage:
+
+```sh
+line auth migrate --storage=headless
+```
+
+Migration requires a terminal and the same explicit host-only acceptance. Stop
+watchers, automation, and older CLI versions first. Migration preserves tokens,
+E2EE keys, request sequence, and the watch checkpoint without contacting LINE or
+requesting your password.
+
+If migration is interrupted, run the same command again. Do not delete the
+`migration.pending` file or replace `session.enc` manually. `auth status` reports
+`migration_pending` until cleanup succeeds. See the
+[headless storage internals](internal/session/HEADLESS.md) for the transaction,
+envelope, and recovery design.
+
+### Run unattended
+
+For unattended use, enroll interactively as a dedicated unprivileged account,
+then verify `auth status --check` under that same UID and environment after a
+reboot. Keep `HOME` and `XDG_CONFIG_HOME` fixed. The operator owns service and
+cron configuration; the CLI does not install either. For example, after installing
+the binary at the path below and creating/enrolling the `linebot` account:
+
+```ini
+[Unit]
+Description=LINE event watcher
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+User=linebot
+Environment=HOME=/home/linebot
+Environment=XDG_CONFIG_HOME=/home/linebot/.config
+UMask=0077
+ExecStart=/usr/local/bin/line watch
+Restart=on-failure
+RestartSec=15s
+RestartPreventExitStatus=65 74 78
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Treat watcher output as private message data and restrict its journal or output
+files. If the service stops, run `line auth status --check` as the service user
+before restarting it. This restart policy applies only to the watcher process; it
+does not authorize retrying sends or other remote mutations. Cron jobs should use
+the same account and paths, with `umask 077`.
+
+### Linux files and upgrades
+
+Login checks native storage before collecting your LINE password and again
+before contacting LINE. The check saves, reads, replaces, and removes a separate
+temporary credential item or encrypted file. It preserves the active session
+and reports cleanup failures. Existing unreadable or corrupt storage blocks
+login; restore access first, or explicitly log out to remove the local session.
+A successful check cannot guarantee a later save if storage becomes unavailable.
+If another login or logout changes the session during password input, login
+stops and asks you to start again.
+
+On Linux, the session file and both process locks share the directory
+`$XDG_CONFIG_HOME/line-cli` (normally `~/.config/line-cli`). Changing
+`XDG_CACHE_HOME` does not create a separate lock. Keep the application directory
+private (`0700`) and its files private (`0600`); unsafe ownership, file types,
+symlinks at the application directory or files, and hard-linked files are
+rejected. Existing parent directories are never automatically chmodded.
+
+Linux also records observed session paths in `native-paths.json` under
+`$HOME/.config/line-cli`. This prevents cleanup in one config directory from
+deleting a key still needed by another known directory. If older releases used
+custom `XDG_CONFIG_HOME` locations, run `line auth status` once with each old
+location before migration or logout so the CLI can register it. Never delete the
+path record or lock files as a cleanup shortcut.
+
+Before upgrading to this lock layout, stop old CLI commands and watchers.
+Concurrent old and new binaries are unsupported. Keep lock files in place,
+including after logout. Multiple config directories are not a supported
+multi-account setup: native Linux storage uses one wrapping-key identity per
+Secret Service keyring.
+
+An uncertain-durability error means the file may already have changed. Do not
+restore an older copy over it; repeat the same local operation. Logout uses a
+private recovery receipt and can be repeated to finish interrupted cleanup.
+
+### Storage exit codes
+
+Storage failures have dedicated executable exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| 65 | Invalid format, missing key, failed authentication, or protection mismatch |
+| 69 | Storage/helper unavailable or timed out |
+| 74 | Uncertain durability or failed probe cleanup |
+| 75 | Local contention, changed storage during login, or cancelled helper |
+| 78 | Configuration, consent, migration, repair, or interactive-check requirement |
+
+Other CLI and network errors use status 1. `auth status --json` still writes its
+status object when storage is unavailable, then returns the matching nonzero
+status.
+
+### Log out
 
 ```sh
 line logout
@@ -316,6 +468,12 @@ go build -trimpath -o bin/line ./cmd/line
 
 Ordinary tests use fake APIs and credentials. Live tests require explicit
 authorization and are disabled by default.
+
+Storage regressions cover failed writes and cleanup, legacy ciphertext,
+preflight before authentication, and Linux process-lock contention. Native
+Secret Service integration runs only in an explicitly enabled disposable D-Bus
+session; see the CI workflow for its isolated keyring setup. Windows CI runs
+DPAPI roundtrip and preflight tests against temporary files.
 
 ## Current limitations
 

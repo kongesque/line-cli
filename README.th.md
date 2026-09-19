@@ -65,7 +65,20 @@ Secret Service keyring ต้องทำงานและปลดล็อก
 > [!IMPORTANT]
 > สำหรับ Linux ผ่าน SSH หรือแบบ headless การติดตั้งแพ็กเกจอย่างเดียวไม่เพียงพอ
 > หากไม่มี Secret Service ที่ปลดล็อกใน D-Bus session ของ CLI การเข้าสู่ระบบจะ
-> ล้มเหลวหลังยืนยันบนโทรศัพท์ด้วย `could not save Secret Service`
+> หยุดที่การตรวจสอบที่เก็บข้อมูลก่อนขอรหัสผ่าน LINE หรือการยืนยันตัวตน
+
+บน Linux แบบ headless ที่รองรับ ใช้ `line login --headless` เพื่อเลือกที่เก็บข้อมูล
+host key ระดับผู้ใช้ของ systemd หลังจากยอมรับข้อจำกัดอย่างชัดเจน วิธีนี้ไม่ป้องกัน
+การคัดลอกดิสก์ทั้งลูกและไม่อ้างว่ามีการป้องกันด้วย TPM คุณสามารถย้ายเซสชันเดิมได้
+โดยไม่ต้องติดต่อ LINE:
+
+```sh
+line auth migrate --storage=headless
+line auth status --check
+```
+
+ก่อนอัปเกรด ให้หยุดคำสั่ง CLI และ watcher ที่กำลังทำงาน ดูข้อกำหนด เวอร์ชัน systemd
+ที่รองรับ และวิธีกู้คืนได้ใน[คู่มือ CLI](CLI.md#headless-linux)
 
 สามารถใช้ Homebrew บน macOS ได้เช่นกัน:
 

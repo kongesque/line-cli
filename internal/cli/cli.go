@@ -30,6 +30,7 @@ Everyday commands:
   logout      Sign out on this device
 
 More commands:
+  auth        Inspect local session storage (auth status)
   watch       Stream live events (--json)
   download    Choose a file message and save it
   react       Add or remove a reaction
@@ -48,19 +49,21 @@ Use --show-ids for IDs, --json for scripts, or COMMAND --help for all options.
 `
 
 type App struct {
-	Interactive   bool
-	input         *bufio.Reader
-	promptAccount *promptAccount
-	Context       context.Context
-	WatchLock     func() (func(), error)
-	In            io.Reader
-	Out           io.Writer
-	Err           io.Writer
-	Manager       *session.Manager
-	Lock          func() (func(), error)
-	Password      func() (string, error)
-	Continue      func() error
-	Version       string
+	Interactive      bool
+	input            *bufio.Reader
+	promptAccount    *promptAccount
+	Context          context.Context
+	WatchLock        func() (func(), error)
+	In               io.Reader
+	Out              io.Writer
+	Err              io.Writer
+	Manager          *session.Manager
+	Lock             func() (func(), error)
+	Password         func() (string, error)
+	Continue         func() error
+	Version          string
+	NewHeadlessLogin func() (session.LoginStorage, error)
+	MigrateHeadless  func(bool) error
 }
 
 // Run validates command arguments before accessing Keychain or the network.
@@ -78,6 +81,8 @@ func (a *App) Run(args []string) error {
 		command = "version"
 	}
 	switch command {
+	case "auth":
+		return a.authCommand(args[1:])
 	case "download":
 		return a.downloadCommand(args[1:])
 	case "react", "unsend":
@@ -107,6 +112,7 @@ func (a *App) Run(args []string) error {
 	fs.Usage = func() { fmt.Fprintf(a.Err, "Usage: line %s [options]\n", command); fs.PrintDefaults() }
 	var jsonOutput bool
 	var email string
+	var headless bool
 	var showIDs bool
 	var search string
 	limit := 20
@@ -119,6 +125,7 @@ func (a *App) Run(args []string) error {
 	}
 	if command == "login" {
 		fs.StringVar(&email, "email", "", "LINE account email (prompted in a terminal)")
+		fs.BoolVar(&headless, "headless", false, "Linux: explicitly enroll headless host-key storage; preserve existing headless protection")
 	}
 	if command == "whoami" || command == "contacts" {
 		fs.BoolVar(&jsonOutput, "json", false, "write JSON to stdout")
@@ -136,6 +143,9 @@ func (a *App) Run(args []string) error {
 		return errors.New("limit must be 0 or greater")
 	}
 	if command == "login" {
+		if headless {
+			return a.headlessLogin(strings.TrimSpace(email))
+		}
 		if a.Interactive && strings.TrimSpace(email) == "" {
 			keep, err := a.keepExistingLogin()
 			if err != nil {
@@ -241,6 +251,23 @@ func (a *App) Run(args []string) error {
 }
 
 func (a *App) login(email string) error {
+	var before *loginStorageSnapshot
+	if a.Manager.Storage != nil {
+		unlock, err := a.lock()
+		if err != nil {
+			return err
+		}
+		err = a.Manager.PrepareStorage()
+		if err == nil {
+			var snapshot loginStorageSnapshot
+			snapshot, err = snapshotLoginStorage(a.Manager.Store)
+			before = &snapshot
+		}
+		unlock()
+		if err != nil {
+			return err
+		}
+	}
 	fmt.Fprintln(a.Err, "Signing in may replace your existing LINE Chrome-style session.")
 	password, err := a.Password()
 	if err != nil {
@@ -251,6 +278,15 @@ func (a *App) login(email string) error {
 		return err
 	}
 	defer unlock()
+	if before != nil {
+		after, err := snapshotLoginStorage(a.Manager.Store)
+		if err != nil {
+			return err
+		}
+		if after != *before {
+			return errors.New("your saved session changed during password input; run login again")
+		}
+	}
 	profile, err := a.Manager.Login(email, password, func(pin string, wait bool) error {
 		if pin != "" {
 			fmt.Fprintf(a.Err, "Open LINE on your phone and enter PIN: %s\n", terminalText(pin))
@@ -268,6 +304,35 @@ func (a *App) login(email string) error {
 	}
 	_, err = fmt.Fprintf(a.Out, "Signed in as %s. Session saved securely.\nNext: line chats\n", terminalText(profile.DisplayName))
 	return err
+}
+
+type loginStorageSnapshot struct {
+	exists          bool
+	mid, generation string
+	invalidated     bool
+	storageIdentity string
+}
+
+func snapshotLoginStorage(store session.Store) (loginStorageSnapshot, error) {
+	var identity string
+	if selector, ok := store.(interface{ StorageIdentity() (string, error) }); ok {
+		var err error
+		identity, err = selector.StorageIdentity()
+		if err != nil {
+			return loginStorageSnapshot{}, err
+		}
+	}
+	s, err := store.Load()
+	if errors.Is(err, session.ErrNotFound) {
+		return loginStorageSnapshot{storageIdentity: identity}, nil
+	}
+	if err != nil {
+		return loginStorageSnapshot{}, err
+	}
+	if s == nil {
+		return loginStorageSnapshot{}, errors.New("saved session is invalid")
+	}
+	return loginStorageSnapshot{true, s.MID, s.Generation, s.Invalidated, identity}, nil
 }
 
 func (a *App) json(value any) error {

@@ -54,7 +54,8 @@ The installer detects your OS and CPU architecture, verifies the release
 checksum, installs `line` into `~/.local/bin`, and configures `PATH` for common
 shells. Reopen your terminal if the installer asks you to.
 
-On Linux, install credential storage before `line login`. On Debian/Ubuntu:
+For native Linux storage, install credential storage before `line login`. On
+Debian or Ubuntu:
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
@@ -64,8 +65,25 @@ The Secret Service keyring must be running and unlocked in the same D-Bus sessio
 
 > [!IMPORTANT]
 > On SSH/headless Linux, installing the packages alone is insufficient. Without
-> an unlocked Secret Service in the CLI's D-Bus session, login fails after phone
-> verification with `could not save Secret Service`.
+> an unlocked Secret Service in the CLI's D-Bus session, login fails its storage
+> check before requesting a LINE password or phone verification. Storage is
+> checked again after password input; later keyring or filesystem failures can
+> still prevent saving the session.
+
+On supported headless Linux systems, `line login --headless` uses systemd
+user-scoped host-key storage after you accept its weaker protection against a
+complete disk copy. It does not claim TPM protection. Use a stable, dedicated
+Unix account for automation. Existing native sessions can be moved without
+contacting LINE:
+
+```sh
+line auth migrate --storage=headless
+line auth status --check
+```
+
+Before upgrading, stop existing CLI commands and watchers; running old and new
+versions together is unsupported. See [CLI.md](CLI.md#headless-linux) for setup,
+service guidance, supported systemd versions, and recovery instructions.
 
 Homebrew is also available on macOS:
 

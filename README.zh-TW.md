@@ -62,8 +62,20 @@ Secret Service 金鑰圈必須在同一個 D-Bus 工作階段中執行並保持�
 
 > [!IMPORTANT]
 > 透過 SSH 或無頭環境使用 Linux 時，只安裝套件還不夠。如果 CLI 所在的
-> D-Bus 工作階段沒有已解鎖的 Secret Service，手機驗證完成後，登入會因
-> `could not save Secret Service` 錯誤而失敗。
+> D-Bus 工作階段沒有已解鎖的 Secret Service，登入流程會在要求 LINE 密碼或
+> 手機驗證前的儲存空間檢查階段停止。
+
+在支援的無頭 Linux 系統上，可使用 `line login --headless`。明確同意限制後，
+CLI 會改用 systemd 使用者範圍的主機金鑰儲存機制。此方式無法防止整顆磁碟遭
+複製，也不代表具備 TPM 保護。既有的原生工作階段可在不連線至 LINE 的情況下移轉：
+
+```sh
+line auth migrate --storage=headless
+line auth status --check
+```
+
+升級前請先停止正在執行的 CLI 指令與 watcher。完整需求、支援的 systemd 版本與
+復原方式請參閱 [CLI 指南](CLI.md#headless-linux)。
 
 macOS 也可以使用 Homebrew：
 

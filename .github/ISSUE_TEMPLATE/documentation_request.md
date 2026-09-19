@@ -1,20 +1,25 @@
 ---
 name: Documentation request
-about: Suggest additional documentation to be added
+about: Report unclear, missing, or incorrect documentation
 title: "docs: 📚 "
 labels: documentation
 ---
 
-# Documentation Request: [Short Title]
+# Documentation request
 
-## Is related to a problem? Please describe
+## What is unclear or missing?
 
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+Describe the question you could not answer or the information that appears wrong.
 
-## Describe where the documentation should be added
+## Where did you look?
 
-Describe if the documentation should be a new file or in an existing file. If existing, please provide the file name.
+Link the page or name the file and section, if known.
+
+## Suggested improvement
+
+Describe the wording, example, or new section that would help.
 
 ## Additional context
 
-Add any other context or screenshots about the feature request here.
+Add any other useful context or screenshots. Remove private account and message
+data before posting.

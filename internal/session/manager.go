@@ -44,13 +44,14 @@ type API interface {
 
 type Manager struct {
 	Store      Store
+	Storage    StoragePreparer
 	NewClient  func(string) API
 	ExportKeys func(API, *line.LoginResult) (map[string]string, error)
 	Now        func() time.Time
 }
 
 func NewManager(store Store) *Manager {
-	return &Manager{
+	manager := &Manager{
 		Store: store,
 		NewClient: func(token string) API {
 			client := line.NewClient(token)
@@ -60,13 +61,27 @@ func NewManager(store Store) *Manager {
 		ExportKeys: exportKeys,
 		Now:        time.Now,
 	}
+	if preparer, ok := store.(StoragePreparer); ok {
+		manager.Storage = preparer
+	}
+	return manager
 }
 
 // Notify displays the phone PIN; when wait is true it must wait for the user's
 // confirmation. Verifier flows poll immediately while the phone prompt is shown.
 type Notify func(pin string, wait bool) error
 
+func (m *Manager) PrepareStorage() error {
+	if m.Storage != nil {
+		return m.Storage.Prepare()
+	}
+	return nil
+}
+
 func (m *Manager) Login(email, password string, notify Notify) (*line.Profile, error) {
+	if err := m.PrepareStorage(); err != nil {
+		return nil, err
+	}
 	api := m.NewClient("")
 	// Always request a fresh keychain. Certificate-only login may return tokens
 	// without the encryption keys needed after restarting this CLI process.

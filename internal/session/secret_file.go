@@ -1,8 +1,6 @@
 package session
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -15,105 +13,118 @@ import (
 type secretFileStore struct {
 	path    string
 	secrets secretToolStore
+	ops     *fileOperations // optional per-store filesystem failure injection
+}
+
+var errMissingWrappingKey = errors.New("session encryption key is missing; restore keyring access or run line logout before signing in again")
+
+func (s secretFileStore) files(create bool) (*sessionFiles, error) {
+	files, err := openSessionFiles(filepath.Dir(s.path), create)
+	if err == nil && s.ops != nil {
+		files.ops = *s.ops
+	}
+	return files, err
 }
 
 func (s secretFileStore) Load() (*State, error) {
-	f, err := os.Open(s.path)
+	files, err := s.files(false)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	data, err := readSessionFile(f)
+	defer files.root.Close()
+	data, err := files.read(filepath.Base(s.path))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
+	return s.decode(data)
+}
+
+func (s secretFileStore) decode(data []byte) (*State, error) {
+	if hasEnvelopeMarker(data) {
+		return nil, ErrStorageFormat
+	}
 	key, err := s.secrets.loadKey()
+	if errors.Is(err, ErrNotFound) {
+		return nil, errMissingWrappingKey
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer clear(key)
-	block, err := aes.NewCipher(key)
+	plain, err := decryptSession(data, key)
 	if err != nil {
 		return nil, err
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	if len(data) < aead.NonceSize() {
-		return nil, errors.New("invalid encrypted session")
-	}
-	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], []byte("line-cli-session-v1"))
-	if err != nil {
-		return nil, errors.New("could not authenticate encrypted session; run line login")
 	}
 	defer clear(plain)
 	return decodeSession(plain)
 }
+
 func (s secretFileStore) Save(state *State) error {
 	plain, err := json.Marshal(state)
 	if err != nil || len(plain) > maxSessionBytes-1024 {
 		return errors.New("could not encode credential session")
 	}
 	defer clear(plain)
+	files, err := s.files(true)
+	if err != nil {
+		return err
+	}
+	defer files.root.Close()
+	exists, err := files.exists(filepath.Base(s.path))
+	if err != nil {
+		return err
+	}
+	if exists {
+		data, err := files.read(filepath.Base(s.path))
+		if err != nil {
+			return err
+		}
+		if hasEnvelopeMarker(data) {
+			return ErrStorageFormat
+		}
+	}
 	key, err := s.secrets.loadKey()
 	if errors.Is(err, ErrNotFound) {
-		if _, statErr := os.Stat(s.path); !errors.Is(statErr, os.ErrNotExist) {
-			return errors.New("session encryption key is missing; run line logout before signing in again")
+		if exists {
+			return errMissingWrappingKey
 		}
 		key = make([]byte, 32)
+		defer clear(key)
 		if _, err = rand.Read(key); err != nil {
 			return err
 		}
 		if err = s.secrets.saveKey(key); err != nil {
-			clear(key)
 			return err
 		}
 	} else if err != nil {
 		return err
+	} else {
+		defer clear(key)
 	}
-	defer clear(key)
-	block, err := aes.NewCipher(key)
+	data, err := encryptSession(plain, key)
 	if err != nil {
 		return err
 	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return err
-	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err = rand.Read(nonce); err != nil {
-		return err
-	}
-	data := aead.Seal(nonce, nonce, plain, []byte("line-cli-session-v1"))
-	if err = os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(s.path), ".session-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), s.path)
+	return files.replace(filepath.Base(s.path), data)
 }
+
 func (s secretFileStore) Delete() error {
-	// Remove ciphertext first; an interrupted logout must not leave readable data.
-	if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	files, err := s.files(false)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+	if files != nil {
+		defer files.root.Close()
+		// Retain the wrapping key if removal's durability cannot be confirmed.
+		if err := files.remove(filepath.Base(s.path)); err != nil {
+			return err
+		}
 	}
 	return s.secrets.Delete()
 }

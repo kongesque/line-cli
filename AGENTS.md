@@ -9,7 +9,7 @@ This repository contains no Matrix connector or homeserver integration.
 ## Build and checks
 
 Requirements: Go 1.26+. macOS needs CGO and Xcode Command Line Tools for Keychain.
-Linux and Windows support CGO_ENABLED=0. No libolm or ffmpeg is required.
+Linux and Windows support `CGO_ENABLED=0`. No libolm or ffmpeg is required.
 
 ```sh
 ./build.sh

@@ -49,15 +49,17 @@ jobs:
           mkdir -p "$XDG_DATA_HOME" "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
           export LINE_CLI_TEST_SECRET_SERVICE=1
+          export LINE_CLI_TEST_KEYRING_LOCK=1
           dbus-run-session -- bash -eu -c '
             printf %s ci-synthetic-keyring-password | gnome-keyring-daemon --unlock --components=secrets
             gnome-keyring-daemon --start --components=secrets
+            dbus-send --session --print-reply --dest=org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service.SetAlias string:default objpath:/org/freedesktop/secrets/collection/login >/dev/null
             go test -v -count=1 ./internal/session -run "^TestLinuxNativeSecretService$"
           '
       - name: Native Windows DPAPI integration
         if: runner.os == 'Windows'
         shell: bash
-        run: go test -v -count=1 ./internal/session -run '^TestDPAPISessionRoundtripReplacementAndTampering$'
+        run: go test -v -count=1 ./internal/session -run '^TestDPAPI'
       - name: Build CLI
         shell: bash
         run: go build -trimpath -o bin/ ./cmd/line

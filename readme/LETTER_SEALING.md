@@ -1,8 +1,11 @@
 # Letter Sealing in the CLI
 
+This is a contributor-oriented overview of the CLI's end-to-end encryption
+boundaries. For commands and troubleshooting, start with the
+[CLI guide](../CLI.md).
+
 Login and message encryption reuse the LINE protocol and crypto runtime inherited
-from the upstream project. See [CLI.md](../CLI.md) for validated scenarios and
-credential storage details.
+from the upstream project.
 
 ## Login and keys
 

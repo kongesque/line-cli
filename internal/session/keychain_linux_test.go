@@ -2,8 +2,10 @@ package session
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -18,6 +20,12 @@ func TestLinuxNativeSecretService(t *testing.T) {
 		t.Fatal("isolated D-Bus session is required")
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	unlockStorage, err := Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlockStorage()
 	store, err := linuxStore()
 	if err != nil {
 		t.Fatal(err)
@@ -31,9 +39,19 @@ func TestLinuxNativeSecretService(t *testing.T) {
 		}
 	})
 	api := KeychainStore{}
+	if err := api.Prepare(); err != nil {
+		t.Fatal("fresh native storage preflight failed", err)
+	}
+	if _, err := store.secrets.loadKey(); !errors.Is(err, ErrNotFound) {
+		t.Fatal("preflight created the default key")
+	}
 	state := &State{Version: 1, MID: "u-test", AccessToken: "synthetic-token", ExportedKeys: map[string]string{"1": strings.Repeat("synthetic-key", 4096)}}
 	if err := api.Save(state); err != nil {
 		t.Fatal(err)
+	}
+	status, err := api.Status(false)
+	if err != nil || status.Backend != "native" || status.ReadAccess != "available" || !status.ProtectionVerified {
+		t.Fatal("native status could not verify an unlocked session", err)
 	}
 	got, err := (KeychainStore{}).Load()
 	if err != nil || got.AccessToken != state.AccessToken || got.ExportedKeys["1"] != state.ExportedKeys["1"] {
@@ -46,6 +64,13 @@ func TestLinuxNativeSecretService(t *testing.T) {
 	info, err := os.Stat(store.path)
 	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatal("session file permissions must be 0600", err)
+	}
+	if err := api.Prepare(); err != nil {
+		t.Fatal("existing native storage preflight failed", err)
+	}
+	afterProbe, err := os.ReadFile(store.path)
+	if err != nil || !bytes.Equal(data, afterProbe) {
+		t.Fatal("preflight changed the saved session", err)
 	}
 	state.AccessToken = "rotated-synthetic-token"
 	if err := api.Save(state); err != nil {
@@ -73,5 +98,63 @@ func TestLinuxNativeSecretService(t *testing.T) {
 	}
 	if err := api.Delete(); err != nil {
 		t.Fatal("repeated deletion failed", err)
+	}
+	if os.Getenv("LINE_CLI_TEST_KEYRING_LOCK") == "1" {
+		if err := api.Save(state); err != nil {
+			t.Fatal(err)
+		}
+		unlock := func() error {
+			cmd := exec.Command("gnome-keyring-daemon", "--replace", "--unlock", "--components=secrets")
+			cmd.Stdin = strings.NewReader("ci-synthetic-keyring-password")
+			return cmd.Run()
+		}
+		defer func() {
+			if err := unlock(); err != nil {
+				t.Error("restore disposable test keyring", err)
+			}
+		}()
+		// Lock the private bus's collections. Older secret-tool versions treat
+		// --collection=default as a literal name rather than the default alias.
+		if err := exec.Command("secret-tool", "lock").Run(); err != nil {
+			t.Fatal("lock disposable keyring", err)
+		}
+		status, err := api.Status(false)
+		if !errors.Is(err, ErrStorageUnavailable) || status.Configured != "present" || status.ProtectionVerified {
+			t.Fatal("locked keyring status is misleading", err)
+		}
+		if err := api.Delete(); !errors.Is(err, ErrCleanupPending) {
+			t.Fatal("locked key deletion was not retained for cleanup", err)
+		}
+		if err := unlock(); err != nil {
+			t.Fatal(err)
+		}
+		key, err := store.secrets.loadKeyWithoutUnlock()
+		clear(key)
+		if err != nil {
+			t.Fatal("disposable keyring did not unlock", err)
+		}
+		if err := api.Delete(); err != nil {
+			t.Fatal("native cleanup retry failed", err)
+		}
+	}
+	// Exercise real Secret Service migration cleanup without requiring a recent
+	// systemd on CI. Sealing is synthetic; the old native item is real and private.
+	if err := api.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeSealedKeys{keys: map[string][]byte{}}
+	migrating := linuxStorage{native: store, provider: func(context.Context) (sealedKeyProvider, error) { return provider, nil }}
+	if err := migrating.migrate(true); err != nil {
+		t.Fatal("native migration cleanup failed", err)
+	}
+	if _, err := store.secrets.loadKey(); !errors.Is(err, ErrNotFound) {
+		t.Fatal("migration left native key", err)
+	}
+	got, err = migrating.Load()
+	if err != nil || !sameStoredState(state, got) {
+		t.Fatal("migration lost native state", err)
+	}
+	if err := migrating.Delete(); err != nil {
+		t.Fatal(err)
 	}
 }
