@@ -12,7 +12,7 @@ LINE 帳號，不是機器人帳號。
 ![使用 LINE CLI 在終端機操作個人 LINE 帳號](banner.png)
 
 [![CI](https://github.com/kongesque/line-cli/actions/workflows/cli.yml/badge.svg)](https://github.com/kongesque/line-cli/actions/workflows/cli.yml)
-[![Release](https://img.shields.io/github/v/release/kongesque/line-cli?filter=cli-v*&label=release)](https://github.com/kongesque/line-cli/releases/latest)
+[![Release](https://img.shields.io/github/v/release/kongesque/line-cli?filter=v*&label=release)](https://github.com/kongesque/line-cli/releases/latest)
 [![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

@@ -2,7 +2,7 @@ name: LINE CLI release artifacts
 
 on:
   push:
-    tags: ['cli-v*']
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -54,7 +54,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/cli-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: package
     runs-on: ubuntu-latest
     permissions:
