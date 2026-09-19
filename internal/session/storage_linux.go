@@ -15,9 +15,10 @@ import (
 // Resolve the bytes on every locked operation. Never cache a selected backend
 // or wrapping key across watch iterations, token updates, or migrations.
 type linuxStorage struct {
-	native   secretFileStore
-	provider func(context.Context) (sealedKeyProvider, error)
-	context  context.Context
+	native       secretFileStore
+	provider     func(context.Context) (sealedKeyProvider, error)
+	context      context.Context
+	cleanupGuard func() error // isolated synthetic-store override
 }
 
 func resolvedLinuxStorage() (linuxStorage, error) {

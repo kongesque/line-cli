@@ -70,6 +70,7 @@ func TestLinuxLockChild(t *testing.T) {
 }
 
 func TestLinuxLogoutKeepsLockFiles(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	s, _ := syntheticFileStore(t)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Dir(filepath.Dir(s.path)))
 	unlock, err := Lock()
@@ -92,5 +93,55 @@ func TestLinuxLogoutKeepsLockFiles(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(filepath.Dir(s.path), name)); err != nil {
 			t.Fatal("logout removed lock file", err)
 		}
+	}
+}
+
+func TestLinuxAccountLockCoversDifferentConfigPaths(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	u, err := Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer u()
+	registry, err := nativeRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer registry.root.Close()
+	paths, err := readNativePaths(registry)
+	dir, dirErr := linuxSessionDir()
+	if dirErr != nil {
+		t.Fatal(dirErr)
+	}
+	want, pathErr := canonicalSessionPath(filepath.Join(dir, "session.enc"))
+	if pathErr != nil {
+		t.Fatal(pathErr)
+	}
+	if err != nil || len(paths) != 1 || paths[0] != want {
+		t.Fatal("session path was not registered", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LINE_CLI_TEST_ACCOUNT_LOCK_CHILD", "1")
+	cmd := exec.Command(executable, "-test.run=^TestLinuxAccountLockChild$")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("different config escaped shared credential lock: %v %s", err, out)
+	}
+}
+
+func TestLinuxAccountLockChild(t *testing.T) {
+	if os.Getenv("LINE_CLI_TEST_ACCOUNT_LOCK_CHILD") != "1" {
+		return
+	}
+	u, err := Lock()
+	if err == nil {
+		u()
+	}
+	if !errors.Is(err, ErrBusy) {
+		t.Fatal("expected account-wide contention", err)
 	}
 }

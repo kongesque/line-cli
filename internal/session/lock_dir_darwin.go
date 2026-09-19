@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 )
 
+func platformSessionLock() (func(), error) { return namedLock("session.lock") }
+
 func sessionLockDir() (string, error) {
 	dir, err := os.UserCacheDir()
 	if err != nil {

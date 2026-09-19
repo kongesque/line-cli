@@ -80,6 +80,7 @@ func main() {
 	}
 	if session.SupportsHeadless() {
 		app.NewHeadlessLogin = func() (session.LoginStorage, error) { return session.BeginHeadlessLogin(ctx) }
+		app.MigrateHeadless = func(accepted bool) error { return session.MigrateHeadless(ctx, accepted) }
 	}
 	if err := app.Run(os.Args[1:]); err != nil {
 		if errors.Is(err, cli.ErrCancelled) {

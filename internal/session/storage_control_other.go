@@ -8,6 +8,7 @@ import (
 )
 
 func beginHeadlessLogin(context.Context) (LoginStorage, error) { return nil, ErrHeadlessUnsupported }
+func migrateHeadless(context.Context, bool) error              { return ErrHeadlessUnsupported }
 func platformStorageIdentity() (string, error)                 { return "native", nil }
 
 func nativeStorageStatus(store Store, check bool, prepare func() error) (StorageStatus, error) {

@@ -63,6 +63,7 @@ type App struct {
 	Continue         func() error
 	Version          string
 	NewHeadlessLogin func() (session.LoginStorage, error)
+	MigrateHeadless  func(bool) error
 }
 
 // Run validates command arguments before accessing Keychain or the network.

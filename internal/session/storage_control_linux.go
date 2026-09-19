@@ -174,6 +174,11 @@ func (s linuxStorage) Status(check bool) (status StorageStatus, result error) {
 		if errors.Is(err, ErrCleanupPending) {
 			status.Configured = "cleanup_pending"
 		}
+		if errors.Is(err, ErrMigrationPending) {
+			status.Configured = "present"
+			status.Backend = "native"
+			status.WriteAccess = "unavailable"
+		}
 		return status, err
 	}
 	data, err := s.read()
@@ -239,6 +244,16 @@ func (s linuxStorage) Status(check bool) (status StorageStatus, result error) {
 			return status, err
 		}
 		status.WriteAccess = "available"
+	}
+	files, err := s.native.files(false)
+	if err != nil {
+		return status, err
+	}
+	defer files.root.Close()
+	if r, err := readMigration(files); err != nil {
+		return status, err
+	} else if r != nil {
+		return status, ErrMigrationPending
 	}
 	return status, nil
 }

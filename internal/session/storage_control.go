@@ -9,7 +9,9 @@ import (
 var (
 	ErrHeadlessUnsupported = errors.New("headless storage is available only on Linux")
 	ErrHostConsent         = errors.New("host-only storage requires explicit acceptance")
-	ErrMigrationRequired   = errors.New("a native session exists; migrate it before selecting headless storage (migration support is not available yet)")
+	ErrMigrationRequired   = errors.New("a native session exists; run line auth migrate --storage=headless")
+	ErrMigrationPending    = errors.New("storage migration needs completion; run line auth migrate --storage=headless again")
+	ErrNativeKeyShared     = errors.New("native key ownership is shared or unverified; stop other profiles and resolve their native sessions before retrying cleanup")
 	ErrStorageChanged      = errors.New("saved storage changed during login; run login again")
 	ErrCleanupPending      = errors.New("local logout cleanup is incomplete; run line logout again")
 	ErrStorageRepair       = errors.New("storage metadata needs repair; existing data was preserved")
@@ -34,7 +36,10 @@ type LoginStorage interface {
 
 func SupportsHeadless() bool                                       { return runtime.GOOS == "linux" }
 func BeginHeadlessLogin(ctx context.Context) (LoginStorage, error) { return beginHeadlessLogin(ctx) }
-func (KeychainStore) StorageIdentity() (string, error)             { return platformStorageIdentity() }
+
+// MigrateHeadless must be called while holding Lock. It never contacts LINE.
+func MigrateHeadless(ctx context.Context, accepted bool) error { return migrateHeadless(ctx, accepted) }
+func (KeychainStore) StorageIdentity() (string, error)         { return platformStorageIdentity() }
 
 // Contains only safe local status. Protection is verified only after successful
 // decryption. LINEValidity never asserts that local credentials remain valid.
@@ -70,12 +75,18 @@ func StorageReason(err error) string {
 	switch {
 	case err == nil:
 		return "ok"
+	case errors.Is(err, ErrDurabilityUncertain):
+		return "durability_uncertain"
 	case errors.Is(err, ErrBusy):
 		return "busy"
 	case errors.Is(err, ErrNotFound):
 		return "no_session"
 	case errors.Is(err, ErrCleanupPending):
 		return "cleanup_pending"
+	case errors.Is(err, ErrMigrationPending):
+		return "migration_pending"
+	case errors.Is(err, ErrNativeKeyShared):
+		return "native_key_shared"
 	case errors.Is(err, ErrStorageChanged):
 		return "storage_changed"
 	case errors.Is(err, ErrHostConsent):
@@ -90,8 +101,6 @@ func StorageReason(err error) string {
 		return "unsafe_storage"
 	case errors.Is(err, ErrStorageRepair):
 		return "repair_required"
-	case errors.Is(err, ErrDurabilityUncertain):
-		return "durability_uncertain"
 	case errors.Is(err, ErrStorageCleanup):
 		return "probe_cleanup_failed"
 	case errors.Is(err, ErrCredentialCancelled):
@@ -131,7 +140,7 @@ func StorageExitCode(err error) int {
 		return 69
 	case "authentication_failed", "invalid_format", "missing_key", "protection_mismatch", "helper_output_limit":
 		return 65
-	case "cleanup_pending", "host_consent_required", "migration_required", "unsupported_platform", "interactive_check_required", "unsafe_storage", "repair_required":
+	case "cleanup_pending", "migration_pending", "native_key_shared", "host_consent_required", "migration_required", "unsupported_platform", "interactive_check_required", "unsafe_storage", "repair_required":
 		return 78
 	default:
 		return 1

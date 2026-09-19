@@ -72,7 +72,9 @@ The Secret Service keyring must be running and unlocked in the same D-Bus sessio
 Linux upgrades: stop existing CLI commands and watchers before running this
 version. Session and watch locks now live beside `session.enc` under
 `$XDG_CONFIG_HOME/line-cli` (normally `~/.config/line-cli`), independent of the
-cache directory. Concurrent old and new binaries are unsupported.
+cache directory. A shared credential lock and record of observed config paths
+also live under `$HOME/.config/line-cli`; keep HOME stable across invocations.
+Concurrent old and new binaries are unsupported.
 
 For a fresh account on supported headless Linux, use `line login --headless`.
 This enrolls systemd user-scoped host-key storage after explicit acceptance of
@@ -80,7 +82,9 @@ its weaker protection against a complete disk copy. The current enrollment flow
 does not claim TPM protection. Debian 13/systemd 257 and Ubuntu 26.04/systemd 259
 have disposable-VM validation; other machines need their own successful preflight.
 Ordinary commands and reauthentication keep the selected backend. Existing native
-sessions require migration, which is not implemented yet.
+sessions can move locally with `line auth migrate --storage=headless`, after
+explicit host-only acceptance. Migration preserves the saved state without
+contacting LINE. Retry the same command if native-key cleanup is incomplete.
 
 `line auth status --json` checks local storage without contacting LINE.
 `line auth status --check` additionally tests headless write readiness. Reboot

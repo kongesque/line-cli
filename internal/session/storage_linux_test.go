@@ -51,7 +51,7 @@ func testLinuxStorage(t *testing.T) (linuxStorage, *fakeSealedKeys, *fakeSecretS
 	t.Helper()
 	native, secrets := syntheticFileStore(t)
 	provider := &fakeSealedKeys{keys: map[string][]byte{}}
-	return linuxStorage{native: native, provider: func(context.Context) (sealedKeyProvider, error) { return provider, nil }}, provider, secrets
+	return linuxStorage{native: native, provider: func(context.Context) (sealedKeyProvider, error) { return provider, nil }, cleanupGuard: func() error { return nil }}, provider, secrets
 }
 func writeCandidate(t *testing.T, s linuxStorage, data []byte) {
 	t.Helper()

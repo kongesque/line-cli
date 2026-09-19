@@ -26,7 +26,7 @@ without separately arranging an appropriate test environment.
 | Reboot with the same enrolled blob | Passed on both candidates from a system unit and real cron; Debian VM cold start also passed |
 | Complete disk copy | Separate Debian VM recovered the original host-only fixture from the copied disk |
 | Physical TPM / virtual TPM | Software TPM policy/decryption checks passed; physical TPM unverified |
-| Production headless support | Host-only CLI enrollment, persistent selection, local status and logout implemented; migration pending |
+| Production headless support | Host-only CLI enrollment, persistent selection, local status, migration and logout implemented; migration runtime release checks pending |
 
 Local validation on 2026-09-13, macOS arm64 / Go 1.27.1: race-enabled probe tests,
 a 10-second parser fuzz run, and `go vet` passed. Linux arm64 and amd64 binaries
@@ -188,5 +188,5 @@ separation between unprivileged enrollment and administrator-sealed TPM fixtures
 
 The production engine is documented in
 [internal/session/HEADLESS.md](../../internal/session/HEADLESS.md). The CLI now
-supports explicit host-only enrollment and local status; native-to-headless
-migration remains pending. This directory contains the separate evidence probe.
+supports explicit host-only enrollment, local status and native-to-headless
+migration. This directory contains the separate evidence probe.

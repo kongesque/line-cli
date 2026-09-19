@@ -1,10 +1,11 @@
 # Headless storage engine
 
-Phases 2/3 implement the envelope, systemd adapter, persistent Linux resolver,
+Phases 2–4 implement the envelope, systemd adapter, persistent Linux resolver,
 headless login consent, local status, and logout cleanup receipts. Fresh native
 storage remains the default. `login --headless` explicitly enrolls host-only
-storage; existing protection is preserved on reauthentication. Migration remains
-a subsequent phase. Do not manually replace session files to change backends.
+storage; existing protection is preserved on reauthentication. Explicit native
+migration uses `auth migrate --storage=headless`. Do not manually replace session
+files to change backends.
 
 ## Envelope version 1
 
@@ -93,11 +94,11 @@ The candidate builder returns verified bytes without committing them. The login
 controller prepares a candidate, obtains explicit host-only consent, checks for
 changed storage around unlocked prompts, and writes only after authentication.
 An unaccepted candidate cannot pass Manager.Login preflight or Save. Migration
-will use a separate transaction. Stop older commands and watchers before changing
+uses a separate transaction. Stop older commands and watchers before changing
 formats or lock conventions.
 
 Linux logout uses an 80-byte private receipt: the 15-byte `LINECLI\0LOGOUT\0`
-marker, one backend byte (1 native / 2 headless), the 32-byte SHA-256 digest of the
+marker, one backend byte (1 native / 2 headless / 3 migration cleanup), the 32-byte SHA-256 digest of the
 session file, and a 32-byte SHA-256 checksum of the preceding receipt bytes. The
 checksum detects corruption; it is not an authentication claim against same-user
 malware. Receipt creation, session removal, and receipt removal use durable file
@@ -106,6 +107,27 @@ operations cannot create a new session while it remains. Logout verifies native
 key removal using non-unlocking search, because clear's missing/unlocked-item
 result alone cannot prove a locked key was deleted. An absent session without a
 receipt cannot authorize deletion of an orphaned native item.
+
+Migration stages `.migration.candidate`, reopens and authenticates its full state,
+then durably creates the 144-byte `migration.pending` receipt before replacement.
+The receipt is a 16-byte `LINECLI\0MIGRATE\0` marker, followed by SHA-256 digests
+of the original ciphertext, the candidate's sealed credential, and the old native
+key, then a SHA-256 checksum of those 112 bytes. It contains no recoverable key.
+After the candidate rename and directory sync, cleanup verifies native ownership
+and the key fingerprint before clearing the native item. A cleanup retry never
+reseals or replaces committed state. The sealed-key digest allows normal token,
+sequence and checkpoint updates while cleanup is pending. Pre-commit receipts
+block ordinary operations until resumed; unknown/mismatching receipts fail closed.
+Logout backend 3 records that native cleanup belongs to the migration receipt,
+so a crash after removing that receipt cannot delete a later replacement key.
+
+Linux session operations hold both the config-directory session lock and an
+account-wide credential lock. The latter lives with a bounded observed-path
+record under `$HOME/.config/line-cli`. Native deletion checks every known path
+and the default path, authenticating other headless files and syncing their
+directories. Native/unreadable paths retain the shared key. Historical custom
+paths must be registered before cleanup; changing HOME or running older versions
+concurrently is unsupported. These files survive logout.
 
 Native read-only status uses libsecret search without `--unlock`, or a per-query
 macOS LAContext with interaction disabled. Linux/macOS native write status remains
@@ -137,3 +159,13 @@ initialize its global system host secret. Set `LINE_CLI_TEST_SYSTEMD_CREDS=1` an
 run `go test -v ./internal/session -run '^TestLinuxSystemdStorageIntegration$'`.
 It never contacts LINE or reads the developer's session or keyring. Ordinary
 tests skip this integration unless it is explicitly enabled.
+
+Phase 4 adds `TestLinuxSystemdMigrationIntegration` under the same opt-in gate
+and native Secret Service migration cleanup to the private D-Bus CI fixture.
+Its transaction failure tests use synthetic providers. The earlier disposable
+VM files were unavailable on 2026-09-19; a fresh native systemd migration run is
+still a release-gate check, not evidence established by the earlier engine runs.
+The actual watcher and migration resolver passed the mid-stream migration and
+logout regression with synthetic providers on macOS through a temporary Go
+source overlay, including the race detector. Linux builds include that regression
+in the ordinary session test suite.

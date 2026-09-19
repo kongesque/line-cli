@@ -16,6 +16,7 @@ func TestHeadlessCLIWithNativeSystemdAndFakeLINE(t *testing.T) {
 		t.Skip("requires disposable Linux VM")
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 	a, api, out, _, locked := guidedApp(t, "yes\n")
 	a.Manager = session.NewManager(session.KeychainStore{})
 	a.Manager.NewClient = func(string) session.API { return api }

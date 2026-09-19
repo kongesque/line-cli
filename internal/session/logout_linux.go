@@ -27,6 +27,22 @@ func (s linuxStorage) checkCleanup() error {
 	if exists {
 		return ErrCleanupPending
 	}
+	r, err := readMigration(files)
+	if err != nil {
+		return err
+	}
+	if r != nil {
+		data, err := files.read(filepath.Base(s.native.path))
+		if err != nil {
+			return ErrStorageRepair
+		}
+		if !r.target(data) {
+			if sha256.Sum256(data) == r.source {
+				return ErrMigrationPending
+			}
+			return ErrStorageRepair
+		}
+	}
 	return nil
 }
 
@@ -45,11 +61,21 @@ func (s linuxStorage) Delete() error {
 	if err != nil && !missing {
 		return err
 	}
+	migration, err := readMigration(files)
+	if err != nil {
+		return err
+	}
+	if migration != nil && !missing && !migration.target(data) && sha256.Sum256(data) != migration.source {
+		return ErrStorageRepair
+	}
 	receipt, err := files.read(logoutReceiptName)
 	if errors.Is(err, os.ErrNotExist) {
 		// Absence cannot authorize deleting a native key that may belong to a
 		// different known profile or a formerly native session.
 		if missing {
+			if migration != nil {
+				return ErrStorageRepair
+			}
 			return nil
 		}
 		backend := byte(1)
@@ -58,6 +84,9 @@ func (s linuxStorage) Delete() error {
 				return ErrStorageRepair
 			}
 			backend = 2
+		}
+		if migration != nil {
+			backend = 3
 		}
 		sum := sha256.Sum256(data)
 		receipt = append([]byte(logoutReceiptMagic), backend)
@@ -70,7 +99,7 @@ func (s linuxStorage) Delete() error {
 	} else if err != nil {
 		return err
 	}
-	if len(receipt) != 80 || !bytes.Equal(receipt[:15], []byte(logoutReceiptMagic)) || (receipt[15] != 1 && receipt[15] != 2) {
+	if len(receipt) != 80 || !bytes.Equal(receipt[:15], []byte(logoutReceiptMagic)) || (receipt[15] != 1 && receipt[15] != 2 && receipt[15] != 3) {
 		return ErrStorageRepair
 	}
 	checksum := sha256.Sum256(receipt[:48])
@@ -86,7 +115,14 @@ func (s linuxStorage) Delete() error {
 	if err := files.remove(name); err != nil {
 		return err
 	}
-	if receipt[15] == 1 {
+	if migration != nil {
+		if err := s.finishMigration(files, migration); err != nil {
+			return errors.Join(ErrCleanupPending, err)
+		}
+	} else if receipt[15] == 1 {
+		if err := s.nativeCleanupAllowed(); err != nil {
+			return errors.Join(ErrCleanupPending, err)
+		}
 		if err := s.native.secrets.Delete(); err != nil {
 			return errors.Join(ErrCleanupPending, err)
 		}
@@ -97,6 +133,9 @@ func (s linuxStorage) Delete() error {
 		if remaining {
 			return ErrCleanupPending
 		}
+	}
+	if err := files.remove(migrationCandidateName); err != nil {
+		return errors.Join(ErrCleanupPending, err)
 	}
 	return files.remove(logoutReceiptName)
 }

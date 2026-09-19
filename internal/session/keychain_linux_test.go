@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -19,6 +20,12 @@ func TestLinuxNativeSecretService(t *testing.T) {
 		t.Fatal("isolated D-Bus session is required")
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	unlockStorage, err := Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlockStorage()
 	store, err := linuxStore()
 	if err != nil {
 		t.Fatal(err)
@@ -129,5 +136,25 @@ func TestLinuxNativeSecretService(t *testing.T) {
 		if err := api.Delete(); err != nil {
 			t.Fatal("native cleanup retry failed", err)
 		}
+	}
+	// Exercise real Secret Service migration cleanup without requiring a recent
+	// systemd on CI. Sealing is synthetic; the old native item is real and private.
+	if err := api.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeSealedKeys{keys: map[string][]byte{}}
+	migrating := linuxStorage{native: store, provider: func(context.Context) (sealedKeyProvider, error) { return provider, nil }}
+	if err := migrating.migrate(true); err != nil {
+		t.Fatal("native migration cleanup failed", err)
+	}
+	if _, err := store.secrets.loadKey(); !errors.Is(err, ErrNotFound) {
+		t.Fatal("migration left native key", err)
+	}
+	got, err = migrating.Load()
+	if err != nil || !sameStoredState(state, got) {
+		t.Fatal("migration lost native state", err)
+	}
+	if err := migrating.Delete(); err != nil {
+		t.Fatal(err)
 	}
 }

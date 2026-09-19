@@ -11,8 +11,11 @@ import (
 
 func (a *App) authCommand(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		_, err := fmt.Fprintln(a.Out, "Usage: line auth status [--check] [--json]\nInspect local storage without contacting LINE.")
+		_, err := fmt.Fprintln(a.Out, "Usage: line auth status [--check] [--json]\n       line auth migrate --storage=headless\nInspect or migrate local storage without contacting LINE.")
 		return err
+	}
+	if args[0] == "migrate" {
+		return a.migrateCommand(args[1:])
 	}
 	if args[0] != "status" {
 		return errors.New("unknown auth command; run line auth --help")
@@ -80,6 +83,45 @@ func (a *App) authCommand(args []string) error {
 		return err
 	}
 	return statusErr
+}
+
+func (a *App) migrateCommand(args []string) error {
+	fs := flag.NewFlagSet("auth migrate", flag.ContinueOnError)
+	fs.SetOutput(a.Err)
+	storage := fs.String("storage", "", "target storage (headless; Linux only)")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return errors.New("invalid options; run line auth migrate --help")
+	}
+	if fs.NArg() != 0 || *storage != "headless" {
+		return errors.New("use line auth migrate --storage=headless")
+	}
+	if a.MigrateHeadless == nil {
+		return session.ErrHeadlessUnsupported
+	}
+	if !a.Interactive {
+		return errors.New("storage migration requires an interactive terminal for protection acceptance")
+	}
+	fmt.Fprintln(a.Err, "Migrate local storage to Host key; no TPM. A complete disk copy can include the decryption secret. Root and malware running as this account remain outside the protection boundary. Stop automation and older CLI versions before migrating. Reboot access is expected, not verified.")
+	answer, err := a.ask("Accept host-only protection? Type yes to continue: ")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(answer) != "yes" {
+		return ErrCancelled
+	}
+	unlock, err := a.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := a.MigrateHeadless(true); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(a.Out, "Storage: Headless. Migration and native-key cleanup complete. After reboot: Expected; not verified.")
+	return err
 }
 
 func (a *App) headlessLogin(email string) error {

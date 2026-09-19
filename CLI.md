@@ -288,8 +288,26 @@ TPM behavior are not certified by these VM tests.
 After enrollment, ordinary commands require no storage flag. Both `line login`
 and `line login --headless` preserve existing headless protection when signing in
 again. An existing native session is never implicitly migrated or overwritten by
-`--headless`; migration is a subsequent implementation phase. To deliberately
+`--headless`; use `line auth migrate --storage=headless` to move it locally. To deliberately
 discard the existing local session, log out before starting a fresh login.
+
+Migration requires an interactive terminal and explicit host-only acceptance.
+Stop automation and older CLI versions first. It reads the accessible native
+session, stages and authenticates the complete headless copy, then replaces the
+session durably before removing the old native key. No LINE request, password,
+token refresh, or new login is involved; E2EE keys, tokens, generation, sequence,
+and watch checkpoint are preserved. Unknown saved fields cause refusal so a
+newer session schema is never silently reduced.
+
+If interrupted, run `line auth migrate --storage=headless` again. A private
+`migration.pending` receipt distinguishes an uncommitted candidate from a
+committed headless session. Before commit, recovery must finish before ordinary
+writes resume. After commit, ordinary headless operations remain available even
+if native cleanup fails; `auth status` reports `migration_pending` with nonzero
+status until cleanup completes. Retries keep the enrolled key and current saved
+state. Uncertain durability retains the source key and never restores an older
+snapshot. A changed native key or another known native session prevents deletion
+and reports the ownership ambiguity. Resolve those sessions before retrying.
 
 `auth status` is local: it does not refresh tokens, check LINE validity, or ask for
 unlock input. A present but inaccessible session is reported as unreadable with
@@ -327,6 +345,19 @@ private (`0700`) and its files private (`0600`); unsafe ownership, file types,
 symlinks at the application directory or files, and hard-linked files are
 rejected. Existing parent directories are never automatically chmodded.
 
+Linux commands additionally take an account-wide `credential.lock` and durably
+record each observed session path in `native-paths.json` under
+`$HOME/.config/line-cli`. Keep HOME stable and this directory writable/private,
+including when using a custom XDG config directory. The record holds at most 64
+canonical paths. Cleanup checks the default location and recorded paths while
+holding the shared lock; another native, unreadable, or uncertain session keeps
+the shared wrapping key. Headless files at other known paths must authenticate
+and have their directory synced before they can release that shared dependency.
+This cannot discover historical custom paths that this version has never seen.
+If you used such paths, run a command such as `auth status` with each path first
+to register it, before migration or logout. Never delete the path record or lock
+files as a cleanup shortcut.
+
 Before upgrading to this lock layout, stop old CLI commands and watchers.
 Concurrent old and new binaries are unsupported. Keep lock files in place,
 including after logout. Multiple config directories are not a supported
@@ -342,12 +373,15 @@ local logout can finish interrupted cleanup.
 Linux logout first writes a private, durable `logout.pending` receipt containing
 the backend and a digest of the exact session file. It then removes the session
 durably, removes only its known wrapping artifact, verifies native-key deletion,
-and removes the receipt. Headless logout needs no broker access and never deletes
+and removes the receipt. Ordinary headless logout needs no broker access and never deletes
 the global system host secret or an unrelated native wrapping item. Receipt
 presence blocks login, reads, and writes until cleanup finishes. Changed files,
 malformed receipts, or unknown backend metadata require repair rather than blind
 deletion. An orphaned native item without a session or receipt is retained because
 its ownership cannot be established. Stop older binaries before using this layout.
+If migration cleanup is pending, logout also finishes that recorded native-key
+cleanup. Other known headless profiles may need broker access to prove that the
+shared key is no longer needed; failure leaves a receipt for retry.
 
 Storage failures have dedicated executable exit codes:
 

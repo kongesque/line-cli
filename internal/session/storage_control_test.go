@@ -17,6 +17,8 @@ func TestStorageExitCodesPreserveErrorCategories(t *testing.T) {
 		{ErrStorageFormat, "invalid_format", 65}, {ErrStorageAuthentication, "authentication_failed", 65}, {errMissingWrappingKey, "missing_key", 65},
 		{ErrCredentialHelper, "storage_unavailable", 69}, {ErrCredentialTimeout, "helper_timeout", 69}, {ErrHeadlessUnavailable, "headless_unavailable", 69},
 		{ErrDurabilityUncertain, "durability_uncertain", 74}, {ErrStorageCleanup, "probe_cleanup_failed", 74},
+		{errors.Join(ErrMigrationPending, ErrDurabilityUncertain), "durability_uncertain", 74},
+		{ErrMigrationPending, "migration_pending", 78}, {ErrNativeKeyShared, "native_key_shared", 78},
 		{errors.New("unrelated network error"), "storage_error", 1},
 	} {
 		err := tc.err

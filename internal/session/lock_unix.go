@@ -16,7 +16,7 @@ import (
 // command cannot overwrite rotated tokens or resurrect a deleted session.
 var ErrBusy = errors.New("another line command is using the session; retry when it finishes")
 
-func Lock() (func(), error) { return namedLock("session.lock") }
+func Lock() (func(), error) { return platformSessionLock() }
 
 // WatchLock prevents two consumers from advancing the same event cursor.
 func WatchLock() (func(), error) {
