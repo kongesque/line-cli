@@ -1,8 +1,11 @@
 # Phase 0 native runtime evidence — 2026-09-13
 
-These are synthetic credential experiments in disposable ARM64 VMware Fusion
-VMs. No LINE session, personal keyring, or UniPi was used. Production code is
-unchanged. Results certify only the tested behavior and configuration.
+This is a historical record of synthetic credential experiments in disposable
+ARM64 VMware Fusion VMs. No LINE session, personal keyring, or UniPi was used.
+The results certify only the tested behavior and configuration; they do not
+certify the later production backend. See
+[HEADLESS.md](../../internal/session/HEADLESS.md#release-verification) for current
+release evidence.
 
 ## Debian 13
 

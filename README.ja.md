@@ -69,8 +69,22 @@ sudo apt install libsecret-tools gnome-keyring
 > [!IMPORTANT]
 > SSH接続やヘッドレス環境のLinuxでは、パッケージをインストールするだけでは
 > 不十分です。CLIが使用するD-Busセッション内にロック解除済みのSecret Serviceが
-> ない場合、スマートフォンでの本人確認後に `could not save Secret Service` と
-> 表示され、ログインに失敗します。
+> ない場合、LINEのパスワードや本人確認を求める前のストレージ検査でログインが
+> 停止します。
+
+対応するヘッドレスLinuxでは、`line login --headless` を使うと、明示的な同意後に
+systemdのユーザー単位ホスト鍵ストレージを使用できます。この方式はディスク全体の
+コピーに対する保護やTPM保護を提供しません。既存のネイティブセッションはLINEへ
+接続せずに移行できます。
+
+```sh
+line auth migrate --storage=headless
+line auth status --check
+```
+
+アップグレード前に、実行中のCLIコマンドとwatcherを停止してください。詳しい要件、
+対応するsystemdのバージョン、復旧方法は[CLIガイド](CLI.md#headless-linux)を参照して
+ください。
 
 macOSではHomebrewも利用できます。
 

@@ -5,20 +5,22 @@ title: "feat: ✨ "
 labels: enhancement
 ---
 
-# Feature Request: [Short Title]
+# Feature request
 
-## Is your feature request related to a problem? Please describe
+## What problem would this solve?
 
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+Describe the workflow or limitation, including who it affects.
 
-## Describe the solution you'd like
+## What would you like to happen?
 
-A clear and concise description of what you want to happen.
+Describe the proposed command, behavior, or output. Include a short example when
+helpful.
 
-## Describe alternatives you've considered
+## What alternatives have you tried?
 
-A clear and concise description of any alternative solutions or features you've considered.
+Describe any workarounds or related tools you considered.
 
 ## Additional context
 
-Add any other context or screenshots about the feature request here.
+Add any other useful context. Remove private account and message data before
+posting.

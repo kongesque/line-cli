@@ -260,7 +260,14 @@ LINE CLI stores one account per operating-system user:
 | Linux | AES-GCM encrypted session file with its key in Secret Service |
 | Windows | Current-user DPAPI encrypted session file |
 
-For a fresh session on supported Linux:
+Your password is used only during login and is never saved. Session updates use
+a process lock, so another command may briefly report that the session is busy.
+Retry it after the current update finishes.
+
+### Headless Linux
+
+On a supported Linux host without an unlocked Secret Service keyring, create a
+new session with:
 
 ```sh
 line login --headless
@@ -268,62 +275,59 @@ line auth status
 line auth status --check --json
 ```
 
-Headless enrollment uses a systemd user-scoped wrapping credential and explicitly
-asks you to accept **Host key; no TPM** protection before collecting a password.
-A complete disk copy can contain the host secret needed for decryption. Root and
-malware running as the same Unix account remain outside this protection boundary.
-The current CLI enrolls host-only storage; it does not automatically try TPM
-enrollment or silently fall back from a TPM failure. Cancellation leaves no saved
-LINE session. Systemd sealing itself can initialize the system host secret through
-its broker; the CLI does not configure services, Polkit, lingering, or automation.
+The CLI asks you to accept **Host key; no TPM** protection before it requests
+your LINE password. This mode protects the session from other unprivileged users,
+but not from root, malware running as your Unix account, or someone with a complete
+copy of the disk. It does not claim TPM protection. Cancelling enrollment leaves
+no saved LINE session.
 
-Use the same stable Unix account and config directory for interactive commands,
-SSH, cron, and systemd jobs. The helper must be the trusted system executable,
-with user-scoped broker access. Inspected helper versions 256–259 are accepted;
-257 on Debian 13 and 259 on Ubuntu 26.04 have native VM evidence. Versions 256/258
-are source-compatible candidates, not separately runtime-validated platforms.
-Older and unreviewed newer helpers fail before authentication. UniPi and physical
-TPM behavior are not certified by these VM tests.
+After enrollment, ordinary commands need no storage flag. Signing in again keeps
+the selected backend. `login --headless` never converts or overwrites an existing
+native session.
 
-After enrollment, ordinary commands require no storage flag. Both `line login`
-and `line login --headless` preserve existing headless protection when signing in
-again. An existing native session is never implicitly migrated or overwritten by
-`--headless`; use `line auth migrate --storage=headless` to move it locally. To deliberately
-discard the existing local session, log out before starting a fresh login.
+The trusted `/usr/bin/systemd-creds` helper and its user credential broker must
+be available. Use the same Unix account and config directory for interactive
+commands, SSH, cron, and systemd jobs. Versions 256–259 are accepted; Debian
+13/systemd 257 and Ubuntu 26.04/systemd 259 have disposable-VM validation. Other
+accepted versions still need a successful local preflight. Older and unreviewed
+newer versions are rejected. UniPi and physical TPM behavior have not been
+verified.
 
-Migration requires an interactive terminal and explicit host-only acceptance.
-Stop automation and older CLI versions first. It reads the accessible native
-session, stages and authenticates the complete headless copy, then replaces the
-session durably before removing the old native key. No LINE request, password,
-token refresh, or new login is involved; E2EE keys, tokens, generation, sequence,
-and watch checkpoint are preserved. Unknown saved fields cause refusal so a
-newer session schema is never silently reduced.
+### Check or migrate storage
 
-If interrupted, run `line auth migrate --storage=headless` again. A private
-`migration.pending` receipt distinguishes an uncommitted candidate from a
-committed headless session. Before commit, recovery must finish before ordinary
-writes resume. After commit, ordinary headless operations remain available even
-if native cleanup fails; `auth status` reports `migration_pending` with nonzero
-status until cleanup completes. Retries keep the enrolled key and current saved
-state. Uncertain durability retains the source key and never restores an older
-snapshot. A changed native key or another known native session prevents deletion
-and reports the ownership ambiguity. Resolve those sessions before retrying.
+Status checks are local and never contact LINE:
 
-`auth status` is local: it does not refresh tokens, check LINE validity, or ask for
-unlock input. A present but inaccessible session is reported as unreadable with
-unverified protection, not as logged out. Saved email appears only after successful
-decryption. JSON includes a schema version, configured/backend state, verified
-protection, read/write access, reboot expectation, LINE validity, and a stable
-reason code; it excludes tokens, E2EE keys, and credential blobs. Reported TPM/PCR
-metadata does not establish physical hardware or verified boot.
+```sh
+line auth status
+line auth status --check --json
+```
 
-`--check` probes a separate file for headless storage and temporary DPAPI files on
-Windows. Linux native Secret Service and macOS Keychain report
-`interactive_check_required` for write checks, because proving those writes could
-request an unlock prompt. Their read-only status remains noninteractive; native
-write probes still run during interactive login. An absent session reports
-`no_session`. Reboot access for an accessible headless session is
-`expected_not_verified`, never an unconditional readiness guarantee.
+`auth status` does not refresh tokens or prove that the LINE session is still
+valid. It reports inaccessible storage as unreadable, not logged out. `--check`
+also tests write readiness where that can be done without an unlock prompt.
+Native Linux Secret Service and macOS Keychain therefore report
+`interactive_check_required`; their full write checks run during interactive
+login. Headless reboot access is reported as `expected_not_verified` until you
+test it on your own host.
+
+To move an accessible native Linux session to headless storage:
+
+```sh
+line auth migrate --storage=headless
+```
+
+Migration requires a terminal and the same explicit host-only acceptance. Stop
+watchers, automation, and older CLI versions first. Migration preserves tokens,
+E2EE keys, request sequence, and the watch checkpoint without contacting LINE or
+requesting your password.
+
+If migration is interrupted, run the same command again. Do not delete the
+`migration.pending` file or replace `session.enc` manually. `auth status` reports
+`migration_pending` until cleanup succeeds. See the
+[headless storage internals](internal/session/HEADLESS.md) for the transaction,
+envelope, and recovery design.
+
+### Run unattended
 
 For unattended use, enroll interactively as a dedicated unprivileged account,
 then verify `auth status --check` under that same UID and environment after a
@@ -353,16 +357,13 @@ RestartPreventExitStatus=65 74 78
 WantedBy=multi-user.target
 ```
 
-Treat watcher output as private message data and restrict access to its journal
-or output files. Check local storage with `auth status --check` when a service
-stops: repair format/configuration errors and resolve uncertain durability before
-restarting it. The restart policy limits process restarts; it does not authorize
-automatic retries of message sends or other mutations. Cron jobs should likewise
-set stable HOME/XDG paths and `umask 077`, and use the same unprivileged account.
+Treat watcher output as private message data and restrict its journal or output
+files. If the service stops, run `line auth status --check` as the service user
+before restarting it. This restart policy applies only to the watcher process; it
+does not authorize retrying sends or other remote mutations. Cron jobs should use
+the same account and paths, with `umask 077`.
 
-Session updates are protected by a process lock. Other commands can run while
-`watch` is connected, although a brief session-busy error is possible during a
-credential update; retry the command after the update finishes.
+### Linux files and upgrades
 
 Login checks native storage before collecting your LINE password and again
 before contacting LINE. The check saves, reads, replaces, and removes a separate
@@ -380,18 +381,12 @@ private (`0700`) and its files private (`0600`); unsafe ownership, file types,
 symlinks at the application directory or files, and hard-linked files are
 rejected. Existing parent directories are never automatically chmodded.
 
-Linux commands additionally take an account-wide `credential.lock` and durably
-record each observed session path in `native-paths.json` under
-`$HOME/.config/line-cli`. Keep HOME stable and this directory writable/private,
-including when using a custom XDG config directory. The record holds at most 64
-canonical paths. Cleanup checks the default location and recorded paths while
-holding the shared lock; another native, unreadable, or uncertain session keeps
-the shared wrapping key. Headless files at other known paths must authenticate
-and have their directory synced before they can release that shared dependency.
-This cannot discover historical custom paths that this version has never seen.
-If you used such paths, run a command such as `auth status` with each path first
-to register it, before migration or logout. Never delete the path record or lock
-files as a cleanup shortcut.
+Linux also records observed session paths in `native-paths.json` under
+`$HOME/.config/line-cli`. This prevents cleanup in one config directory from
+deleting a key still needed by another known directory. If older releases used
+custom `XDG_CONFIG_HOME` locations, run `line auth status` once with each old
+location before migration or logout so the CLI can register it. Never delete the
+path record or lock files as a cleanup shortcut.
 
 Before upgrading to this lock layout, stop old CLI commands and watchers.
 Concurrent old and new binaries are unsupported. Keep lock files in place,
@@ -399,24 +394,11 @@ including after logout. Multiple config directories are not a supported
 multi-account setup: native Linux storage uses one wrapping-key identity per
 Secret Service keyring.
 
-Linux file updates sync the temporary file before replacement and then sync
-the containing directory. An error reporting uncertain durability means the
-file may already have changed; do not restore a stale session over it. Logout
-retains the wrapping key until session removal is confirmed durable. Repeating
-local logout can finish interrupted cleanup.
+An uncertain-durability error means the file may already have changed. Do not
+restore an older copy over it; repeat the same local operation. Logout uses a
+private recovery receipt and can be repeated to finish interrupted cleanup.
 
-Linux logout first writes a private, durable `logout.pending` receipt containing
-the backend and a digest of the exact session file. It then removes the session
-durably, removes only its known wrapping artifact, verifies native-key deletion,
-and removes the receipt. Ordinary headless logout needs no broker access and never deletes
-the global system host secret or an unrelated native wrapping item. Receipt
-presence blocks login, reads, and writes until cleanup finishes. Changed files,
-malformed receipts, or unknown backend metadata require repair rather than blind
-deletion. An orphaned native item without a session or receipt is retained because
-its ownership cannot be established. Stop older binaries before using this layout.
-If migration cleanup is pending, logout also finishes that recorded native-key
-cleanup. Other known headless profiles may need broker access to prove that the
-shared key is no longer needed; failure leaves a receipt for retry.
+### Storage exit codes
 
 Storage failures have dedicated executable exit codes:
 
@@ -428,10 +410,11 @@ Storage failures have dedicated executable exit codes:
 | 75 | Local contention, changed storage during login, or cancelled helper |
 | 78 | Configuration, consent, migration, repair, or interactive-check requirement |
 
-Unrelated CLI/network errors retain status 1. `auth status --json` writes its
-status object even when storage is unavailable, then returns the corresponding
-nonzero exit status. Cancelling an interactive prompt retains the existing CLI
-cancellation behavior.
+Other CLI and network errors use status 1. `auth status --json` still writes its
+status object when storage is unavailable, then returns the matching nonzero
+status.
+
+### Log out
 
 ```sh
 line logout

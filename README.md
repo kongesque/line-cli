@@ -54,7 +54,8 @@ The installer detects your OS and CPU architecture, verifies the release
 checksum, installs `line` into `~/.local/bin`, and configures `PATH` for common
 shells. Reopen your terminal if the installer asks you to.
 
-For native Linux storage, install credential storage before `line login`. On Debian/Ubuntu:
+For native Linux storage, install credential storage before `line login`. On
+Debian or Ubuntu:
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
@@ -69,30 +70,20 @@ The Secret Service keyring must be running and unlocked in the same D-Bus sessio
 > checked again after password input; later keyring or filesystem failures can
 > still prevent saving the session.
 
-Linux upgrades: stop existing CLI commands and watchers before running this
-version. Session and watch locks now live beside `session.enc` under
-`$XDG_CONFIG_HOME/line-cli` (normally `~/.config/line-cli`), independent of the
-cache directory. A shared credential lock and record of observed config paths
-also live under `$HOME/.config/line-cli`; keep HOME stable across invocations.
-Concurrent old and new binaries are unsupported.
+On supported headless Linux systems, `line login --headless` uses systemd
+user-scoped host-key storage after you accept its weaker protection against a
+complete disk copy. It does not claim TPM protection. Use a stable, dedicated
+Unix account for automation. Existing native sessions can be moved without
+contacting LINE:
 
-For a fresh account on supported headless Linux, use `line login --headless`.
-This enrolls systemd user-scoped host-key storage after explicit acceptance of
-its weaker protection against a complete disk copy. The current enrollment flow
-does not claim TPM protection. Debian 13/systemd 257 and Ubuntu 26.04/systemd 259
-have disposable-VM validation; other machines need their own successful preflight.
-Ordinary commands and reauthentication keep the selected backend. Existing native
-sessions can move locally with `line auth migrate --storage=headless`, after
-explicit host-only acceptance. Migration preserves the saved state without
-contacting LINE. Retry the same command if native-key cleanup is incomplete.
+```sh
+line auth migrate --storage=headless
+line auth status --check
+```
 
-`line auth status --json` checks local storage without contacting LINE.
-`line auth status --check` additionally tests headless write readiness. Reboot
-access is reported as expected but unverified for the user's installation.
-Use a dedicated unprivileged account with stable HOME/XDG paths for automation;
-[CLI.md](CLI.md) includes operator-owned service permissions and restart settings.
-See the [storage validation record](internal/session/HEADLESS.md#release-verification)
-for the tested runtimes and remaining hardware limits.
+Before upgrading, stop existing CLI commands and watchers; running old and new
+versions together is unsupported. See [CLI.md](CLI.md#headless-linux) for setup,
+service guidance, supported systemd versions, and recovery instructions.
 
 Homebrew is also available on macOS:
 

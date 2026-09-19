@@ -1,11 +1,17 @@
 # Headless-storage Phase 0 probe
 
-This experiment is separate from `cmd/line` and `internal/session`. It does not
-read LINE sessions, access Secret Service, contact LINE, or implement a storage
-backend. All keys are newly generated synthetic 32-byte values. No key, encrypted
-credential, raw helper diagnostic, or credential fingerprint is printed.
-Normal runs save nothing; explicit fixture enrollment persists only
-the synthetic sealed blob, boot ID, and random-key digest for later verification.
+This directory preserves the synthetic experiment that informed the production
+headless storage backend. It is an evidence and reproduction tool, not the setup
+path for ordinary users. See the [CLI guide](../../CLI.md#headless-linux) for
+current usage and the [engine document](../../internal/session/HEADLESS.md) for
+the production design.
+
+The probe remains separate from `cmd/line` and `internal/session`. It does not read
+LINE sessions, access Secret Service, or contact LINE. All keys are newly generated
+synthetic 32-byte values. It never prints keys, encrypted credentials, raw helper
+diagnostics, or credential fingerprints. Normal runs save nothing; explicit
+fixture enrollment saves only a synthetic sealed blob, boot ID, and random-key
+digest for later verification.
 
 Run the native probe only in a **disposable booted Linux test environment**. Even
 unprivileged `systemd-creds encrypt --user` can cause the privileged broker to
@@ -32,11 +38,10 @@ Local validation on 2026-09-13, macOS arm64 / Go 1.27.1: race-enabled probe test
 a 10-second parser fuzz run, and `go vet` passed. Linux arm64 and amd64 binaries
 cross-built successfully. These are development checks, not native Linux evidence.
 
-The child-process tests exposed an existing follow-up in
-`internal/session/secret_tool_linux.go`: embedding `bytes.Buffer` promotes
-`ReadFrom`, allowing `io.Copy` to bypass a custom `Write` limit. The probe uses
-composition and tests both stdout and stderr limits. Phase 1 corrects the native
-helper separately, with a real synthetic subprocess regression test.
+The child-process tests exposed an output-limit bug in the earlier native helper:
+embedding `bytes.Buffer` promoted `ReadFrom`, so `io.Copy` could bypass a custom
+`Write` limit. The production helper now uses composition and has a synthetic
+subprocess regression test for both stdout and stderr limits.
 
 ## Local validation and cross-build
 
@@ -173,7 +178,7 @@ The [v258 release notes](https://github.com/systemd/systemd/blob/v258/NEWS)
 also change the default fixed PCR mask to empty. Display observed fixed and
 signed-policy masks separately; hardware binding alone is not verified boot.
 
-## Remaining Phase 0 evidence
+## Remaining evidence gaps
 
 See [RUNTIME.md](RUNTIME.md) for native observations, exact versions, and the
 separation between unprivileged enrollment and administrator-sealed TPM fixtures.

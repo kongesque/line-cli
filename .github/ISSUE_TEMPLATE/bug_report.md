@@ -1,31 +1,39 @@
 ---
 name: Bug report
-about: Create a bug report
+about: Report a reproducible problem
 title: "bug: 🐛 "
 labels: bug
 ---
 
-# Bug Report: [Short Title]
+# Bug report
 
-## Describe the bug
+## What happened?
 
-A clear and concise description of what the bug is.
+Describe the problem and what you were trying to do.
 
-## To Reproduce
+## How can we reproduce it?
 
-Steps to reproduce the behavior:
+List the smallest set of steps that reproduces the problem:
 
-1. Create a groupchat
-2. Invite a user
-3. Send a message
+1. Run `line ...`
+2. Provide ...
+3. Observe ...
 
-## Expected behavior
+## What did you expect?
 
-A clear and concise description of what you expected to happen.
+Describe the expected result.
 
-## Screenshots or logs
+## Environment
 
-If applicable, add screenshots and/or logs to help explain your problem.
+- LINE CLI version (`line version`):
+- Operating system and version:
+- Installation method:
+- Terminal or shell:
+
+## Logs or screenshots
+
+Include relevant output if it is safe to share. Remove account IDs, chat IDs,
+message content, tokens, encrypted data, and other private information.
 
 ## Additional context
 

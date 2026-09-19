@@ -1,11 +1,15 @@
 # Headless storage engine
 
-Phases 2–4 implement the envelope, systemd adapter, persistent Linux resolver,
-headless login consent, local status, and logout cleanup receipts. Fresh native
-storage remains the default. `login --headless` explicitly enrolls host-only
-storage; existing protection is preserved on reauthentication. Explicit native
-migration uses `auth migrate --storage=headless`. Do not manually replace session
-files to change backends.
+This document describes the headless Linux storage format, trust boundary,
+transaction design, and release evidence. For installation and day-to-day use,
+start with the [CLI guide](../../CLI.md#headless-linux).
+
+The engine includes a versioned envelope, systemd adapter, persistent Linux
+resolver, explicit login consent, local status, migration, and recoverable logout.
+Native storage remains the default. `login --headless` enrolls host-only storage;
+reauthentication keeps the existing backend. Use
+`auth migrate --storage=headless` for an explicit native-to-headless migration.
+Never replace session files manually to change backends.
 
 ## Envelope version 1
 
@@ -82,6 +86,8 @@ It performs no TPM sealing or systemd credential cryptography itself.
 
 ## Lifecycle and validation
 
+### Reads, writes, and login
+
 `linuxStorage` reads the authoritative bytes for every locked Load/Save/Prepare.
 It retains no provider selection or wrapping key across operations. Headless
 updates authenticate the current envelope, reuse its exact sealed credential and
@@ -96,6 +102,8 @@ changed storage around unlocked prompts, and writes only after authentication.
 An unaccepted candidate cannot pass Manager.Login preflight or Save. Migration
 uses a separate transaction. Stop older commands and watchers before changing
 formats or lock conventions.
+
+### Logout and migration recovery
 
 Linux logout uses an 80-byte private receipt: the 15-byte `LINECLI\0LOGOUT\0`
 marker, one backend byte (1 native / 2 headless / 3 migration cleanup), the 32-byte SHA-256 digest of the
@@ -121,6 +129,8 @@ block ordinary operations until resumed; unknown/mismatching receipts fail close
 Logout backend 3 records that native cleanup belongs to the migration receipt,
 so a crash after removing that receipt cannot delete a later replacement key.
 
+### Locks and native-key ownership
+
 Linux session operations hold both the config-directory session lock and an
 account-wide credential lock. The latter lives with a bounded observed-path
 record under `$HOME/.config/line-cli`. Native deletion checks every known path
@@ -128,6 +138,8 @@ and the default path, authenticating other headless files and syncing their
 directories. Native/unreadable paths retain the shared key. Historical custom
 paths must be registered before cleanup; changing HOME or running older versions
 concurrently is unsupported. These files survive logout.
+
+### Status and test coverage
 
 Native read-only status uses libsecret search without `--unlock`, or a per-query
 macOS LAContext with interaction disabled. Linux/macOS native write status remains
