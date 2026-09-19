@@ -68,7 +68,7 @@ and a bounded inherited-pipe wait. Buffers are cleared where practical; this is
 not a claim of complete memory erasure.
 
 Encryption uses an explicit requested mode. Host-only mode requires consent in
-the future caller. TPM requests must actually return the matching TPM scheme;
+the CLI. TPM requests must actually return the matching TPM scheme;
 accepted command-line options are insufficient. Auto-selection and automatic
 fallback are not used. Signed-PCR metadata is recognized by the parser but the
 adapter rejects its use pending evidence. The engine makes no claim that a TPM
@@ -162,10 +162,86 @@ tests skip this integration unless it is explicitly enabled.
 
 Phase 4 adds `TestLinuxSystemdMigrationIntegration` under the same opt-in gate
 and native Secret Service migration cleanup to the private D-Bus CI fixture.
-Its transaction failure tests use synthetic providers. The earlier disposable
-VM files were unavailable on 2026-09-19; a fresh native systemd migration run is
-still a release-gate check, not evidence established by the earlier engine runs.
+Its transaction failure tests use synthetic providers. A fresh native systemd
+migration run completed during the release verification below.
 The actual watcher and migration resolver passed the mid-stream migration and
 logout regression with synthetic providers on macOS through a temporary Go
 source overlay, including the race detector. Linux builds include that regression
 in the ordinary session test suite.
+
+## Release verification
+
+On 2026-09-19 a fresh disposable Debian 13.7 ARM64 VM ran systemd
+257.13-1~deb13u1 and kernel 6.12.107+deb13-arm64 without a TPM. The official
+Debian generic ARM64 image (2026-09-14 listing) was verified against the published
+SHA-512 checksum before conversion to a VMware disk. Tests ran as an unprivileged
+UID 1501 with the credential socket enabled, without desktop login or a user
+manager. All account state and LINE responses were synthetic.
+
+| Check | Result |
+| --- | --- |
+| Complete Linux session unit suite | Passed |
+| Native systemd engine and migration | Passed; 20 full loads took 158 ms total |
+| CLI headless login, reauthentication, status and logout with fake LINE | Passed |
+| Private D-Bus Secret Service integration, including migration cleanup | Passed |
+| CLI migration using both native providers and fake LINE | Passed; complete state preserved and no LINE call during migration/status/logout |
+| Same production envelope after reboot, system service and real cron | Passed; full state loaded and next request sequence persisted by each |
+| Same UID after reboot, with user manager inactive | Passed |
+| Readable fixture copied to a different UID | Broker rejection; no filesystem error counted as success |
+| Broker stopped, then restored | Failed closed, then recovered |
+| VM host secret removed, then restored | Failed closed, then recovered the same state |
+
+The first reboot attempt could not execute a test binary stored in `/tmp`, which
+Debian cleared at boot. Installing it at `/usr/local/libexec/line-session.test`
+and repeating the reboot passed both scheduled checks. This was a fixture issue.
+The additional CLI migration test initially used an email the fake API did not
+accept; correcting the synthetic fixture made the complete flow pass.
+
+Release review also found that retrying an observed-path registration after a
+failed directory sync could trust a visible but not confirmed-durable registry.
+Known-path registration now confirms directory durability before the session
+lock is returned, with a regression test for repeated failure and recovery.
+
+The maintained macOS race suite, native/Linux vet and staticcheck, goimports,
+and CLI build/help passed. Existing [CI run 35438746247](https://github.com/kongesque/line-cli/actions/runs/35438746247)
+at `266e185` passed Linux private Secret Service, Windows native DPAPI, macOS,
+and their build/test gates. That CI run precedes the Linux-only durability fix
+and additional tests in this phase; the fresh VM suite covers that fix. Parser
+fuzzing and exhaustive corruption/fault-injection tests from Phases 2–4 remain
+part of the evidence; no parser change was made in this phase.
+
+Ubuntu 26.04/systemd 259 retains the earlier engine/CLI and Phase 0 reboot/cron
+evidence; the new full-state reboot and real-provider CLI migration checks above
+were run on Debian only. Source acceptance of 256/258 is not a runtime claim.
+Phase 0 documents copied-disk recovery and software-TPM policy failure separately.
+Physical TPM, signed-PCR enrollment and UniPi deployment remain outside the
+verified release scope. Host-only storage does not resist a complete disk copy.
+
+### Repeating the persistent fixture
+
+Compile `go test -c ./internal/session` for the disposable VM's OS/architecture
+and install the test binary on persistent storage. The fixture is deliberately
+opt-in and never calls LINE. In a fresh directory owned by the test UID:
+
+```sh
+sudo -u lineprobe env LINE_CLI_TEST_SYSTEMD_CREDS=1 \
+  LINE_CLI_TEST_HEADLESS_FIXTURE=/home/lineprobe/headless-fixture \
+  LINE_CLI_TEST_HEADLESS_MODE=enroll \
+  /usr/local/libexec/line-session.test -test.v -test.run '^TestLinuxHeadlessPersistentFixture$'
+```
+
+After reboot, execute the same command with mode `verify` and
+`LINE_CLI_TEST_EXPECT_REBOOT=1`, first from a system service with `User=lineprobe`
+and `UMask=0077`, then from a real cron job. Use a readable working directory
+and stagger the jobs to avoid intentional session-lock contention. Verify that
+the user manager is inactive. The fixture checks saved tokens, E2EE material,
+generation, checkpoint and sequence, then persists and reloads the next sequence.
+It overrides HOME/XDG inside its explicitly supplied disposable directory.
+
+For negative checks, mode `denied` requires a helper/broker rejection; timeout,
+filesystem denial and successful decryption do not count. In the disposable VM
+only, test a readable copy owned by another UID, stop/restore the credential
+socket, and move/restore the VM host secret with guaranteed cleanup. Follow each
+original-UID negative check with `verify`. Do not run disruptive broker/host-key
+tests on a personal or shared machine. Enrollment may initialize the VM's global
+host secret. Fixtures and VM images must remain outside version control.

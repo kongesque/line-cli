@@ -26,7 +26,7 @@ without separately arranging an appropriate test environment.
 | Reboot with the same enrolled blob | Passed on both candidates from a system unit and real cron; Debian VM cold start also passed |
 | Complete disk copy | Separate Debian VM recovered the original host-only fixture from the copied disk |
 | Physical TPM / virtual TPM | Software TPM policy/decryption checks passed; physical TPM unverified |
-| Production headless support | Host-only CLI enrollment, persistent selection, local status, migration and logout implemented; migration runtime release checks pending |
+| Production headless support | Host-only CLI enrollment, persistent selection, local status, migration and logout implemented; [release checks](../../internal/session/HEADLESS.md#release-verification) passed in the documented VM scope |
 
 Local validation on 2026-09-13, macOS arm64 / Go 1.27.1: race-enabled probe tests,
 a 10-second parser fuzz run, and `go vet` passed. Linux arm64 and amd64 binaries

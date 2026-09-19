@@ -325,6 +325,41 @@ write probes still run during interactive login. An absent session reports
 `no_session`. Reboot access for an accessible headless session is
 `expected_not_verified`, never an unconditional readiness guarantee.
 
+For unattended use, enroll interactively as a dedicated unprivileged account,
+then verify `auth status --check` under that same UID and environment after a
+reboot. Keep `HOME` and `XDG_CONFIG_HOME` fixed. The operator owns service and
+cron configuration; the CLI does not install either. For example, after installing
+the binary at the path below and creating/enrolling the `linebot` account:
+
+```ini
+[Unit]
+Description=LINE event watcher
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+User=linebot
+Environment=HOME=/home/linebot
+Environment=XDG_CONFIG_HOME=/home/linebot/.config
+UMask=0077
+ExecStart=/usr/local/bin/line watch
+Restart=on-failure
+RestartSec=15s
+RestartPreventExitStatus=65 74 78
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Treat watcher output as private message data and restrict access to its journal
+or output files. Check local storage with `auth status --check` when a service
+stops: repair format/configuration errors and resolve uncertain durability before
+restarting it. The restart policy limits process restarts; it does not authorize
+automatic retries of message sends or other mutations. Cron jobs should likewise
+set stable HOME/XDG paths and `umask 077`, and use the same unprivileged account.
+
 Session updates are protected by a process lock. Other commands can run while
 `watch` is connected, although a brief session-busy error is possible during a
 credential update; retry the command after the update finishes.

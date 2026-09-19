@@ -92,6 +92,12 @@ func recordNativePath(registry *sessionFiles, sessionPath string) error {
 	}
 	for _, known := range paths {
 		if known == path {
+			// A prior replacement may have reached rename but failed its
+			// directory sync. Reconfirm durability before relying on this
+			// path record to protect shared-key ownership across a crash.
+			if err := registry.ops.syncDir(registry.root); err != nil {
+				return errors.Join(ErrDurabilityUncertain, err)
+			}
 			return nil
 		}
 	}

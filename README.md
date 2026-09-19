@@ -89,6 +89,10 @@ contacting LINE. Retry the same command if native-key cleanup is incomplete.
 `line auth status --json` checks local storage without contacting LINE.
 `line auth status --check` additionally tests headless write readiness. Reboot
 access is reported as expected but unverified for the user's installation.
+Use a dedicated unprivileged account with stable HOME/XDG paths for automation;
+[CLI.md](CLI.md) includes operator-owned service permissions and restart settings.
+See the [storage validation record](internal/session/HEADLESS.md#release-verification)
+for the tested runtimes and remaining hardware limits.
 
 Homebrew is also available on macOS:
 
