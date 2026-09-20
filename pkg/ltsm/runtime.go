@@ -237,6 +237,12 @@ func (rt *Runtime) Curve25519KeyGenerate() (uint32, error) {
 	return ptr, nil
 }
 
+// Curve25519KeyDestroy releases a curve key through its registered destructor.
+// Callers must invalidate their handle and must not destroy it a second time.
+func (rt *Runtime) Curve25519KeyDestroy(ptr uint32) error {
+	return rt.imp.Destroy("Curve25519Key", ptr)
+}
+
 // --- E2EEKey ---
 
 func (rt *Runtime) E2EEKeyLoadKey(keyBytes []byte) (uint32, error) {

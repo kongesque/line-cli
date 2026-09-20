@@ -23,7 +23,8 @@ type Runner struct {
 	skPtr         uint32         // SecureKey from loadToken
 	signingSKPtr  uint32         // Separate SecureKey used for request signing
 	storageKey    uint32         // AesKey ptr (after StorageInit)
-	loginCurveKey uint32         // Curve25519Key ptr (after GenerateE2EESecret)
+	loginCurveKey uint32         // Active email or QR login Curve25519Key ptr
+	qrLoginOwner  *QRLoginKey    // Exclusive owner through QR key export
 	keyStore      map[int]uint32 // internal ID -> E2EEKey ptr
 	channelStore  map[int]uint32 // internal ID -> E2EEChannel ptr
 	nextID        int
@@ -51,6 +52,116 @@ type SecretResult struct {
 	Secret       string `json:"secret"`
 	Pin          string `json:"pin"`
 	PublicKeyHex string `json:"publicKeyHex"`
+}
+
+var (
+	ErrLoginKeyBusy     = errors.New("another login key is active")
+	ErrQRLoginKeyClosed = errors.New("QR login key is closed")
+)
+
+// QRLoginKey reserves the runner's active login key for one entire QR flow.
+// Call Generate for each fresh QR attempt, retain this lease through
+// LoginUnwrapKeyChain, then Close on every exit. Do not copy this value.
+type QRLoginKey struct {
+	runner *Runner
+}
+
+// BeginQRLoginKey reserves exclusive ownership without generating a key yet.
+// An existing email key must be released explicitly with ClearLoginKey before
+// switching methods; beginning QR must never silently replace an active login.
+func (r *Runner) BeginQRLoginKey() (*QRLoginKey, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.qrLoginOwner != nil || r.loginCurveKey != 0 {
+		return nil, ErrLoginKeyBusy
+	}
+	key := &QRLoginKey{runner: r}
+	r.qrLoginOwner = key
+	return key, nil
+}
+
+// Generate replaces this flow's previous ephemeral key and returns the new
+// 32-byte public key in standard base64. It uses Chrome 3.7.2's sandbox
+// CURVEKEY_GENERATE behavior: Curve25519Key.generate(true), not the email
+// secret/PIN constructor. No private key is exported or persisted.
+func (k *QRLoginKey) Generate() (publicKey string, err error) {
+	if k == nil || k.runner == nil {
+		return "", ErrQRLoginKeyClosed
+	}
+	r := k.runner
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.qrLoginOwner != k {
+		return "", ErrQRLoginKeyClosed
+	}
+	if err := r.clearLoginKeyLocked(); err != nil {
+		return "", err
+	}
+	// Native failures must not leave a failed attempt's handle active.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			publicKey = ""
+			err = errors.New("could not generate QR login key")
+		}
+		if err != nil {
+			err = errors.Join(err, r.clearLoginKeyLocked())
+		}
+	}()
+	ptr, err := r.rt.Curve25519KeyGenerate()
+	if err != nil {
+		return "", errors.New("could not generate QR login key")
+	}
+	r.loginCurveKey = ptr
+	pub, err := r.rt.Curve25519KeyGetPublicKey(ptr)
+	if err != nil || len(pub) != 32 {
+		return "", errors.New("could not read QR login public key")
+	}
+	return base64.StdEncoding.EncodeToString(pub), nil
+}
+
+// Close releases the key and ownership. It is idempotent, and a closed lease
+// cannot destroy a later flow's key. Call it only after keychain export ends.
+func (k *QRLoginKey) Close() error {
+	if k == nil || k.runner == nil {
+		return nil
+	}
+	r := k.runner
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.qrLoginOwner != k {
+		return nil
+	}
+	r.qrLoginOwner = nil
+	return r.clearLoginKeyLocked()
+}
+
+// ClearLoginKey releases an unowned (email) login key when that flow ends.
+// QR keys can only be released by their lease, preventing unrelated cleanup
+// from invalidating an in-progress QR login.
+func (r *Runner) ClearLoginKey() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.qrLoginOwner != nil {
+		return ErrLoginKeyBusy
+	}
+	return r.clearLoginKeyLocked()
+}
+
+func (r *Runner) clearLoginKeyLocked() (err error) {
+	ptr := r.loginCurveKey
+	r.loginCurveKey = 0
+	if ptr == 0 {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			err = errors.New("could not release login key")
+		}
+	}()
+	if err := r.rt.Curve25519KeyDestroy(ptr); err != nil {
+		return errors.New("could not release login key")
+	}
+	return nil
 }
 
 type UnwrappedKey struct {
@@ -402,7 +513,8 @@ func (r *Runner) StorageEncrypt(plaintext string) (string, error) {
 	return base64.StdEncoding.EncodeToString(ctBytes), nil
 }
 
-// LoginUnwrapKeyChain unwraps the encrypted key chain from LF1 using the login curve key.
+// LoginUnwrapKeyChain unwraps an email or QR keychain using the active login
+// curve key. A QRLoginKey lease must remain open until this export completes.
 func (r *Runner) LoginUnwrapKeyChain(serverPubB64, encryptedKeyChainB64 string) ([]UnwrappedKey, error) {
 	normalizedServerPub, err := normalizeServerPublicKeyB64(serverPubB64)
 	if err != nil {
@@ -729,6 +841,9 @@ func (r *Runner) ChannelDecryptV2(channelID int, to, from string, senderKeyID, r
 func (r *Runner) GenerateE2EESecret() (*SecretResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.qrLoginOwner != nil {
+		return nil, ErrLoginKeyBusy
+	}
 
 	ckPtr, err := r.rt.Curve25519KeyNew(r.skPtr)
 	if err != nil {

@@ -7,7 +7,8 @@
 - [x] Bounded same-session polling with cancellation and expiry classification.
 - [x] Sanitized, bounded responses and no final-login replay or redirects.
 - [x] Race tests, crypto regressions, formatting, vet, staticcheck, and build.
-- [ ] QR login-key lifecycle, session orchestration, and terminal UI.
+- [x] QR login-key lifecycle and independent synthetic key-agreement tests.
+- [ ] Session orchestration and terminal UI.
 - [ ] Authorized live validation of outstanding protocol unknowns.
 
 Status: phase 1 implemented; no live QR login validation. CLI selection, curve
@@ -71,3 +72,26 @@ cancellation and deadline identity remain available through `errors.Is`.
 Complete results retain token V3 refresh fields and normalize the evidenced key
 metadata into `LoginResult`. Profile validation, refresh validation, key unwrap,
 and secure storage remain required before a session may be saved.
+
+## QR login-key ownership
+
+`Runner.BeginQRLoginKey` reserves the active login key for a single QR flow.
+Call the returned lease's `Generate` once per fresh server session. It invokes
+`Curve25519Key.generate(true)` and returns the 32-byte public key in standard
+base64. Repeated scan polls reuse that value; regenerating destroys the previous
+curve key through the runtime's registered destructor.
+
+Keep the lease open through `LoginUnwrapKeyChain` and exported-key persistence.
+Defer `Close` on every exit. Closing invalidates the active handle and releases
+ownership; repeated or stale closes cannot affect a later flow. A second QR
+flow, email secret generation, and unowned key cleanup are rejected while the
+lease is active. An existing email key must first be explicitly released with
+`ClearLoginKey` after its flow ends.
+
+Synthetic tests check standard-base64 encoding, fresh keys on regeneration,
+cleanup, missing-key failures, and concurrent ownership. An independent pure Go
+X25519 peer encrypts a synthetic message that the native active login key must
+decrypt. This proves key agreement and private-key retention. A full synthetic
+keychain unwrap vector remains deferred: the repository has no established
+keychain encoder/fixture, and message encryption is not claimed to verify the
+keychain serialization format.
