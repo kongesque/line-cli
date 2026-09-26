@@ -2,14 +2,9 @@ package main
 
 import (
 	"bufio"
-	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"golang.org/x/term"
 
@@ -19,76 +14,37 @@ import (
 
 var version = "dev"
 
-func main() {
-	ctx := context.Background()
-	watching := len(os.Args) > 1 && os.Args[1] == "watch"
+func main() { os.Exit(run()) }
+
+func run() int {
+	signals := newCommandSignals()
+	defer signals.close()
+	ctx := signals.ctx
 	loggingIn := len(os.Args) > 1 && os.Args[1] == "login"
-	if watching {
-		var stop context.CancelFunc
-		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-		defer stop()
-	}
-	// ReadPassword temporarily disables echo. Restore the original terminal on
-	// Ctrl-C/SIGTERM as well as normal return, including during phone polling.
-	if !watching && term.IsTerminal(int(os.Stdin.Fd())) {
-		if state, err := term.GetState(int(os.Stdin.Fd())); err == nil {
-			signals := make(chan os.Signal, 1)
-			signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-			go func() {
-				sig := <-signals
-				_ = term.Restore(int(os.Stdin.Fd()), state)
-				fmt.Fprintln(os.Stderr)
-				if sig == syscall.SIGTERM {
-					os.Exit(143)
-				}
-				os.Exit(130)
-			}()
-		}
-	}
+	stdinFD := int(os.Stdin.Fd())
+	source, closeInput := commandInput(ctx, stdinFD)
+	defer closeInput()
+	in := bufio.NewReader(source)
 	// Some upstream login diagnostics contain raw response bodies. Keep these
 	// out of both terminal output and pipelines; CLI errors provide safe context.
 	log.SetOutput(io.Discard)
 	app := &cli.App{
-		Interactive: term.IsTerminal(int(os.Stdin.Fd())) && (loggingIn || term.IsTerminal(int(os.Stdout.Fd()))),
+		Interactive: term.IsTerminal(stdinFD) && (loggingIn || term.IsTerminal(int(os.Stdout.Fd()))),
 		Context:     ctx, WatchLock: session.WatchLock,
-		In:  os.Stdin,
+		In:  in,
 		Out: os.Stdout, Err: os.Stderr, Version: version,
 		Manager: session.NewManager(session.KeychainStore{}), Lock: session.Lock,
 		Password: func() (string, error) {
-			if !term.IsTerminal(int(os.Stdin.Fd())) {
-				return "", errors.New("login requires an interactive terminal for password input")
-			}
-			fmt.Fprint(os.Stderr, "Password: ")
-			password, err := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Fprintln(os.Stderr)
-			if err != nil {
-				return "", errors.New("could not read password from terminal")
-			}
-			defer clear(password)
-			if len(password) == 0 {
-				return "", errors.New("password must not be empty")
-			}
-			return string(password), nil
+			return readPassword(ctx, stdinFD, in, os.Stderr)
 		},
 		Continue: func() error {
-			fmt.Fprint(os.Stderr, "After approving on your phone, press Enter to continue: ")
-			_, err := bufio.NewReader(os.Stdin).ReadString('\n')
-			if err != nil {
-				return errors.New("phone verification cancelled")
-			}
-			return nil
+			return waitForPhone(ctx, in, os.Stderr)
 		},
 	}
 	if session.SupportsHeadless() {
 		app.NewHeadlessLogin = func() (session.LoginStorage, error) { return session.BeginHeadlessLogin(ctx) }
 		app.MigrateHeadless = func(accepted bool) error { return session.MigrateHeadless(ctx, accepted) }
 	}
-	if err := app.Run(os.Args[1:]); err != nil {
-		if errors.Is(err, cli.ErrCancelled) {
-			fmt.Fprintln(os.Stderr, "Cancelled.")
-			return
-		}
-		fmt.Fprintln(os.Stderr, "line:", err)
-		os.Exit(session.StorageExitCode(err))
-	}
+	err := app.Run(os.Args[1:])
+	return commandExit(err, int(signals.code.Load()), os.Stderr)
 }

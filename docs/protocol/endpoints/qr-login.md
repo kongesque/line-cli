@@ -10,10 +10,11 @@
 - [x] QR login-key lifecycle and independent synthetic key-agreement tests.
 - [x] Session orchestration, contextual completion, and complete-save validation.
 - [x] Terminal QR UI and method selection.
+- [x] Signal cancellation, input interruption, and terminal restoration.
 - [ ] Authorized live validation of outstanding protocol unknowns.
 
-Status: phases 1–4 implemented; no live QR login validation. Graceful signal
-handling and user documentation remain pending. Unknown certificate errors
+Status: phases 1–5 implemented; no live QR login validation. User documentation
+remains pending. Unknown certificate errors
 still fail closed, so first-time QR login awaits certificate rejection evidence.
 
 Evidence: LINE Chrome Extension manifest 3.7.2, local static bundle. `main.js`
@@ -152,3 +153,21 @@ and online generators. An approximate countdown updates only on an ANSI-capable
 stderr terminal. Plain output emits state changes, and countdown zero never
 triggers regeneration. Expiry invalidates the old display before replacement.
 The presenter serializes output and joins its timer goroutine on completion.
+
+## Command cancellation
+
+The executable supplies a signal-cancelled context to all commands and retains
+SIGINT/SIGTERM for exit status 130/143, including when output is redirected.
+Confirmation, password, and email continuation input can be interrupted. Unix
+input polls without leaving a blocked OS read and restores descriptor flags;
+password echo is restored by the command goroutine before exit. Windows console
+input can leave a read pending until process exit, but it cannot change terminal
+state after cancellation. Native Windows behavior still needs validation.
+
+Structured login errors take precedence over generic cancellation text so a
+signal does not hide remote approval, an ambiguous final result, or an uncertain
+save. A committed save still reports success; cancellation never replays final
+login. Synthetic session tests cover scan/PIN/final/profile/export cancellation;
+subprocess and PTY tests cover signals, hidden input, and terminal restoration.
+Legacy email authentication requests without context support still use their
+existing timeouts; local input and common completion are cancellable.

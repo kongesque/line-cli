@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kongesque/line-cli/internal/input"
 	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
 )
@@ -51,18 +52,21 @@ func (a *App) ask(label string) (string, error) {
 	}
 	if a.Context != nil {
 		if err := a.Context.Err(); err != nil {
-			return "", ErrCancelled
+			return "", err
 		}
 	}
 	if _, err := fmt.Fprint(a.Err, label); err != nil {
 		return "", err
 	}
 	if a.input == nil {
-		a.input = bufio.NewReader(a.In)
+		a.input = bufio.NewReader(input.NewReader(a.loginContext(), a.In))
 	}
 	var answer strings.Builder
 	for {
 		part, err := a.input.ReadSlice('\n')
+		if a.loginContext().Err() != nil {
+			return "", a.loginContext().Err()
+		}
 		if answer.Len()+len(part) > messaging.MaxTextUnits*4+1 {
 			return "", errors.New("input exceeds the CLI size limit")
 		}

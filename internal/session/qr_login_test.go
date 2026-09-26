@@ -377,7 +377,7 @@ type failingPreparer struct{}
 func (failingPreparer) Prepare() error { return ErrStorageCleanup }
 
 func TestQRBlockedRequestsObserveCancellation(t *testing.T) {
-	for _, point := range []string{"scan", "pin", "complete", "profile"} {
+	for _, point := range []string{"scan", "pin", "complete", "profile", "export"} {
 		t.Run(point, func(t *testing.T) {
 			m, s, f, key := qrTestManager(t)
 			started := make(chan struct{})
@@ -391,6 +391,10 @@ func TestQRBlockedRequestsObserveCancellation(t *testing.T) {
 				f.complete = func(ctx context.Context) (*line.LoginResult, error) { return nil, wait(ctx) }
 			case "profile":
 				f.profile = func(ctx context.Context) (*line.Profile, error) { return nil, wait(ctx) }
+			case "export":
+				m.ExportKeys = func(ctx context.Context, _ API, _ *line.LoginResult) (map[string]string, error) {
+					return nil, wait(ctx)
+				}
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -408,7 +412,7 @@ func TestQRBlockedRequestsObserveCancellation(t *testing.T) {
 				if !errors.Is(err, context.Canceled) || !errors.As(err, &outcome) || s.saves != 0 || key.closed != 1 || f.beginCount != 1 {
 					t.Fatal("cancellation not propagated", err)
 				}
-				if outcome.Dispatched != (point == "complete" || point == "profile") || outcome.Approved != (point == "profile") {
+				if outcome.Dispatched != (point == "complete" || point == "profile" || point == "export") || outcome.Approved != (point == "profile" || point == "export") {
 					t.Fatal("wrong cancellation outcome")
 				}
 			case <-time.After(time.Second):
