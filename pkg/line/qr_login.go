@@ -84,7 +84,10 @@ var (
 	// ErrQRCodeExpired means all scan polls for one QR session returned the
 	// evidenced wrapped 410. Only this error permits a fresh QR attempt.
 	ErrQRCodeExpired = errors.New("QR code expired before scan")
-	ErrQRPinTimeout  = errors.New("PIN approval timed out")
+	// ErrQRCertificateRejected is reserved for evidenced invalid/missing certificate
+	// responses. No server code is mapped yet; unknown failures propagate.
+	ErrQRCertificateRejected = errors.New("QR certificate rejected")
+	ErrQRPinTimeout          = errors.New("PIN approval timed out")
 )
 
 // QRServiceError retains numeric classification without retaining server

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -71,7 +72,7 @@ func testManager(store *memoryStore, api *fakeAPI) *Manager {
 	m := NewManager(store)
 	m.NewClient = func(string) API { return api }
 	m.Now = func() time.Time { return time.Unix(1000, 0) }
-	m.ExportKeys = func(API, *line.LoginResult) (map[string]string, error) {
+	m.ExportKeys = func(context.Context, API, *line.LoginResult) (map[string]string, error) {
 		return map[string]string{"123": "exported-key"}, nil
 	}
 	return m
@@ -112,7 +113,10 @@ func TestLoginCarriesNoE2EEAcrossPoll(t *testing.T) {
 	s := &memoryStore{}
 	f := &fakeAPI{loginResults: []*line.LoginResult{{Verifier: "v", NoE2EE: true}}, waitResult: &line.LoginResult{AuthToken: "token"}}
 	m := testManager(s, f)
-	m.ExportKeys = func(API, *line.LoginResult) (map[string]string, error) { t.Fatal("export for LSOFF"); return nil, nil }
+	m.ExportKeys = func(context.Context, API, *line.LoginResult) (map[string]string, error) {
+		t.Fatal("export for LSOFF")
+		return nil, nil
+	}
 	_, err := m.Login("email", "password", func(string, bool) error { return nil })
 	if err != nil {
 		t.Fatal(err)
@@ -232,5 +236,24 @@ func TestReserveSequencePersistsAndStopsAtProtocolLimit(t *testing.T) {
 	}
 	if _, err := m.ReserveSequence(); err == nil {
 		t.Fatal("sequence overflow accepted")
+	}
+}
+
+func (f *fakeAPI) GetProfileContext(context.Context) (*line.Profile, error) { return f.GetProfile() }
+
+func TestEmailCompletionCancellationPreservesSession(t *testing.T) {
+	s := &memoryStore{state: &State{AccessToken: "old"}}
+	f := &fakeAPI{loginResults: []*line.LoginResult{{AuthToken: "new", E2EEPublicKey: "pub", EncryptedKeyChain: "chain"}}}
+	m := testManager(s, f)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.ExportKeys = func(context.Context, API, *line.LoginResult) (map[string]string, error) {
+		cancel()
+		return map[string]string{"key": "synthetic"}, nil
+	}
+	_, err := m.LoginContext(ctx, "synthetic@example.test", "synthetic", nil)
+	var outcome *LoginError
+	if !errors.Is(err, context.Canceled) || !errors.As(err, &outcome) || !outcome.Approved || s.state.AccessToken != "old" || s.saves != 0 {
+		t.Fatal("email completion failed to honor cancellation", err)
 	}
 }

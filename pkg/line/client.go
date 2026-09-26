@@ -155,6 +155,16 @@ func (c *Client) Login(email, pass, certificate string) (*LoginResult, error) {
 	return &res, nil
 }
 
+// ClearLoginKey releases the email flow's ephemeral key after completion or
+// failure. Call only after keychain export. An active QR lease cannot be cleared.
+func (c *Client) ClearLoginKey() error {
+	r, err := gen.GetRunner()
+	if err != nil {
+		return err
+	}
+	return r.ClearLoginKey()
+}
+
 func isLoginNotSupported(err error) bool {
 	if err == nil {
 		return false

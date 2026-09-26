@@ -59,7 +59,7 @@ func TestHeadlessCLIWithNativeSystemdAndFakeLINE(t *testing.T) {
 		t.Fatal("incorrect persisted backend status")
 	}
 	// Ordinary reauthentication preserves the selected backend without a flag.
-	if err := a.Run([]string{"login", "--email", "you@example.com"}); err != nil {
+	if err := a.Run([]string{"login", "--email", "you@example.com", "--force"}); err != nil {
 		t.Fatal(err)
 	}
 	if api.logins != 2 {
@@ -89,7 +89,7 @@ func TestNativeMigrationCLIWithSystemdAndFakeLINE(t *testing.T) {
 	a.Lock = session.Lock
 	a.Password = func() (string, error) { return "synthetic", nil }
 	a.MigrateHeadless = func(accepted bool) error { return session.MigrateHeadless(context.Background(), accepted) }
-	if err := a.Run([]string{"login", "--email", "you@example.com"}); err != nil {
+	if err := a.Run([]string{"login", "--email", "you@example.com", "--force"}); err != nil {
 		t.Fatal(err)
 	}
 	u, err := session.Lock()

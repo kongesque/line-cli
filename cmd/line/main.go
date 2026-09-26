@@ -22,6 +22,7 @@ var version = "dev"
 func main() {
 	ctx := context.Background()
 	watching := len(os.Args) > 1 && os.Args[1] == "watch"
+	loggingIn := len(os.Args) > 1 && os.Args[1] == "login"
 	if watching {
 		var stop context.CancelFunc
 		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -48,7 +49,7 @@ func main() {
 	// out of both terminal output and pipelines; CLI errors provide safe context.
 	log.SetOutput(io.Discard)
 	app := &cli.App{
-		Interactive: term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())),
+		Interactive: term.IsTerminal(int(os.Stdin.Fd())) && (loggingIn || term.IsTerminal(int(os.Stdout.Fd()))),
 		Context:     ctx, WatchLock: session.WatchLock,
 		In:  os.Stdin,
 		Out: os.Stdout, Err: os.Stderr, Version: version,

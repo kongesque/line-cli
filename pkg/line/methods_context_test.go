@@ -59,3 +59,10 @@ func TestGetProfileContextCancellation(t *testing.T) {
 		return err
 	})
 }
+
+func TestGetEncryptedIdentityV3ContextCancellation(t *testing.T) {
+	testRPCContextCancellation(t, "getEncryptedIdentityV3", func(client *Client, ctx context.Context) error {
+		_, err := client.GetEncryptedIdentityV3Context(ctx)
+		return err
+	})
+}

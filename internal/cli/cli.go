@@ -21,7 +21,7 @@ const help = `LINE — your conversations from the terminal
 Usage: line <command> [options]
 
 Everyday commands:
-  login       Sign in with email and phone approval
+  login       Sign in by QR code (--email ADDRESS for email login)
   whoami      Show your signed-in account
   contacts    Find people (--search NAME)
   chats       Browse recent conversations
@@ -52,6 +52,10 @@ type App struct {
 	Interactive      bool
 	input            *bufio.Reader
 	promptAccount    *promptAccount
+	loginSnapshot    *session.LoginSnapshot
+	LoginQR          func(context.Context, func(session.QRLoginEvent) error) (*line.Profile, error)
+	RenderQR         QRRenderer
+	QRTerminal       func() QRTerminal
 	Context          context.Context
 	WatchLock        func() (func(), error)
 	In               io.Reader
@@ -68,7 +72,7 @@ type App struct {
 
 // Run validates command arguments before accessing Keychain or the network.
 func (a *App) Run(args []string) error {
-	a.input, a.promptAccount = nil, nil
+	a.input, a.promptAccount, a.loginSnapshot = nil, nil, nil
 	if len(args) == 0 {
 		_, err := io.WriteString(a.Out, help)
 		return err
@@ -81,6 +85,8 @@ func (a *App) Run(args []string) error {
 		command = "version"
 	}
 	switch command {
+	case "login":
+		return a.loginCommand(args[1:])
 	case "auth":
 		return a.authCommand(args[1:])
 	case "download":
@@ -103,7 +109,7 @@ func (a *App) Run(args []string) error {
 		}
 		_, err := io.WriteString(a.Out, help)
 		return err
-	case "login", "whoami", "contacts", "logout":
+	case "whoami", "contacts", "logout":
 	default:
 		return errors.New("unknown command; run line help")
 	}
@@ -111,8 +117,6 @@ func (a *App) Run(args []string) error {
 	fs.SetOutput(a.Err)
 	fs.Usage = func() { fmt.Fprintf(a.Err, "Usage: line %s [options]\n", command); fs.PrintDefaults() }
 	var jsonOutput bool
-	var email string
-	var headless bool
 	var showIDs bool
 	var search string
 	limit := 20
@@ -122,10 +126,6 @@ func (a *App) Run(args []string) error {
 	}
 	if command == "contacts" || command == "whoami" {
 		fs.BoolVar(&showIDs, "show-ids", false, "show full IDs")
-	}
-	if command == "login" {
-		fs.StringVar(&email, "email", "", "LINE account email (prompted in a terminal)")
-		fs.BoolVar(&headless, "headless", false, "Linux: explicitly enroll headless host-key storage; preserve existing headless protection")
 	}
 	if command == "whoami" || command == "contacts" {
 		fs.BoolVar(&jsonOutput, "json", false, "write JSON to stdout")
@@ -141,35 +141,6 @@ func (a *App) Run(args []string) error {
 	}
 	if limit < 0 {
 		return errors.New("limit must be 0 or greater")
-	}
-	if command == "login" {
-		if headless {
-			return a.headlessLogin(strings.TrimSpace(email))
-		}
-		if a.Interactive && strings.TrimSpace(email) == "" {
-			keep, err := a.keepExistingLogin()
-			if err != nil {
-				return err
-			}
-			if keep {
-				_, err := fmt.Fprintln(a.Out, "Kept your current session. Next: line chats")
-				return err
-			}
-		}
-		if strings.TrimSpace(email) == "" {
-			if !a.Interactive {
-				return errors.New("provide --email ADDRESS; run line login in a terminal for guided sign-in")
-			}
-			var err error
-			email, err = a.ask("Email: ")
-			if err != nil {
-				return err
-			}
-			if strings.TrimSpace(email) == "" {
-				return errors.New("email cannot be empty")
-			}
-		}
-		return a.login(strings.TrimSpace(email))
 	}
 	unlock, err := a.lock()
 	if err != nil {
@@ -250,25 +221,10 @@ func (a *App) Run(args []string) error {
 	return nil
 }
 
-func (a *App) login(email string) error {
-	var before *loginStorageSnapshot
-	if a.Manager.Storage != nil {
-		unlock, err := a.lock()
-		if err != nil {
-			return err
-		}
-		err = a.Manager.PrepareStorage()
-		if err == nil {
-			var snapshot loginStorageSnapshot
-			snapshot, err = snapshotLoginStorage(a.Manager.Store)
-			before = &snapshot
-		}
-		unlock()
-		if err != nil {
-			return err
-		}
+func (a *App) loginEmail(email string) error {
+	if err := a.prepareLogin(); err != nil {
+		return err
 	}
-	fmt.Fprintln(a.Err, "Signing in may replace your existing LINE Chrome-style session.")
 	password, err := a.Password()
 	if err != nil {
 		return err
@@ -278,16 +234,10 @@ func (a *App) login(email string) error {
 		return err
 	}
 	defer unlock()
-	if before != nil {
-		after, err := snapshotLoginStorage(a.Manager.Store)
-		if err != nil {
-			return err
-		}
-		if after != *before {
-			return errors.New("your saved session changed during password input; run login again")
-		}
+	if err := a.Manager.CheckLogin(a.loginContext(), a.loginSnapshot); err != nil {
+		return err
 	}
-	profile, err := a.Manager.Login(email, password, func(pin string, wait bool) error {
+	profile, err := a.Manager.LoginContext(a.loginContext(), email, password, func(pin string, wait bool) error {
 		if pin != "" {
 			fmt.Fprintf(a.Err, "Open LINE on your phone and enter PIN: %s\n", terminalText(pin))
 		} else {
@@ -306,33 +256,24 @@ func (a *App) login(email string) error {
 	return err
 }
 
-type loginStorageSnapshot struct {
-	exists          bool
-	mid, generation string
-	invalidated     bool
-	storageIdentity string
+func (a *App) loginContext() context.Context {
+	if a.Context != nil {
+		return a.Context
+	}
+	return context.Background()
 }
 
-func snapshotLoginStorage(store session.Store) (loginStorageSnapshot, error) {
-	var identity string
-	if selector, ok := store.(interface{ StorageIdentity() (string, error) }); ok {
-		var err error
-		identity, err = selector.StorageIdentity()
-		if err != nil {
-			return loginStorageSnapshot{}, err
-		}
+func (a *App) prepareLogin() error {
+	if a.loginSnapshot != nil {
+		return nil
 	}
-	s, err := store.Load()
-	if errors.Is(err, session.ErrNotFound) {
-		return loginStorageSnapshot{storageIdentity: identity}, nil
-	}
+	unlock, err := a.lock()
 	if err != nil {
-		return loginStorageSnapshot{}, err
+		return err
 	}
-	if s == nil {
-		return loginStorageSnapshot{}, errors.New("saved session is invalid")
-	}
-	return loginStorageSnapshot{true, s.MID, s.Generation, s.Invalidated, identity}, nil
+	defer unlock()
+	a.loginSnapshot, err = a.Manager.PrepareLogin(a.loginContext())
+	return err
 }
 
 func (a *App) json(value any) error {

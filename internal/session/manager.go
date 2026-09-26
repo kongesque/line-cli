@@ -21,6 +21,7 @@ type API interface {
 	GetLastOpRevisionContext(context.Context) (int64, error)
 	ListenSSE(context.Context, int64, func(string, string)) error
 	GetEncryptedIdentityV3() (*line.EncryptedIdentityV3, error)
+	GetEncryptedIdentityV3Context(context.Context) (*line.EncryptedIdentityV3, error)
 	RefreshAccessToken(string) (*line.TokenV3IssueResult, error)
 	GetAllContactIds() ([]string, error)
 	GetContactsV2([]string) (*line.ContactsResponse, error)
@@ -46,8 +47,9 @@ type Manager struct {
 	Store      Store
 	Storage    StoragePreparer
 	NewClient  func(string) API
-	ExportKeys func(API, *line.LoginResult) (map[string]string, error)
+	ExportKeys func(context.Context, API, *line.LoginResult) (map[string]string, error)
 	Now        func() time.Time
+	beginQRKey func() (qrLoginKey, error)
 }
 
 func NewManager(store Store) *Manager {
@@ -60,6 +62,7 @@ func NewManager(store Store) *Manager {
 		},
 		ExportKeys: exportKeys,
 		Now:        time.Now,
+		beginQRKey: beginQRKey,
 	}
 	if preparer, ok := store.(StoragePreparer); ok {
 		manager.Storage = preparer
@@ -79,10 +82,23 @@ func (m *Manager) PrepareStorage() error {
 }
 
 func (m *Manager) Login(email, password string, notify Notify) (*line.Profile, error) {
+	return m.LoginContext(context.Background(), email, password, notify)
+}
+
+// LoginContext retains the email authentication protocol. Common completion is
+// cancellable; the legacy email authentication requests themselves are not yet.
+// The caller holds the command lock (see PrepareLogin).
+func (m *Manager) LoginContext(ctx context.Context, email, password string, notify Notify) (*line.Profile, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := m.PrepareStorage(); err != nil {
 		return nil, err
 	}
 	api := m.NewClient("")
+	if cleaner, ok := api.(interface{ ClearLoginKey() error }); ok {
+		defer cleaner.ClearLoginKey()
+	}
 	// Always request a fresh keychain. Certificate-only login may return tokens
 	// without the encryption keys needed after restarting this CLI process.
 	res, err := api.Login(email, password, "")
@@ -100,7 +116,10 @@ func (m *Manager) Login(email, password string, notify Notify) (*line.Profile, e
 			token = res.TokenV3IssueResult.AccessToken
 		}
 		if token != "" {
-			return m.finishLogin(email, token, noE2EE, res)
+			return m.finishLogin(ctx, email, token, noE2EE, res, "email")
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		if res.Verifier != "" {
 			pin := res.PinCode
@@ -110,11 +129,17 @@ func (m *Manager) Login(email, password string, notify Notify) (*line.Profile, e
 			if err := notify(pin, false); err != nil {
 				return nil, err
 			}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			res, err = api.WaitForLogin(res.Verifier, noE2EE)
 		} else if res.Certificate != "" {
 			// Some LINE responses put a phone challenge in this field; it is
 			// not a reusable certificate until login has completed.
 			if err := notify(res.Certificate, true); err != nil {
+				return nil, err
+			}
+			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 			res, err = api.Login(email, password, "")
@@ -128,17 +153,34 @@ func (m *Manager) Login(email, password string, notify Notify) (*line.Profile, e
 	return nil, errors.New("LINE login did not complete after phone verification; run line login again")
 }
 
-func (m *Manager) finishLogin(email, token string, noE2EE bool, res *line.LoginResult) (*line.Profile, error) {
+func (m *Manager) finishLogin(ctx context.Context, email, token string, noE2EE bool, res *line.LoginResult, origin string) (profile *line.Profile, err error) {
+	stage := LoginSetup
+	defer func() {
+		if err != nil {
+			err = &LoginError{Stage: stage, Dispatched: true, Approved: true, SaveUncertain: errors.Is(err, ErrDurabilityUncertain), cause: err}
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if origin == "qr" {
+		if err := validateQRResult(m.Now(), res); err != nil {
+			return nil, err
+		}
+	}
 	api := m.NewClient(token)
-	profile, err := api.GetProfile()
+	profile, err = api.GetProfileContext(ctx)
 	if err != nil {
-		return nil, remoteError("verify account", err)
+		return nil, err
 	}
 	if profile == nil || profile.Mid == "" {
 		return nil, errors.New("LINE did not return an account ID")
 	}
 	s := &State{Generation: rand.Text(), Version: 1, AccessToken: token, Certificate: res.Certificate,
-		MID: profile.Mid, Email: email, NoE2EE: noE2EE}
+		MID: profile.Mid, Email: email, NoE2EE: noE2EE, CertificateOrigin: origin}
+	if res.Mid != "" && res.Mid != profile.Mid {
+		return nil, errors.New("login profile does not match the approved account")
+	}
 	if res.TokenV3IssueResult != nil {
 		s.RefreshToken = res.TokenV3IssueResult.RefreshToken
 		s.RefreshAt = refreshAt(m.Now(), res.TokenV3IssueResult)
@@ -147,23 +189,36 @@ func (m *Manager) finishLogin(email, token string, noE2EE bool, res *line.LoginR
 		if res.E2EEPublicKey == "" || res.EncryptedKeyChain == "" {
 			return nil, errors.New("LINE login returned no Letter Sealing keys; session was not saved; retry line login")
 		}
-		s.ExportedKeys, err = m.ExportKeys(api, res)
-		if err != nil || len(s.ExportedKeys) == 0 {
+		s.ExportedKeys, err = m.ExportKeys(ctx, api, res)
+		if err != nil {
+			return nil, err
+		}
+		for id, key := range s.ExportedKeys {
+			if id == "" || key == "" {
+				return nil, errors.New("incomplete exported Letter Sealing keys")
+			}
+		}
+		if len(s.ExportedKeys) == 0 {
 			return nil, errors.New("could not export Letter Sealing keys; session was not saved; retry line login")
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	stage = LoginSave
 	if err := m.Store.Save(s); err != nil {
 		return nil, err
 	}
+	// A completed save wins over cancellation arriving during the commit.
 	return profile, nil
 }
 
-func exportKeys(api API, res *line.LoginResult) (map[string]string, error) {
+func exportKeys(ctx context.Context, api API, res *line.LoginResult) (map[string]string, error) {
 	mgr, err := e2ee.NewManager()
 	if err != nil {
 		return nil, err
 	}
-	identity, err := api.GetEncryptedIdentityV3()
+	identity, err := api.GetEncryptedIdentityV3Context(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +226,9 @@ func exportKeys(api API, res *line.LoginResult) (map[string]string, error) {
 		return nil, errors.New("missing encrypted identity")
 	}
 	if err := mgr.InitStorage(identity.WrappedNonce, identity.KDFParameter1, identity.KDFParameter2); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return mgr.InitFromLoginKeyChain(res.E2EEPublicKey, res.EncryptedKeyChain)

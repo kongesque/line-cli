@@ -17,37 +17,6 @@ var ErrCancelled = errors.New("cancelled")
 
 type promptAccount struct{ mid, generation string }
 
-func (a *App) keepExistingLogin() (bool, error) {
-	unlock, err := a.Lock()
-	if err != nil {
-		return false, err
-	}
-	s, err := a.Manager.Store.Load()
-	if errors.Is(err, session.ErrNotFound) || (err == nil && (s == nil || s.Invalidated)) {
-		unlock()
-		return false, nil
-	}
-	if err != nil {
-		unlock()
-		return false, err
-	}
-	name := "your saved account"
-	if s.Email != "" {
-		name = s.Email
-	}
-	err = a.rememberAccount()
-	unlock()
-	if err != nil {
-		return false, err
-	}
-	fmt.Fprintln(a.Err, "Already signed in as "+terminalText(name)+".")
-	answer, err := a.ask("Sign in again? [y/N]: ")
-	if err != nil {
-		return false, err
-	}
-	return !strings.EqualFold(strings.TrimSpace(answer), "y"), nil
-}
-
 // Prompts never hold a credential lock. Recheck account identity when work resumes.
 func (a *App) lock() (func(), error) {
 	unlock, err := a.Lock()

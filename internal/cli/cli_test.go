@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -143,3 +144,5 @@ func TestEmptyListsAreJSONArrays(t *testing.T) {
 		t.Fatal("empty list should be []")
 	}
 }
+
+func (f *readAPI) GetProfileContext(context.Context) (*line.Profile, error) { return f.GetProfile() }

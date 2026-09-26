@@ -232,14 +232,14 @@ func TestGuidedActionsAndDownload(t *testing.T) {
 
 func TestGuidedLoginAndKeepExisting(t *testing.T) {
 	a, f, _, _, locked := guidedApp(t, "you@example.com\n")
-	a.Manager.Store = &testStore{}
+	a.Manager.Store = &initiallyEmptyStore{}
 	a.Password = func() (string, error) {
 		if *locked {
 			t.Fatal("password prompt held lock")
 		}
 		return "synthetic", nil
 	}
-	if err := a.Run([]string{"login"}); err != nil {
+	if err := a.Run([]string{"login", "--email", "you@example.com"}); err != nil {
 		t.Fatal(err)
 	}
 	if f.logins != 1 {
@@ -277,3 +277,5 @@ func TestReadableHistoryPreservesJSONAndResolvesSenders(t *testing.T) {
 		t.Fatalf("JSON fields changed: %d", len(history[0]))
 	}
 }
+
+func (f *guidedAPI) GetProfileContext(context.Context) (*line.Profile, error) { return f.GetProfile() }

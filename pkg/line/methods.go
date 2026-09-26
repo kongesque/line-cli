@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -115,7 +116,11 @@ func (c *Client) GetProfileContext(ctx context.Context) (*Profile, error) {
 
 // GetEncryptedIdentityV3 fetches wrapped nonce and KDF params used to derive storage key.
 func (c *Client) GetEncryptedIdentityV3() (*EncryptedIdentityV3, error) {
-	resp, err := c.callRPC("TalkService", "getEncryptedIdentityV3")
+	return c.GetEncryptedIdentityV3Context(context.Background())
+}
+
+func (c *Client) GetEncryptedIdentityV3Context(ctx context.Context) (*EncryptedIdentityV3, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getEncryptedIdentityV3")
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +130,10 @@ func (c *Client) GetEncryptedIdentityV3() (*EncryptedIdentityV3, error) {
 		Data    EncryptedIdentityV3 `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, err
+		return nil, errors.New("invalid encrypted identity response")
+	}
+	if wrapper.Code != 0 {
+		return nil, errors.New("encrypted identity request failed")
 	}
 	return &wrapper.Data, nil
 }

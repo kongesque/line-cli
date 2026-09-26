@@ -124,7 +124,7 @@ func (a *App) migrateCommand(args []string) error {
 	return err
 }
 
-func (a *App) headlessLogin(email string) error {
+func (a *App) headlessLogin(options loginOptions) error {
 	if a.NewHeadlessLogin == nil {
 		return session.ErrHeadlessUnsupported
 	}
@@ -155,17 +155,8 @@ func (a *App) headlessLogin(email string) error {
 	originalStore, originalStorage := a.Manager.Store, a.Manager.Storage
 	a.Manager.Store, a.Manager.Storage = prepared, prepared
 	defer func() { a.Manager.Store, a.Manager.Storage = originalStore, originalStorage }()
-	if email == "" {
-		email, err = a.ask("Email: ")
-		if err != nil {
-			return err
-		}
-		email = strings.TrimSpace(email)
-		if email == "" {
-			return errors.New("email cannot be empty")
-		}
-	}
-	if err := a.login(email); err != nil {
+	signedIn, err := a.performLogin(options)
+	if err != nil || !signedIn {
 		return err
 	}
 	_, err = fmt.Fprintln(a.Out, "Storage: Headless. After reboot: Expected; not verified.")
