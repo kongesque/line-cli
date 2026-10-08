@@ -2,7 +2,7 @@
 
 This is a contributor-oriented overview of the CLI's end-to-end encryption
 boundaries. For commands and troubleshooting, start with the
-[CLI guide](../CLI.md).
+[CLI guide](../docs/CLI.md).
 
 Login and message encryption reuse the LINE protocol and crypto runtime inherited
 from the upstream project.

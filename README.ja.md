@@ -17,7 +17,7 @@ AIエージェントのワークフローにはJSON出力を利用できます�
 [![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[インストール](#install-line-cli) · [クイックスタート](#quick-start-send-your-first-line-message) · [コマンド](#line-messaging-commands) · [自動化](#automate-line-with-json-and-shell-scripts) · [詳しいガイド](CLI.md)
+[インストール](#install-line-cli) · [クイックスタート](#quick-start-send-your-first-line-message) · [コマンド](#line-messaging-commands) · [自動化](#automate-line-with-json-and-shell-scripts) · [詳しいガイド](docs/CLI.ja.md)
 
 ![LINE CLI：ターミナルから個人のLINEでメッセージ送信、ファイル共有、自動化](banner.png)
 
@@ -52,7 +52,7 @@ sudo apt install libsecret-tools gnome-keyring
 **Linuxサーバー／SSH：** パッケージのインストールだけでは不十分です。対応するホストでは、
 `line login --headless` でロック解除済みキーリングを必要としないホスト鍵ストレージを
 利用できます。初期設定は対話式で、このストレージはディスク全体のコピーに対する保護や
-TPM保護を提供しません。[ヘッドレス環境の設定、移行、サービス運用](CLI.md#linux-servers-and-headless-storage)を参照してください。
+TPM保護を提供しません。[ヘッドレス環境の設定、移行、サービス運用](docs/CLI.ja.md#linux-servers-and-headless-storage)を参照してください。
 
 ### Windows：PowerShell
 
@@ -101,7 +101,7 @@ line login --email you@example.com
 
 パスワードは画面に表示せずに入力でき、保存されません。ログイン時にはストレージを検査し、
 利用可能な保存済みセッションを置き換える前に確認します。
-[ログインのオプションとQRコードのトラブルシューティング](CLI.md#login-options-and-qr-help)も参照してください。
+[ログインのオプションとQRコードのトラブルシューティング](docs/CLI.ja.md#login-options-and-qr-help)も参照してください。
 
 ### 2. トークを閲覧してメッセージを送信
 
@@ -139,7 +139,7 @@ Ctrl-Cでキャンセルできます。次の例のようにトーク名を直�
 名前が重複する場合は、`line chats --search "Alice" --show-ids` で調べて、完全なトークIDを指定します。
 
 オプションは `line COMMAND --help` で確認できます。ダウンロード、リアクション、
-送信取消も対話式の選択に対応しています。[トークの選択ガイド](CLI.md#find-chats-and-people)も参照してください。
+送信取消も対話式の選択に対応しています。[トークの選択ガイド](docs/CLI.ja.md#find-chats-and-people)も参照してください。
 
 ### LINEメッセージへの返信と添付ファイルのダウンロード
 
@@ -154,7 +154,7 @@ line download "Alice" --message MESSAGE_ID --output ./received.pdf
 
 ダウンロードには添付ファイルのメッセージIDを指定し、適切なファイル名を選んでください。
 既存のファイルは上書きされません。
-[リアクション、送信取消、ダウンロードの詳細](CLI.md#download-or-change-a-message)を参照してください。
+[リアクション、送信取消、ダウンロードの詳細](docs/CLI.ja.md#download-or-change-a-message)を参照してください。
 
 <a id="automate-line-with-json-and-shell-scripts"></a>
 
@@ -180,8 +180,8 @@ line watch --json > events.ndjson
 送信、アップロード、リアクション、送信取消の応答を受け取れなかった場合は、
 操作の重複を避けるため、再実行する前にLINE側の状態を確認してください。
 
-連携の詳細は[JSONフィールドと終了コード](CLI.md#json-output-and-exit-codes)と
-[リアルタイムイベントの受信](CLI.md#watch-new-events)を参照してください。
+連携の詳細は[JSONフィールドと終了コード](docs/CLI.ja.md#json-output-and-exit-codes)と
+[リアルタイムイベントの受信](docs/CLI.ja.md#watch-new-events)を参照してください。
 
 ## Letter Sealingによる暗号化とセッションのセキュリティ
 
@@ -195,8 +195,8 @@ line watch --json > events.ndjson
   自動更新されます。更新でアクセスを復旧できない場合や、LINEがセッションを無効化した場合は、
   再度ログインしてください。
 
-[セッションの保存先](CLI.md#where-your-session-is-stored) ·
-[トークンの更新と復旧](CLI.md#token-refresh)
+[セッションの保存先](docs/CLI.ja.md#where-your-session-is-stored) ·
+[トークンの更新と復旧](docs/CLI.ja.md#token-refresh)
 
 ## 制限事項
 
@@ -221,11 +221,11 @@ line update           # 対応する場合は更新し、それ以外は手順�
 macOSとLinuxで公式インストーラーから導入した単体バイナリは、その場で更新できます。
 Homebrewの場合は `brew upgrade line-cli` を使用します。その他のインストール方法では
 更新手順が表示されます。確認にLINEへのログインは不要で、コマンドを実行したときだけ
-確認します。[更新の詳細](CLI.md#updating-line-cli)を参照してください。
+確認します。[更新の詳細](docs/CLI.ja.md#updating-line-cli)を参照してください。
 
 ## ドキュメントとサポート
 
-- [CLIガイド](CLI.md)：全コマンドの使い方、トラブルシューティング、サーバー設定。
+- [CLIガイド](docs/CLI.ja.md)：全コマンドの使い方、トラブルシューティング、サーバー設定。
 - [トークンとセッションの監査](TOKEN_SESSION.md)：更新と復旧の実装詳細。
 - [GitHub Issues](https://github.com/kongesque/line-cli/issues)：不具合報告と機能リクエスト。
 
@@ -246,7 +246,7 @@ cd line-cli
 ```
 
 インストーラーが表示するPATHの案内に従ってください。Windows PowerShellの手順は
-[ソースビルドガイド](CLI.md#build-from-source)を参照してください。
+[ソースビルドガイド](docs/CLI.ja.md#build-from-source)を参照してください。
 ソースからビルドする場合も、Linuxのストレージ要件が適用されます。
 
 ローカルで開発する場合：

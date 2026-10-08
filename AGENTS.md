@@ -53,4 +53,4 @@ and actions. Do not print credentials, encrypted chunks, or raw server bodies.
 
 Keep upstream copyright/license notices and protocol provenance. Consult the
 repo-local LINE implementation skill when new behavior needs protocol evidence.
-CLI usage and validation notes are in CLI.md. PLAN.md is local and Git-ignored.
+CLI usage and validation notes are in docs/CLI.md. PLAN.md is local and Git-ignored.

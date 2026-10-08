@@ -14,7 +14,8 @@
 *.swp
 *.swo
 
-/docs
+/docs/*
+!/docs/CLI*.md
 
 /test
 

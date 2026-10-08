@@ -2,7 +2,7 @@
 
 This directory preserves the synthetic experiment that informed the production
 headless storage backend. It is an evidence and reproduction tool, not the setup
-path for ordinary users. See the [CLI guide](../../CLI.md#linux-servers-and-headless-storage) for
+path for ordinary users. See the [CLI guide](../../docs/CLI.md#linux-servers-and-headless-storage) for
 current usage and the [engine document](../../internal/session/HEADLESS.md) for
 the production design.
 

@@ -2,7 +2,7 @@
 
 This document describes the headless Linux storage format, trust boundary,
 transaction design, and release evidence. For installation and day-to-day use,
-start with the [CLI guide](../../CLI.md#headless-linux).
+start with the [CLI guide](../../docs/CLI.md#linux-servers-and-headless-storage).
 
 The engine includes a versioned envelope, systemd adapter, persistent Linux
 resolver, explicit login consent, local status, migration, and recoverable logout.
@@ -64,7 +64,7 @@ to fail. The diagnostic points operators to sandbox settings without guessing
 that every trust failure is caused by a sandbox. Discovery, file-type, root-user,
 and version failures retain `headless_unavailable` with fixed stage-specific
 text. Helper subprocess errors include broker/identity/sandbox guidance but never
-raw stderr. See [Run unattended](../../CLI.md#run-unattended) for the Debian 13
+raw stderr. See [Run unattended](../../docs/CLI.md#run-a-watcher-without-a-login-session) for the Debian 13
 issue report, service example, and validation limits.
 
 Each operation uses `--user`, the fixed name `line-cli-session-key`, and
@@ -154,7 +154,7 @@ concurrently is unsupported. These files survive logout.
 Native read-only status uses libsecret search without `--unlock`, or a per-query
 macOS LAContext with interaction disabled. Linux/macOS native write status remains
 unknown with an explicit interactive-check requirement. Windows DPAPI and headless
-write status use separate probes. See [CLI.md](../../CLI.md) for user-facing
+write status use separate probes. See [CLI.md](../../docs/CLI.md) for user-facing
 status fields, limits, and exit codes. Libsecret search/clear behavior was checked
 against [upstream source](https://github.com/GNOME/libsecret/blob/0.21.7/tool/secret-tool.c).
 

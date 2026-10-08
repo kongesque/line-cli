@@ -16,7 +16,7 @@ no bot account or LINE Messaging API setup is required.
 [![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Install](#install-line-cli) · [Quick start](#quick-start-send-your-first-line-message) · [Commands](#line-messaging-commands) · [Automation](#automate-line-with-json-and-shell-scripts) · [Full guide](CLI.md)
+[Install](#install-line-cli) · [Quick start](#quick-start-send-your-first-line-message) · [Commands](#line-messaging-commands) · [Automation](#automate-line-with-json-and-shell-scripts) · [Full guide](docs/CLI.md)
 
 ![LINE CLI: personal LINE messages, files, and automation from the terminal](banner.png)
 
@@ -50,7 +50,7 @@ sudo apt install libsecret-tools gnome-keyring
 `line login --headless` offers host-key storage without an unlocked keyring.
 Enrollment remains interactive; this storage does not protect against a complete
 disk copy or provide TPM protection.
-See [headless setup, migration, and services](CLI.md#linux-servers-and-headless-storage).
+See [headless setup, migration, and services](docs/CLI.md#linux-servers-and-headless-storage).
 
 ### Windows: PowerShell
 
@@ -96,7 +96,7 @@ line login --email you@example.com
 
 Your password is entered privately and never saved. Login checks storage and asks
 before replacing a usable saved session.
-[Login options and QR troubleshooting](CLI.md#login-options-and-qr-help).
+[Login options and QR troubleshooting](docs/CLI.md#login-options-and-qr-help).
 
 ### 2. Browse your chats and send a message
 
@@ -132,7 +132,7 @@ Replace example names with your own. Names must be unique exact matches
 `line chats --search "Alice" --show-ids` and pass a full chat ID.
 
 Run `line COMMAND --help` for options. Downloads, reactions, and unsend also
-support interactive selection. [Chat selection guide](CLI.md#find-chats-and-people).
+support interactive selection. [Chat selection guide](docs/CLI.md#find-chats-and-people).
 
 ### Reply to LINE messages and download attachments
 
@@ -147,7 +147,7 @@ line download "Alice" --message MESSAGE_ID --output ./received.pdf
 
 For downloads, choose an attachment's ID and an appropriate filename. Existing
 files are never overwritten.
-[More reactions, unsend, and download options](CLI.md#download-or-change-a-message).
+[More reactions, unsend, and download options](docs/CLI.md#download-or-change-a-message).
 
 ## Automate LINE with JSON and shell scripts
 
@@ -171,8 +171,8 @@ Remote changes are attempted once and never retried automatically. If a send,
 upload, reaction, or unsend loses its response, check LINE before repeating it
 to avoid duplicating an action.
 
-See [JSON fields and exit codes](CLI.md#json-output-and-exit-codes) and
-[live event streaming](CLI.md#watch-new-events) for integration details.
+See [JSON fields and exit codes](docs/CLI.md#json-output-and-exit-codes) and
+[live event streaming](docs/CLI.md#watch-new-events) for integration details.
 
 ## Letter Sealing encryption and session security
 
@@ -185,8 +185,8 @@ See [JSON fields and exit codes](CLI.md#json-output-and-exit-codes) and
   credentials work, even after a restart. Sign in again if refresh cannot recover
   access or LINE invalidates the session.
 
-[Session storage](CLI.md#where-your-session-is-stored) ·
-[Token refresh and recovery](CLI.md#token-refresh)
+[Session storage](docs/CLI.md#where-your-session-is-stored) ·
+[Token refresh and recovery](docs/CLI.md#token-refresh)
 
 ## Limitations
 
@@ -211,11 +211,11 @@ line update           # Update where supported, or show upgrade instructions
 Official standalone installations on macOS and Linux can update in place.
 Homebrew uses `brew upgrade line-cli`; other installations receive upgrade
 instructions. Checks require no LINE login and run only when requested.
-[Update details](CLI.md#updating-line-cli).
+[Update details](docs/CLI.md#updating-line-cli).
 
 ## Documentation and help
 
-- [CLI guide](CLI.md): complete usage, troubleshooting, and server setup.
+- [CLI guide](docs/CLI.md): complete usage, troubleshooting, and server setup.
 - [Token and session audit](TOKEN_SESSION.md): refresh and recovery internals.
 - [GitHub Issues](https://github.com/kongesque/line-cli/issues): bugs and feature requests.
 
@@ -234,7 +234,7 @@ cd line-cli
 ```
 
 Follow any PATH instructions printed by the installer. See the
-[source-build guide](CLI.md#build-from-source) for Windows PowerShell commands.
+[source-build guide](docs/CLI.md#build-from-source) for Windows PowerShell commands.
 Linux storage requirements also apply to source builds.
 
 For local development:

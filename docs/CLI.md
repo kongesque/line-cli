@@ -1,5 +1,7 @@
 # LINE CLI guide
 
+English | [繁體中文（台灣）](CLI.zh-TW.md) | [日本語](CLI.ja.md) | [ภาษาไทย](CLI.th.md)
+
 Use your personal LINE account from a terminal. You can read conversations,
 send messages and files, download attachments, and follow new events. Commands
 can guide you through choices in a terminal or return JSON for scripts.
@@ -506,7 +508,7 @@ rotation stops further requests, because the CLI cannot guarantee that it saved
 the new token.
 
 For refresh timing, retry rules, and call-path evidence, see the
-[token and session audit](TOKEN_SESSION.md).
+[token and session audit](../TOKEN_SESSION.md).
 
 ## Linux servers and headless storage
 
@@ -560,7 +562,7 @@ without contacting LINE or asking for your password.
 If migration stops partway through, run the same command again. Do not delete
 `migration.pending` or manually replace `session.enc`. `line auth status`
 reports `migration_pending` until cleanup succeeds. The
-[headless storage internals](internal/session/HEADLESS.md) explain the recovery
+[headless storage internals](../internal/session/HEADLESS.md) explain the recovery
 process.
 
 ### Run a watcher without a login session

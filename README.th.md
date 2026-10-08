@@ -16,7 +16,7 @@ Letter Sealing เมื่อห้องแชทรองรับ ลงช�
 [![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[ติดตั้ง](#install-line-cli) · [เริ่มใช้งาน](#quick-start-send-your-first-line-message) · [คำสั่ง](#line-messaging-commands) · [ระบบอัตโนมัติ](#automate-line-with-json-and-shell-scripts) · [คู่มือฉบับเต็ม](CLI.md)
+[ติดตั้ง](#install-line-cli) · [เริ่มใช้งาน](#quick-start-send-your-first-line-message) · [คำสั่ง](#line-messaging-commands) · [ระบบอัตโนมัติ](#automate-line-with-json-and-shell-scripts) · [คู่มือฉบับเต็ม](docs/CLI.th.md)
 
 ![LINE CLI: ส่งข้อความ LINE ส่วนตัว แชร์ไฟล์ และทำงานอัตโนมัติผ่านเทอร์มินัล](banner.png)
 
@@ -50,7 +50,7 @@ sudo apt install libsecret-tools gnome-keyring
 **Linux เซิร์ฟเวอร์หรือ SSH:** การติดตั้งแพ็กเกจอย่างเดียวไม่เพียงพอ บนโฮสต์ที่รองรับ
 `line login --headless` ใช้ที่เก็บข้อมูลแบบ host key ได้โดยไม่ต้องมี keyring ที่ปลดล็อก
 การตั้งค่าครั้งแรกยังต้องทำแบบโต้ตอบ วิธีจัดเก็บนี้ไม่ป้องกันการคัดลอกดิสก์ทั้งลูก
-และไม่มีการป้องกันด้วย TPM ดู[การตั้งค่า headless การย้ายเซสชัน และการใช้งานบริการ](CLI.md#linux-servers-and-headless-storage)
+และไม่มีการป้องกันด้วย TPM ดู[การตั้งค่า headless การย้ายเซสชัน และการใช้งานบริการ](docs/CLI.th.md#linux-servers-and-headless-storage)
 
 ### Windows: PowerShell
 
@@ -98,7 +98,7 @@ line login --email you@example.com
 
 รหัสผ่านจะไม่แสดงขณะพิมพ์และจะไม่ถูกบันทึก การเข้าสู่ระบบจะตรวจสอบที่เก็บข้อมูล
 และถามก่อนแทนที่เซสชันที่บันทึกไว้และยังใช้งานได้
-ดู[ตัวเลือกการเข้าสู่ระบบและการแก้ปัญหา QR code](CLI.md#login-options-and-qr-help)
+ดู[ตัวเลือกการเข้าสู่ระบบและการแก้ปัญหา QR code](docs/CLI.th.md#login-options-and-qr-help)
 
 ### 2. ดูห้องแชทและส่งข้อความ
 
@@ -136,7 +136,7 @@ line send       # เลือกผู้รับและพิมพ์ข�
 หากชื่อซ้ำ ให้ใช้ `line chats --search "Alice" --show-ids` แล้วระบุ chat ID แบบเต็ม
 
 ใช้ `line COMMAND --help` เพื่อดูตัวเลือก คำสั่งดาวน์โหลด แสดงความรู้สึก และยกเลิกข้อความ
-รองรับการเลือกแบบโต้ตอบด้วย ดู[คู่มือการเลือกห้องแชท](CLI.md#find-chats-and-people)
+รองรับการเลือกแบบโต้ตอบด้วย ดู[คู่มือการเลือกห้องแชท](docs/CLI.th.md#find-chats-and-people)
 
 ### ตอบกลับข้อความ LINE และดาวน์โหลดไฟล์แนบ
 
@@ -151,7 +151,7 @@ line download "Alice" --message MESSAGE_ID --output ./received.pdf
 
 สำหรับการดาวน์โหลด ให้เลือก ID ของข้อความที่มีไฟล์แนบและชื่อไฟล์ที่เหมาะสม
 ไฟล์ที่มีอยู่แล้วจะไม่ถูกเขียนทับ
-ดู[ตัวเลือกเพิ่มเติมสำหรับการแสดงความรู้สึก ยกเลิกข้อความ และดาวน์โหลด](CLI.md#download-or-change-a-message)
+ดู[ตัวเลือกเพิ่มเติมสำหรับการแสดงความรู้สึก ยกเลิกข้อความ และดาวน์โหลด](docs/CLI.th.md#download-or-change-a-message)
 
 <a id="automate-line-with-json-and-shell-scripts"></a>
 
@@ -177,8 +177,8 @@ line watch --json > events.ndjson
 หากไม่ได้รับการตอบกลับจากการส่งข้อความ อัปโหลด แสดงความรู้สึก หรือยกเลิกข้อความ
 ให้ตรวจสอบใน LINE ก่อนทำซ้ำเพื่อหลีกเลี่ยงการทำงานซ้ำ
 
-ดูรายละเอียดการเชื่อมต่อใน[ฟิลด์ JSON และรหัสสถานะการจบโปรแกรม](CLI.md#json-output-and-exit-codes)
-และ[การรับเหตุการณ์แบบเรียลไทม์](CLI.md#watch-new-events)
+ดูรายละเอียดการเชื่อมต่อใน[ฟิลด์ JSON และรหัสสถานะการจบโปรแกรม](docs/CLI.th.md#json-output-and-exit-codes)
+และ[การรับเหตุการณ์แบบเรียลไทม์](docs/CLI.th.md#watch-new-events)
 
 ## การเข้ารหัส Letter Sealing และความปลอดภัยของเซสชัน
 
@@ -190,8 +190,8 @@ line watch --json > events.ndjson
 - **การกู้คืนเซสชัน:** แอ็กเซสโทเค็นจะรีเฟรชโดยอัตโนมัติเมื่อข้อมูลรับรองสำหรับรีเฟรชที่บันทึกไว้ยังใช้งานได้
   แม้หลังเริ่มโปรแกรมใหม่ หากรีเฟรชแล้วยังกู้คืนการเข้าถึงไม่ได้ หรือ LINE ยกเลิกเซสชัน ให้เข้าสู่ระบบอีกครั้ง
 
-[ที่เก็บเซสชัน](CLI.md#where-your-session-is-stored) ·
-[การรีเฟรชโทเค็นและการกู้คืน](CLI.md#token-refresh)
+[ที่เก็บเซสชัน](docs/CLI.th.md#where-your-session-is-stored) ·
+[การรีเฟรชโทเค็นและการกู้คืน](docs/CLI.th.md#token-refresh)
 
 ## ข้อจำกัด
 
@@ -216,11 +216,11 @@ line update           # อัปเดตเมื่อรองรับ ห�
 การติดตั้งแบบ standalone ด้วยตัวติดตั้งทางการบน macOS และ Linux อัปเดตได้โดยตรง
 สำหรับ Homebrew ใช้ `brew upgrade line-cli` ส่วนการติดตั้งวิธีอื่นจะแสดงคำแนะนำการอัปเกรด
 การตรวจสอบไม่ต้องเข้าสู่ระบบ LINE และจะทำเฉพาะเมื่อคุณรันคำสั่ง
-ดู[รายละเอียดการอัปเดต](CLI.md#updating-line-cli)
+ดู[รายละเอียดการอัปเดต](docs/CLI.th.md#updating-line-cli)
 
 ## เอกสารและความช่วยเหลือ
 
-- [คู่มือ CLI](CLI.md): วิธีใช้งานครบทุกคำสั่ง การแก้ไขปัญหา และการตั้งค่าเซิร์ฟเวอร์
+- [คู่มือ CLI](docs/CLI.th.md): วิธีใช้งานครบทุกคำสั่ง การแก้ไขปัญหา และการตั้งค่าเซิร์ฟเวอร์
 - [การตรวจสอบโทเค็นและเซสชัน](TOKEN_SESSION.md): รายละเอียดการทำงานของการรีเฟรชและกู้คืน
 - [GitHub Issues](https://github.com/kongesque/line-cli/issues): รายงานบั๊กและขอฟีเจอร์
 
@@ -241,7 +241,7 @@ cd line-cli
 ```
 
 ทำตามคำแนะนำเกี่ยวกับ PATH ที่ตัวติดตั้งแสดง ดูคำสั่งสำหรับ Windows PowerShell ใน
-[คู่มือบิลด์จากซอร์สโค้ด](CLI.md#build-from-source) ข้อกำหนดที่เก็บข้อมูลบน Linux
+[คู่มือบิลด์จากซอร์สโค้ด](docs/CLI.th.md#build-from-source) ข้อกำหนดที่เก็บข้อมูลบน Linux
 ใช้กับการบิลด์จากซอร์สโค้ดด้วย
 
 สำหรับการพัฒนาในเครื่อง:

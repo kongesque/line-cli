@@ -16,7 +16,7 @@ LINE Messaging API。
 [![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[安裝](#install-line-cli) · [快速上手](#quick-start-send-your-first-line-message) · [指令](#line-messaging-commands) · [自動化](#automate-line-with-json-and-shell-scripts) · [完整指南](CLI.md)
+[安裝](#install-line-cli) · [快速上手](#quick-start-send-your-first-line-message) · [指令](#line-messaging-commands) · [自動化](#automate-line-with-json-and-shell-scripts) · [完整指南](docs/CLI.zh-TW.md)
 
 ![LINE CLI：在終端機傳送個人 LINE 訊息、分享檔案與自動化](banner.png)
 
@@ -49,7 +49,7 @@ sudo apt install libsecret-tools gnome-keyring
 **Linux 伺服器或 SSH：** 只安裝套件還不夠。在支援的主機上，
 `line login --headless` 可使用主機金鑰儲存，不需要已解鎖的金鑰圈。
 首次設定仍需互動式操作；此儲存方式無法防止整顆磁碟遭複製，也不提供 TPM 保護。
-詳見[無頭環境設定、移轉與服務部署](CLI.md#linux-servers-and-headless-storage)。
+詳見[無頭環境設定、移轉與服務部署](docs/CLI.zh-TW.md#linux-servers-and-headless-storage)。
 
 ### Windows：PowerShell
 
@@ -96,7 +96,7 @@ line login --email you@example.com
 
 輸入密碼時不會顯示內容，也不會儲存密碼。登入會檢查儲存機制，並在取代可用的
 已儲存工作階段前詢問。
-詳見[登入選項與 QR 碼疑難排解](CLI.md#login-options-and-qr-help)。
+詳見[登入選項與 QR 碼疑難排解](docs/CLI.zh-TW.md#login-options-and-qr-help)。
 
 ### 2. 瀏覽聊天室並傳送訊息
 
@@ -134,7 +134,7 @@ line send       # 選擇收件人並輸入訊息
 `line chats --search "Alice" --show-ids` 查詢，再指定完整的聊天室 ID。
 
 使用 `line COMMAND --help` 查看選項。下載、表情回應與收回訊息也支援互動式選擇。
-詳見[聊天室選擇指南](CLI.md#find-chats-and-people)。
+詳見[聊天室選擇指南](docs/CLI.zh-TW.md#find-chats-and-people)。
 
 ### 回覆 LINE 訊息與下載附件
 
@@ -148,7 +148,7 @@ line download "Alice" --message MESSAGE_ID --output ./received.pdf
 ```
 
 下載時，請選擇附件訊息的 ID，並指定合適的檔名。既有檔案不會被覆寫。
-詳見[更多表情回應、收回訊息與下載選項](CLI.md#download-or-change-a-message)。
+詳見[更多表情回應、收回訊息與下載選項](docs/CLI.zh-TW.md#download-or-change-a-message)。
 
 <a id="automate-line-with-json-and-shell-scripts"></a>
 
@@ -173,8 +173,8 @@ line watch --json > events.ndjson
 表情回應或收回訊息後未收到回應，請先在 LINE 中確認結果，再決定是否重做，
 以免重複操作。
 
-串接細節請參閱 [JSON 欄位與結束代碼](CLI.md#json-output-and-exit-codes)
-及[即時事件串流](CLI.md#watch-new-events)。
+串接細節請參閱 [JSON 欄位與結束代碼](docs/CLI.zh-TW.md#json-output-and-exit-codes)
+及[即時事件串流](docs/CLI.zh-TW.md#watch-new-events)。
 
 ## Letter Sealing 加密與工作階段安全性
 
@@ -186,8 +186,8 @@ line watch --json > events.ndjson
 - **工作階段復原：** 已儲存的更新憑證有效時，存取權杖會自動更新，重新啟動後也適用。
   若更新無法恢復存取，或 LINE 使工作階段失效，請重新登入。
 
-[工作階段儲存](CLI.md#where-your-session-is-stored) ·
-[權杖更新與復原](CLI.md#token-refresh)
+[工作階段儲存](docs/CLI.zh-TW.md#where-your-session-is-stored) ·
+[權杖更新與復原](docs/CLI.zh-TW.md#token-refresh)
 
 ## 使用限制
 
@@ -209,11 +209,11 @@ line update           # 支援時更新，否則顯示升級指引
 
 macOS 與 Linux 的官方獨立執行檔安裝可直接更新。Homebrew 請使用
 `brew upgrade line-cli`；其他安裝方式會收到升級指引。檢查更新不需要登入 LINE，
-且只在你執行指令時進行。詳見[更新說明](CLI.md#updating-line-cli)。
+且只在你執行指令時進行。詳見[更新說明](docs/CLI.zh-TW.md#updating-line-cli)。
 
 ## 文件與協助
 
-- [CLI 指南](CLI.md)：完整用法、疑難排解與伺服器設定。
+- [CLI 指南](docs/CLI.zh-TW.md)：完整用法、疑難排解與伺服器設定。
 - [權杖與工作階段稽核](TOKEN_SESSION.md)：更新與復原的實作細節。
 - [GitHub Issues](https://github.com/kongesque/line-cli/issues)：回報錯誤或提出功能需求。
 
@@ -234,7 +234,7 @@ cd line-cli
 ```
 
 請依安裝程式提示設定 PATH。Windows PowerShell 指令請參閱
-[原始碼建置指南](CLI.md#build-from-source)。Linux 的儲存需求同樣適用於原始碼建置。
+[原始碼建置指南](docs/CLI.zh-TW.md#build-from-source)。Linux 的儲存需求同樣適用於原始碼建置。
 
 本機開發：
 
