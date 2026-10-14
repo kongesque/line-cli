@@ -336,3 +336,30 @@ func TestRefreshRejectionRetainsCredentialsWithoutLeakingBody(t *testing.T) {
 		}
 	}
 }
+
+func TestMutateContextCancellationNeverReplays(t *testing.T) {
+	for _, confirmed := range []bool{false, true} {
+		s := &memoryStore{state: &State{AccessToken: "old", RefreshToken: "refresh"}}
+		f := &fakeAPI{}
+		m := testManager(s, f)
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
+		err := m.MutateContext(ctx, func(API) error {
+			calls++
+			cancel()
+			if confirmed {
+				return nil
+			}
+			return context.Canceled
+		})
+		if calls != 1 || f.refreshCalls != 0 {
+			t.Fatalf("calls=%d refreshes=%d", calls, f.refreshCalls)
+		}
+		if confirmed && err != nil {
+			t.Fatalf("lost confirmation: %v", err)
+		}
+		if !confirmed && !errors.Is(err, context.Canceled) {
+			t.Fatalf("lost cancellation: %v", err)
+		}
+	}
+}

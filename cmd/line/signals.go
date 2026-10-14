@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/kongesque/line-cli/internal/cli"
+	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
 )
 
@@ -49,12 +50,13 @@ func (s *commandSignals) close() {
 }
 
 func commandExit(err error, signalCode int, out io.Writer) int {
-	// Keep structured login errors: cancellation can follow remote approval or
+	// Keep wrapped operation errors: cancellation can follow dispatch, approval or
 	// uncertain local persistence, and a generic cancellation would hide that.
 	var login *session.LoginError
+	var mutation *messaging.MutationError
 	if err != nil {
 		switch {
-		case errors.As(err, &login):
+		case errors.As(err, &login), errors.As(err, &mutation):
 			fmt.Fprintln(out, "line:", err)
 		case errors.Is(err, cli.ErrCancelled), errors.Is(err, context.Canceled):
 			fmt.Fprintln(out, "Cancelled.")

@@ -15,6 +15,7 @@ import (
 func (a *App) contactsCommand(args []string) error {
 	fs := flag.NewFlagSet("contacts", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
+	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	fs.Usage = func() {
 		fmt.Fprintln(a.Err, "Usage: line contacts [options]\n       line contacts --mid MID [--mid MID ...] [--json]\nLists friends, or looks up supplied user IDs including non-friends.\nDirect lookup shows all requested IDs and names; unavailable contacts produce exit status 1.")
 		fs.PrintDefaults()
@@ -37,6 +38,11 @@ func (a *App) contactsCommand(args []string) error {
 		}
 		return errors.New("invalid options; run line contacts --help")
 	}
+	restore, err := a.commandDeadline(*timeout)
+	if err != nil {
+		return err
+	}
+	defer restore()
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; use --mid MID for each user ID or --search NAME to find friends")
 	}
@@ -118,7 +124,7 @@ func (a *App) contactsCommand(args []string) error {
 
 func (a *App) contacts() ([]line.Contact, error) {
 	var ids []string
-	if err := a.Manager.Do(func(api session.API) (err error) { ids, err = api.GetAllContactIds(); return }); err != nil {
+	if err := a.Manager.DoContext(a.loginContext(), func(api session.API) (err error) { ids, err = api.GetAllContactIdsContext(a.loginContext()); return }); err != nil {
 		return nil, err
 	}
 	contacts, err := a.fetchContacts(ids)
@@ -146,7 +152,10 @@ func (a *App) fetchContacts(ids []string) (map[string]line.Contact, error) {
 	for start := 0; start < len(ids); start += 100 {
 		batch := ids[start:min(start+100, len(ids))]
 		var response *line.ContactsResponse
-		if err := a.Manager.Do(func(api session.API) (err error) { response, err = api.GetContactsV2(batch); return }); err != nil {
+		if err := a.Manager.DoContext(a.loginContext(), func(api session.API) (err error) {
+			response, err = api.GetContactsV2Context(a.loginContext(), batch)
+			return
+		}); err != nil {
 			return nil, err
 		}
 		if response == nil || response.Contacts == nil {

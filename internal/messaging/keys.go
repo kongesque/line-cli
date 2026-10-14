@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -30,9 +31,9 @@ func validatePeer(key *line.E2EEPublicKey, expected int) error {
 	return nil
 }
 
-func (c *Client) negotiate(mid string) (*line.E2EEPublicKey, error) {
+func (c *Client) negotiate(ctx context.Context, mid string) (*line.E2EEPublicKey, error) {
 	var key *line.E2EEPublicKey
-	err := c.Session.Do(func(api session.API) (err error) { key, err = api.NegotiateE2EEPublicKey(mid); return })
+	err := c.Session.DoContext(ctx, func(api session.API) (err error) { key, err = api.NegotiateE2EEPublicKeyContext(ctx, mid); return })
 	if line.IsE2EEDisabled(session.ProtocolError(err)) {
 		return nil, errNoLetterSealing
 	}
@@ -45,13 +46,13 @@ func (c *Client) negotiate(mid string) (*line.E2EEPublicKey, error) {
 	return key, nil
 }
 
-func (c *Client) peerByID(mid string, id int) error {
+func (c *Client) peerByID(ctx context.Context, mid string, id int) error {
 	if c.crypto.IsMyKey(id) || c.crypto.HasPeerPublicKey(id) {
 		return nil
 	}
 	var key *line.E2EEPublicKey
-	if err := c.Session.Do(func(api session.API) (err error) { key, err = api.GetE2EEPublicKey(mid, 1, id); return }); err != nil {
-		return errors.New("required peer device key could not be retrieved")
+	if err := c.Session.DoContext(ctx, func(api session.API) (err error) { key, err = api.GetE2EEPublicKeyContext(ctx, mid, 1, id); return }); err != nil {
+		return fmt.Errorf("required peer device key could not be retrieved: %w", err)
 	}
 	if err := validatePeer(key, id); err != nil {
 		return err
@@ -62,17 +63,17 @@ func (c *Client) peerByID(mid string, id int) error {
 
 // Historical reads never create/replace a group key. A sender may register a
 // fresh key explicitly as part of preparation for a requested send.
-func (c *Client) groupKey(chat string, id int) error {
+func (c *Client) groupKey(ctx context.Context, chat string, id int) error {
 	cacheKey := fmt.Sprintf("%s:%d", chat, id)
 	if id > 0 && c.groupKeys[cacheKey] {
 		return nil
 	}
 	var key *line.E2EEGroupSharedKey
-	err := c.Session.Do(func(api session.API) (err error) {
+	err := c.Session.DoContext(ctx, func(api session.API) (err error) {
 		if id > 0 {
-			key, err = api.GetE2EEGroupSharedKey(chat, id)
+			key, err = api.GetE2EEGroupSharedKeyContext(ctx, chat, id)
 		} else {
-			key, err = api.GetLastE2EEGroupSharedKey(chat)
+			key, err = api.GetLastE2EEGroupSharedKeyContext(ctx, chat)
 		}
 		return
 	})
@@ -89,7 +90,7 @@ func (c *Client) groupKey(chat string, id int) error {
 	if key == nil || key.GroupKeyID <= 0 || key.CreatorKeyID <= 0 || key.ReceiverKeyID <= 0 || key.EncryptedSharedKey == "" || (id > 0 && key.GroupKeyID != id) {
 		return errors.New("LINE returned an incomplete or mismatched group key")
 	}
-	if err := c.peerByID(key.Creator, key.CreatorKeyID); err != nil {
+	if err := c.peerByID(ctx, key.Creator, key.CreatorKeyID); err != nil {
 		return err
 	}
 	if _, err := c.crypto.UnwrapGroupSharedKey(chat, key); err != nil {
@@ -102,9 +103,12 @@ func (c *Client) groupKey(chat string, id int) error {
 	return nil
 }
 
-func (c *Client) registerGroupKey(chat string) error {
+func (c *Client) registerGroupKey(ctx context.Context, chat string) error {
 	var response *line.GetChatsResponse
-	if err := c.Session.Do(func(api session.API) (err error) { response, err = api.GetChats([]string{chat}, true, true); return }); err != nil {
+	if err := c.Session.DoContext(ctx, func(api session.API) (err error) {
+		response, err = api.GetChatsContext(ctx, []string{chat}, true, true)
+		return
+	}); err != nil {
 		return err
 	}
 	var group *line.GroupExtra
@@ -138,7 +142,7 @@ func (c *Client) registerGroupKey(chat string) error {
 	keyIDs := make([]int, 0, len(members)+1)
 	pubs := make([]string, 0, len(members)+1)
 	for _, mid := range members {
-		key, err := c.negotiate(mid)
+		key, err := c.negotiate(ctx, mid)
 		if err != nil {
 			return err
 		}
@@ -162,5 +166,11 @@ func (c *Client) registerGroupKey(chat string) error {
 			return errors.New("could not wrap group key for every member")
 		}
 	}
-	return c.Session.Mutate(func(api session.API) error { return api.RegisterE2EEGroupKey(1, chat, members, keyIDs, wrapped) })
+	err = c.Session.MutateContext(ctx, func(api session.API) error {
+		return api.RegisterE2EEGroupKeyContext(ctx, 1, chat, members, keyIDs, wrapped)
+	})
+	if err != nil {
+		return mutationError("group-key registration did not return success; it may have completed; inspect LINE before retrying: %w", err)
+	}
+	return nil
 }

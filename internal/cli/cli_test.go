@@ -167,3 +167,19 @@ func TestWhoamiRejectedSessionHasSafeReloginGuidance(t *testing.T) {
 		}
 	}
 }
+
+func (f *readAPI) GetMessageBoxesContext(_ context.Context, options line.MessageBoxesOptions) (*line.MessageBoxesResponse, error) {
+	return f.GetMessageBoxes(options)
+}
+
+func (f *readAPI) GetAllContactIdsContext(_ context.Context) ([]string, error) {
+	return f.GetAllContactIds()
+}
+
+func (f *readAPI) GetContactsV2Context(_ context.Context, ids []string) (*line.ContactsResponse, error) {
+	return f.GetContactsV2(ids)
+}
+
+func (f *rejectedSessionAPI) GetProfileContext(_ context.Context) (*line.Profile, error) {
+	return f.GetProfile()
+}

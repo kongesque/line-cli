@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,4 +205,20 @@ func TestChatOptionsValidateBeforeSession(t *testing.T) {
 		a.Lock = func() (func(), error) { t.Fatal("opened session"); return nil, nil }
 		_ = a.Run(args)
 	}
+}
+
+func (f *chatAPI) GetAllContactIdsContext(_ context.Context) ([]string, error) {
+	return f.GetAllContactIds()
+}
+
+func (f *chatAPI) GetMessageBoxesContext(_ context.Context, options line.MessageBoxesOptions) (*line.MessageBoxesResponse, error) {
+	return f.GetMessageBoxes(options)
+}
+
+func (f *chatAPI) GetContactsV2Context(_ context.Context, ids []string) (*line.ContactsResponse, error) {
+	return f.GetContactsV2(ids)
+}
+
+func (f *chatAPI) GetChatsContext(_ context.Context, ids []string, members, invitees bool) (*line.GetChatsResponse, error) {
+	return f.GetChats(ids, members, invitees)
 }

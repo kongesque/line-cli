@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -296,4 +297,12 @@ func TestContactListingJSONSchemaUnchanged(t *testing.T) {
 	if len(rows) != 1 || len(rows[0]) != 5 || rows[0]["status"] != "" || rows[0]["effectiveDisplayName"] != "" {
 		t.Fatalf("listing schema changed: %s", out.String())
 	}
+}
+
+func (f *lookupAPI) GetAllContactIdsContext(_ context.Context) ([]string, error) {
+	return f.GetAllContactIds()
+}
+
+func (f *lookupAPI) GetContactsV2Context(_ context.Context, ids []string) (*line.ContactsResponse, error) {
+	return f.GetContactsV2(ids)
 }

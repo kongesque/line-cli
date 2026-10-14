@@ -257,3 +257,7 @@ func TestGuidedDownloadEmptyAndDash(t *testing.T) {
 		}
 	}
 }
+
+func (f *mediaDownloadAPI) GetRecentMessagesV2Context(_ context.Context, arg0 string, arg1 int) ([]*line.Message, error) {
+	return f.GetRecentMessagesV2(arg0, arg1)
+}

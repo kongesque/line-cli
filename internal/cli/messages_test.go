@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -82,4 +83,16 @@ func TestSendStdinHasBoundedSize(t *testing.T) {
 	if err := a.Run([]string{"send", "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--stdin"}); err == nil {
 		t.Fatal("accepted oversized stdin")
 	}
+}
+
+func (f *messageAPI) GetRecentMessagesV2Context(_ context.Context, arg0 string, arg1 int) ([]*line.Message, error) {
+	return f.GetRecentMessagesV2(arg0, arg1)
+}
+
+func (f *messageAPI) GetBlockedContactIdsContext(_ context.Context) ([]string, error) {
+	return f.GetBlockedContactIds()
+}
+
+func (f *messageAPI) SendMessageContext(_ context.Context, arg0 int64, msg *line.Message) (*line.Message, error) {
+	return f.SendMessage(arg0, msg)
 }

@@ -125,14 +125,14 @@ func decryptAttachment(data []byte, key string, video bool) ([]byte, error) {
 	return plain, nil
 }
 
-func (c *Client) uploadFile(file *Attachment, metadata map[string]string) ([]byte, error) {
+func (c *Client) uploadFile(ctx context.Context, file *Attachment, metadata map[string]string) ([]byte, error) {
 	data, key, err := encryptFile(file.Data)
 	if err != nil {
 		return nil, err
 	}
 	var oid string
-	if err := c.Session.Mutate(func(api session.API) (err error) { oid, err = api.UploadOBSWithSID(data, "emf"); return }); err != nil {
-		return nil, err
+	if err := c.Session.MutateContext(ctx, func(api session.API) (err error) { oid, err = api.UploadOBSWithSIDContext(ctx, data, "emf"); return }); err != nil {
+		return nil, mutationError("attachment upload did not return success; an uploaded file may remain; inspect LINE before retrying: %w", err)
 	}
 	if oid == "" {
 		return nil, errors.New("file upload returned no object ID")
@@ -147,7 +147,7 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	msg, err := c.findMessage(chat, id)
+	msg, err := c.findMessage(ctx, chat, id)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 		if advertisedSID != "" && advertisedSID != sid {
 			return nil, errors.New("encrypted attachment storage metadata does not match its content type")
 		}
-		payload, err := c.decryptPayload(chat, msg)
+		payload, err := c.decryptPayload(ctx, chat, msg)
 		if err != nil {
 			return nil, err
 		}
@@ -209,7 +209,7 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := c.Session.Do(func(api session.API) (err error) {
+	if err := c.Session.DoContext(ctx, func(api session.API) (err error) {
 		data, err = api.DownloadOBSWithSIDOptions(ctx, oid, talkMeta, sid, opts)
 		return
 	}); err != nil {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/kongesque/line-cli/internal/session"
@@ -44,6 +45,7 @@ Examples:
   line send "Alice" --file report.pdf
   line chats --search "Family"
 
+whoami, contacts, chats, messages, send, download, react, and unsend accept --timeout.
 In a terminal, missing details are prompted for. Ctrl-C cancels.
 Use --show-ids for IDs, --json for scripts, or COMMAND --help for all options.
 `
@@ -122,6 +124,10 @@ func (a *App) Run(args []string) error {
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(a.Err)
+	var timeout time.Duration
+	if command == "whoami" {
+		fs.DurationVar(&timeout, "timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
+	}
 	fs.Usage = func() { fmt.Fprintf(a.Err, "Usage: line %s [options]\n", command); fs.PrintDefaults() }
 	var jsonOutput bool
 	var showIDs bool
@@ -135,6 +141,11 @@ func (a *App) Run(args []string) error {
 		}
 		return errors.New("invalid options; run line " + command + " --help")
 	}
+	restore, err := a.commandDeadline(timeout)
+	if err != nil {
+		return err
+	}
+	defer restore()
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; run line " + command + " --help")
 	}
@@ -154,7 +165,7 @@ func (a *App) Run(args []string) error {
 	switch command {
 	case "whoami":
 		var profile *line.Profile
-		err := a.Manager.Do(func(api session.API) (err error) { profile, err = api.GetProfile(); return })
+		err := a.Manager.DoContext(a.loginContext(), func(api session.API) (err error) { profile, err = api.GetProfileContext(a.loginContext()); return })
 		if err != nil {
 			return err
 		}
@@ -254,7 +265,10 @@ func (a *App) chatBoxes(active, recent bool) ([]Chat, error) {
 	}
 	for {
 		var response *line.MessageBoxesResponse
-		if err := a.Manager.Do(func(api session.API) (err error) { response, err = api.GetMessageBoxes(options); return }); err != nil {
+		if err := a.Manager.DoContext(a.loginContext(), func(api session.API) (err error) {
+			response, err = api.GetMessageBoxesContext(a.loginContext(), options)
+			return
+		}); err != nil {
 			return nil, err
 		}
 		if response == nil {

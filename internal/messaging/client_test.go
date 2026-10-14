@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -418,4 +419,40 @@ func TestGroupRegistrationAddsOmittedCallerAndExcludesInvitees(t *testing.T) {
 	if strings.Join(f.registeredMembers, ",") != "u-peer,u-self" {
 		t.Fatal("caller omitted or invitee included")
 	}
+}
+
+func (f *fakeAPI) GetRecentMessagesV2Context(_ context.Context, arg0 string, arg1 int) ([]*line.Message, error) {
+	return f.GetRecentMessagesV2(arg0, arg1)
+}
+
+func (f *fakeAPI) GetBlockedContactIdsContext(_ context.Context) ([]string, error) {
+	return f.GetBlockedContactIds()
+}
+
+func (f *fakeAPI) NegotiateE2EEPublicKeyContext(_ context.Context, arg0 string) (*line.E2EEPublicKey, error) {
+	return f.NegotiateE2EEPublicKey(arg0)
+}
+
+func (f *fakeAPI) GetE2EEPublicKeyContext(_ context.Context, arg0 string, arg1 int, id int) (*line.E2EEPublicKey, error) {
+	return f.GetE2EEPublicKey(arg0, arg1, id)
+}
+
+func (f *fakeAPI) GetE2EEGroupSharedKeyContext(_ context.Context, arg0 string, id int) (*line.E2EEGroupSharedKey, error) {
+	return f.GetE2EEGroupSharedKey(arg0, id)
+}
+
+func (f *fakeAPI) GetLastE2EEGroupSharedKeyContext(_ context.Context, arg0 string) (*line.E2EEGroupSharedKey, error) {
+	return f.GetLastE2EEGroupSharedKey(arg0)
+}
+
+func (f *fakeAPI) GetChatsContext(_ context.Context, arg0 []string, arg1 bool, arg2 bool) (*line.GetChatsResponse, error) {
+	return f.GetChats(arg0, arg1, arg2)
+}
+
+func (f *fakeAPI) RegisterE2EEGroupKeyContext(_ context.Context, arg0 int, arg1 string, members []string, keys []int, wrapped []string) error {
+	return f.RegisterE2EEGroupKey(arg0, arg1, members, keys, wrapped)
+}
+
+func (f *fakeAPI) SendMessageContext(_ context.Context, seq int64, msg *line.Message) (*line.Message, error) {
+	return f.SendMessage(seq, msg)
 }

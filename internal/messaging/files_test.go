@@ -190,3 +190,15 @@ func TestAttachmentValidationAndMAC(t *testing.T) {
 		t.Fatal("truncated file accepted")
 	}
 }
+
+func (f *fileAPI) UploadOBSWithSIDContext(_ context.Context, data []byte, sid string) (string, error) {
+	return f.UploadOBSWithSID(data, sid)
+}
+
+func (f *fileAPI) UploadOBSPlainContext(_ context.Context, data []byte, oid, kind string) error {
+	return f.UploadOBSPlain(data, oid, kind)
+}
+
+func (f *fileAPI) SendMessageContext(_ context.Context, seq int64, msg *line.Message) (*line.Message, error) {
+	return f.SendMessage(seq, msg)
+}

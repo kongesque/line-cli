@@ -279,3 +279,23 @@ func TestReadableHistoryPreservesJSONAndResolvesSenders(t *testing.T) {
 }
 
 func (f *guidedAPI) GetProfileContext(context.Context) (*line.Profile, error) { return f.GetProfile() }
+
+func (f *guidedAPI) GetAllContactIdsContext(_ context.Context) ([]string, error) {
+	return f.GetAllContactIds()
+}
+
+func (f *guidedAPI) SendMessageContext(_ context.Context, arg0 int64, m *line.Message) (*line.Message, error) {
+	return f.SendMessage(arg0, m)
+}
+
+func (f *guidedAPI) ReactContext(_ context.Context, arg0 int64, arg1 string, arg2 line.ReactionType) error {
+	return f.React(arg0, arg1, arg2)
+}
+
+func (f *guidedAPI) CancelReactionContext(_ context.Context, arg0 int64, arg1 string) error {
+	return f.CancelReaction(arg0, arg1)
+}
+
+func (f *guidedAPI) UnsendMessageContext(_ context.Context, arg0 int64, arg1 string) error {
+	return f.UnsendMessage(arg0, arg1)
+}
