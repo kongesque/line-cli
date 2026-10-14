@@ -2,7 +2,7 @@
 
 English | [繁體中文（台灣）](README.zh-TW.md) | [日本語](README.ja.md) | [ภาษาไทย](README.th.md)
 
-**LINE CLI** is an unofficial, open-source LINE command-line client written in Go.
+**LINE CLI** is an unofficial, lightweight CLI written in Go for using your personal LINE account from the terminal.
 Send LINE messages from your terminal, read personal and group chats, share files,
 download attachments, and stream live events. Use interactive prompts for everyday
 messaging or JSON output for shell scripts and AI agent workflows.
@@ -97,6 +97,21 @@ line login --email you@example.com
 Your password is entered privately and never saved. Login checks storage and asks
 before replacing a usable saved session.
 [Login options and QR troubleshooting](docs/CLI.md#login-options-and-qr-help).
+
+**On a Linux server or over SSH, use `--headless` when no unlocked keyring is
+available:**
+
+```sh
+line login --headless                        # QR login
+line login --headless --email you@example.com # Email/password login
+```
+
+This saves your session using host-key storage so later commands can run without
+an unlocked desktop keyring. Initial login still requires an interactive terminal
+and phone approval. After enrollment, run ordinary commands such as `line chats`
+or `line watch` without `--headless`.
+See [headless setup and service deployment](docs/CLI.md#linux-servers-and-headless-storage)
+for supported hosts, storage protection, and migrating an existing session.
 
 ### 2. Browse your chats and send a message
 

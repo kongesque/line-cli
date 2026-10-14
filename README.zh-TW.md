@@ -2,7 +2,7 @@
 
 [English](README.md) | 繁體中文（台灣）  | [日本語](README.ja.md) | [ภาษาไทย](README.th.md)
 
-**LINE CLI** 是以 Go 撰寫的非官方開源 LINE 指令列用戶端。
+**LINE CLI** 是以 Go 撰寫的輕量指令列工具，讓你能透過終端機使用自己的 LINE 帳號，屬於非官方專案。
 你可以在終端機傳送 LINE 訊息、讀取個人與群組聊天室、分享檔案、下載附件，
 並串流接收即時事件。日常傳訊可使用互動式提示，也能透過 JSON 輸出串接
 shell 指令稿與 AI 代理程式工作流程。
@@ -97,6 +97,19 @@ line login --email you@example.com
 輸入密碼時不會顯示內容，也不會儲存密碼。登入會檢查儲存機制，並在取代可用的
 已儲存工作階段前詢問。
 詳見[登入選項與 QR 碼疑難排解](docs/CLI.zh-TW.md#login-options-and-qr-help)。
+
+**在 Linux 伺服器上或透過 SSH 使用時，若金鑰圈無法解鎖，請使用 `--headless` 登入：**
+
+```sh
+line login --headless                        # QR 碼登入
+line login --headless --email you@example.com # 電子郵件與密碼登入
+```
+
+這個選項會使用主機金鑰儲存登入工作階段，之後執行指令就不需要解鎖桌面金鑰圈。
+首次登入仍需在終端機互動操作，並在手機上核准。完成設定後，可以直接執行
+`line chats` 或 `line watch` 等一般指令，不必再加上 `--headless`。
+支援的主機環境、儲存保護機制與既有工作階段的移轉方式，詳見
+[無頭環境設定與服務部署](docs/CLI.zh-TW.md#linux-servers-and-headless-storage)。
 
 ### 2. 瀏覽聊天室並傳送訊息
 
