@@ -9,29 +9,6 @@ import (
 	"github.com/kongesque/line-cli/internal/session"
 )
 
-type fakeLoginStorage struct {
-	initiallyEmptyStore
-	consent, accepted, closed bool
-	prepares                  int
-	err                       error
-	identity                  string
-}
-
-func (s *fakeLoginStorage) Prepare() error {
-	s.prepares++
-	if s.err != nil {
-		return s.err
-	}
-	if s.consent && !s.accepted {
-		return session.ErrHostConsent
-	}
-	return nil
-}
-func (s *fakeLoginStorage) StorageIdentity() (string, error) { return s.identity, nil }
-func (s *fakeLoginStorage) RequiresHostConsent() bool        { return s.consent }
-func (s *fakeLoginStorage) AcceptHost()                      { s.accepted = true }
-func (s *fakeLoginStorage) Close()                           { s.closed = true }
-
 func TestHeadlessLoginConsentFailureAndCancellation(t *testing.T) {
 	for _, mode := range []string{"yes", "no", "cancel", "storage_failure", "changed"} {
 		t.Run(mode, func(t *testing.T) {

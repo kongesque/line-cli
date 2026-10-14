@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,50 +10,6 @@ import (
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
-
-type chatAPI struct {
-	messageAPI
-	boxes     []line.MessageBox
-	names     map[string]string
-	options   []line.MessageBoxesOptions
-	batches   []int
-	nameError error
-}
-
-func (f *chatAPI) GetAllContactIds() ([]string, error) { return nil, nil }
-
-func (f *chatAPI) GetMessageBoxes(options line.MessageBoxesOptions) (*line.MessageBoxesResponse, error) {
-	f.options = append(f.options, options)
-	return &line.MessageBoxesResponse{MessageBoxes: f.boxes}, nil
-}
-func (f *chatAPI) GetContactsV2(ids []string) (*line.ContactsResponse, error) {
-	if f.nameError != nil {
-		return nil, f.nameError
-	}
-	f.batches = append(f.batches, len(ids))
-	result := &line.ContactsResponse{Contacts: make(map[string]line.ContactWrapper)}
-	for _, id := range ids {
-		result.Contacts[id] = line.ContactWrapper{Contact: line.Contact{DisplayName: "Original", DisplayNameOverridden: f.names[id]}}
-	}
-	return result, nil
-}
-func (f *chatAPI) GetChats(ids []string, members, invitees bool) (*line.GetChatsResponse, error) {
-	if len(ids) > 20 {
-		return nil, errors.New("group lookup batch exceeds the verified API limit")
-	}
-	if members || invitees {
-		return nil, errors.New("unnecessary membership lookup")
-	}
-	if f.nameError != nil {
-		return nil, f.nameError
-	}
-	f.batches = append(f.batches, len(ids))
-	result := &line.GetChatsResponse{}
-	for _, id := range ids {
-		result.Chats = append(result.Chats, line.Chat{ChatMid: id, ChatName: f.names[id]})
-	}
-	return result, nil
-}
 
 func TestChatsJSONCompatibilityAndEmptySearch(t *testing.T) {
 	f := &chatAPI{boxes: []line.MessageBox{{ID: "u-one", UnreadCount: "2"}}, names: map[string]string{"u-one": "Alice"}}
@@ -205,20 +160,4 @@ func TestChatOptionsValidateBeforeSession(t *testing.T) {
 		a.Lock = func() (func(), error) { t.Fatal("opened session"); return nil, nil }
 		_ = a.Run(args)
 	}
-}
-
-func (f *chatAPI) GetAllContactIdsContext(_ context.Context) ([]string, error) {
-	return f.GetAllContactIds()
-}
-
-func (f *chatAPI) GetMessageBoxesContext(_ context.Context, options line.MessageBoxesOptions) (*line.MessageBoxesResponse, error) {
-	return f.GetMessageBoxes(options)
-}
-
-func (f *chatAPI) GetContactsV2Context(_ context.Context, ids []string) (*line.ContactsResponse, error) {
-	return f.GetContactsV2(ids)
-}
-
-func (f *chatAPI) GetChatsContext(_ context.Context, ids []string, members, invitees bool) (*line.GetChatsResponse, error) {
-	return f.GetChats(ids, members, invitees)
 }

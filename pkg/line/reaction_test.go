@@ -3,46 +3,8 @@ package line
 import (
 	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
-	"strings"
 	"testing"
 )
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
-}
-
-func newReactionTestClient(t *testing.T, wantPath string, body *string) *Client {
-	return newReactionTestClientWithResponse(t, wantPath, `{"code":0,"message":"ok","data":null}`, body)
-}
-
-func newReactionTestClientWithResponse(t *testing.T, wantPath, responseBody string, body *string) *Client {
-	t.Helper()
-	client := NewClient("test-token")
-	client.HTTPClient = &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			if req.URL.Path != wantPath {
-				t.Fatalf("path = %q, want %q", req.URL.Path, wantPath)
-			}
-			data, err := io.ReadAll(req.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if body != nil {
-				*body = string(data)
-			}
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(responseBody)),
-			}, nil
-		}),
-	}
-	return client
-}
 
 func TestReactRequestBody(t *testing.T) {
 	var body string

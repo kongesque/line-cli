@@ -20,10 +20,6 @@ import (
 const qrTestSession = "synthetic-session"
 const qrTestExpiry = `{"code":10052,"data":{"statusCode":410}}`
 
-func qrTestResponse(status int, body string) *http.Response {
-	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
-}
-
 func qrTestClient(fn func(*http.Request) (*http.Response, error)) *Client {
 	c := NewClient("")
 	c.HTTPClient.Transport = roundTripFunc(fn)

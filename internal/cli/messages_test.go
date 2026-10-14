@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -10,19 +9,6 @@ import (
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
-
-type messageAPI struct {
-	session.API
-	history []*line.Message
-	sent    *line.Message
-}
-
-func (f *messageAPI) GetRecentMessagesV2(string, int) ([]*line.Message, error) { return f.history, nil }
-func (f *messageAPI) GetBlockedContactIds() ([]string, error)                  { return nil, nil }
-func (f *messageAPI) SendMessage(_ int64, msg *line.Message) (*line.Message, error) {
-	f.sent = msg
-	return &line.Message{ID: "message-id"}, nil
-}
 
 func TestMessageArgumentsValidateBeforeSessionAccess(t *testing.T) {
 	for _, args := range [][]string{
@@ -83,16 +69,4 @@ func TestSendStdinHasBoundedSize(t *testing.T) {
 	if err := a.Run([]string{"send", "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--stdin"}); err == nil {
 		t.Fatal("accepted oversized stdin")
 	}
-}
-
-func (f *messageAPI) GetRecentMessagesV2Context(_ context.Context, arg0 string, arg1 int) ([]*line.Message, error) {
-	return f.GetRecentMessagesV2(arg0, arg1)
-}
-
-func (f *messageAPI) GetBlockedContactIdsContext(_ context.Context) ([]string, error) {
-	return f.GetBlockedContactIds()
-}
-
-func (f *messageAPI) SendMessageContext(_ context.Context, arg0 int64, msg *line.Message) (*line.Message, error) {
-	return f.SendMessage(arg0, msg)
 }

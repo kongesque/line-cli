@@ -8,19 +8,8 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 )
-
-func testSessionFiles(t *testing.T) *sessionFiles {
-	t.Helper()
-	f, err := openSessionFiles(filepath.Join(t.TempDir(), "line-cli"), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { f.root.Close() })
-	return f
-}
 
 func TestSessionReplacementFailuresKeepOldFile(t *testing.T) {
 	failure := errors.New("injected filesystem failure")

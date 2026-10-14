@@ -800,6 +800,9 @@ standard-library PTY support when available. Native Linux Secret Service
 integration needs an explicitly enabled disposable D-Bus session; Windows DPAPI
 tests use temporary files.
 
+See the [testing guide](TESTING.md) for the complete suite commands, shared
+fixtures, slow crypto regressions, and CI coverage.
+
 ### Current limitations
 
 - One saved LINE account per operating-system user.

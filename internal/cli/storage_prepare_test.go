@@ -71,15 +71,6 @@ func TestLoginPreflightRechecksAfterPassword(t *testing.T) {
 	}
 }
 
-type initiallyEmptyStore struct{ testStore }
-
-func (s *initiallyEmptyStore) Load() (*session.State, error) {
-	if s.state == nil {
-		return nil, session.ErrNotFound
-	}
-	return s.testStore.Load()
-}
-
 func TestLoginRejectsConcurrentSessionCreation(t *testing.T) {
 	a, api, _, _, locked := guidedApp(t, "")
 	store := &initiallyEmptyStore{}

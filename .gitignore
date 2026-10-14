@@ -16,6 +16,7 @@
 
 /docs/*
 !/docs/CLI*.md
+!/docs/TESTING.md
 
 /test
 

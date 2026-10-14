@@ -4,46 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 )
-
-type fakeSecretService struct {
-	values map[string][]byte
-	fault  func(action, account string) bool
-}
-
-func (s *fakeSecretService) helper() secretToolStore {
-	return secretToolStore{run: func(args []string, input []byte) secretResult {
-		action, account := args[0], args[len(args)-1]
-		if s.fault != nil && s.fault(action, account) {
-			return secretResult{code: 1, diagnostic: true}
-		}
-		switch action {
-		case "store":
-			s.values[account] = append([]byte(nil), input...)
-		case "lookup":
-			if value, ok := s.values[account]; ok {
-				return secretResult{output: append([]byte(nil), value...)}
-			}
-			return secretResult{code: 1}
-		case "search":
-			if value, ok := s.values[account]; ok {
-				return secretResult{output: append(append([]byte("[/synthetic]\nsecret = "), value...), '\n')}
-			}
-		case "clear":
-			clear(s.values[account])
-			delete(s.values, account)
-		}
-		return secretResult{}
-	}}
-}
-
-func syntheticFileStore(t *testing.T) (secretFileStore, *fakeSecretService) {
-	t.Helper()
-	service := &fakeSecretService{values: map[string][]byte{}}
-	return secretFileStore{path: filepath.Join(t.TempDir(), "line-cli", "session.enc"), secrets: service.helper()}, service
-}
 
 func TestDeleteRetainsWrappingKeyUntilRemovalIsDurable(t *testing.T) {
 	s, service := syntheticFileStore(t)
