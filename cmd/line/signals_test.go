@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/kongesque/line-cli/internal/cli"
+	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 type confirmationStore struct{}
@@ -144,3 +146,47 @@ func TestPasswordLine(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+type cancelledSendAPI struct {
+	session.API
+	cancel    context.CancelFunc
+	confirmed bool
+}
+
+func (f *cancelledSendAPI) SendMessageContext(context.Context, int64, *line.Message) (*line.Message, error) {
+	f.cancel()
+	if f.confirmed {
+		return &line.Message{ID: "123"}, nil
+	}
+	return nil, context.Canceled
+}
+func TestCommandExitPreservesCancelledMutationDetails(t *testing.T) {
+	for _, confirmed := range []bool{false, true} {
+		ctx, cancel := context.WithCancel(context.Background())
+		store := &signalSendStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
+		manager := session.NewManager(store)
+		manager.NewClient = func(string) session.API { return &cancelledSendAPI{cancel: cancel, confirmed: confirmed} }
+		client, err := messaging.New(manager)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want string
+		if confirmed {
+			_, err = client.SendFileContext(ctx, "c-group", messaging.Attachment{Name: "test.txt"}, "")
+			want = "message 123 was created"
+		} else {
+			_, err = client.SendContext(ctx, "c-group", "synthetic")
+			want = "delivery may have occurred"
+		}
+		var out bytes.Buffer
+		if code := commandExit(err, 143, &out); code != 143 || !strings.Contains(out.String(), want) {
+			t.Fatalf("code=%d output=%s", code, out.String())
+		}
+	}
+}
+
+type signalSendStore struct{ state *session.State }
+
+func (s *signalSendStore) Load() (*session.State, error)   { return s.state, nil }
+func (s *signalSendStore) Save(state *session.State) error { s.state = state; return nil }
+func (s *signalSendStore) Delete() error                   { return nil }

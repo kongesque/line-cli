@@ -2,42 +2,10 @@ package session
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"slices"
 	"testing"
 )
-
-// Fixtures describe header layouts only; they are not authentic systemd blobs.
-func fixture(id string) []byte {
-	b := make([]byte, 48)
-	idBytes, _ := hex.DecodeString(id)
-	copy(b, idBytes)
-	for i, v := range []uint32{32, 1, 12, 16} {
-		binary.LittleEndian.PutUint32(b[16+i*4:], v)
-	}
-	if id == tpmUserID || id == pkUserID {
-		h := make([]byte, 56)
-		binary.LittleEndian.PutUint64(h, 1<<7)
-		binary.LittleEndian.PutUint16(h[8:], 11)
-		binary.LittleEndian.PutUint16(h[10:], 0x23)
-		binary.LittleEndian.PutUint32(h[12:], 4)
-		binary.LittleEndian.PutUint32(h[16:], 32)
-		b = append(b, h...)
-		if id == pkUserID {
-			h := make([]byte, 16)
-			binary.LittleEndian.PutUint64(h, 1<<11)
-			binary.LittleEndian.PutUint32(h[8:], 4)
-			b = append(b, h...)
-		}
-	}
-	h := make([]byte, 8+24+32+16)
-	binary.LittleEndian.PutUint64(h, 7)
-	return append(b, h...)
-}
-
-func encode(b []byte) []byte { return []byte(base64.StdEncoding.EncodeToString(b)) }
 
 func TestCredentialLayouts(t *testing.T) {
 	for _, tc := range []struct {

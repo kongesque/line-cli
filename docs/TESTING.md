@@ -1,0 +1,138 @@
+# Testing LINE CLI
+
+Tests live beside the packages they exercise. Ordinary tests use synthetic data,
+fake APIs, and temporary storage. They do not require a LINE login. Requirements
+are Go 1.26+; macOS also needs CGO and Xcode Command Line Tools for Keychain.
+Linux and Windows support `CGO_ENABLED=0`.
+
+## Test suites
+
+| Suite | Location | Execution |
+| --- | --- | --- |
+| CLI, sessions, messaging, events, input, updates, protocol, and E2EE manager | `internal`, `cmd/line`, `pkg/line`, `pkg/e2ee` | Default contributor checks and the three-platform CI matrix |
+| Shared signing and crypto runtime | `pkg`, `pkg/ltsm` | Separate command and dedicated Linux CI job; includes slow stress tests |
+| Standalone systemd investigation tool | `scripts/systemd-probe` | Separate local command; ordinary tests use synthetic credentials and subprocess helpers |
+| Native credential storage | OS-specific session tests | Linux requires an isolated private D-Bus session; Windows uses temporary DPAPI files |
+| Boot, systemd, and migration integration | Linux session tests and systemd probe | Explicitly enabled inside a disposable, booted Linux VM |
+| Live LINE history and watching | `internal/messaging/live_test.go`, `internal/events/live_test.go` | Explicit authorization and opt-in with a saved session |
+
+### Main contributor suite
+
+On macOS and Linux:
+
+```sh
+go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
+```
+
+Windows CI uses the same package list without `-race`:
+
+```sh
+go test ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
+```
+
+Command cancellation tests use fake requests and synthetic subprocesses. Unix
+terminal-restoration tests use Python 3's standard-library PTY support when
+available. OS-specific files use suffixes such as `_linux_test.go` and
+`_windows_test.go`; unsupported platforms exclude them automatically.
+
+### Runner and LTSM regressions
+
+```sh
+go test -count=1 -timeout=20m ./pkg ./pkg/ltsm
+```
+
+This suite exercises the transpiled Go runtime and its typed runner interface.
+It includes fixed signing/login-secret expectations, AES and message encryption
+roundtrips, deterministic message vectors, Curve25519 key lifecycle checks, and
+signing-cache stress tests. Run it without custom `SECURE_KEY` or `CLIENT_VERSION`
+environment overrides, because fixed expectations use the default protocol
+fixtures. It does not use saved personal LINE credentials or contact LINE.
+
+The generated LTSM package can take substantial time to compile from an empty
+cache. `-timeout` limits execution of each package's test binary, not compilation.
+Use the normal Go build cache and avoid redundant concurrent builds of this
+dependency. Some runner tests honor `-short`; a short run does not replace the
+full regression command above.
+
+Do not edit `pkg/ltsm/wbc_generated.go` or its embedded `data` files. The obsolete
+`TestReplayLTSMVectors` placeholder was retired: it was always skipped and
+referred to the removed Node/JSON IPC and wazero runners. Current executable
+coverage includes `TestGetSignatureFromRunner`, `TestSignFullFlow`,
+`TestAesKeyEncryptDecrypt`, `TestCurve25519KeyGenerateAndDestroy`, and the V1/V2
+message encryption and vector tests.
+
+### Standalone probe tests
+
+```sh
+go test ./scripts/systemd-probe
+```
+
+These tests exercise credential parsing, helper-process limits, redaction, and
+synthetic fixture handling. Real systemd/TPM observations have a separate
+[probe guide](../scripts/systemd-probe/README.md) and
+[runtime record](../scripts/systemd-probe/RUNTIME.md).
+
+## Platform integration
+
+The default suite includes fake storage and failure-path tests. Actual native
+storage and boot-time checks have additional requirements:
+
+- **Linux Secret Service:** use a disposable private D-Bus session and a private
+  keyring data/runtime directory. Enable `LINE_CLI_TEST_SECRET_SERVICE=1` and,
+  for the lock check, `LINE_CLI_TEST_KEYRING_LOCK=1`. Run
+  `go test -count=1 ./internal/session -run '^TestLinuxNativeSecretService$'`
+  inside that session. The isolated setup is recorded in
+  [the CI workflow](../.github/workflows/cli.yml).
+- **Windows DPAPI:** `go test -count=1 ./internal/session -run '^TestDPAPI'`
+  exercises temporary session files on Windows. This also runs in Windows CI.
+- **Linux systemd/headless integration:** `LINE_CLI_TEST_SYSTEMD_CREDS=1` is
+  reserved for a disposable booted VM. Persistent headless checks additionally
+  require `LINE_CLI_TEST_HEADLESS_FIXTURE` and `LINE_CLI_TEST_HEADLESS_MODE`.
+  Follow [the headless storage documentation](../internal/session/HEADLESS.md)
+  and the probe guide; never reuse a real profile or production keyring as a
+  fixture. VM fixtures and disks remain outside Git.
+
+## Live LINE checks
+
+Live tests are skipped by default. Do not enable them as part of ordinary local
+checks or CI. They require explicit authorization for the account and intended
+actions, plus a saved LINE session.
+
+The current opt-ins are `LINE_CLI_LIVE_READ=1` for `TestLiveHistory` and
+`LINE_CLI_LIVE_WATCH=1` for `TestLiveWatch`. History checks read real conversations;
+watch checks read real events and update the saved watch cursor. Neither test
+sends messages, registers group keys, or marks messages read. Any future live
+mutation test must also have explicit authorization for its recipient, content,
+and actions. Do not print credentials, private message data, encrypted chunks,
+or raw server bodies.
+
+## Shared helpers and fixtures
+
+Use package-local `test_helpers_test.go` for fake APIs, stores, setup functions,
+and response helpers used by multiple test files. Keep a helper used by one
+behavior test beside that test. Helpers with platform dependencies belong in a
+matching file such as `test_helpers_linux_test.go`. Test-only helpers stay in
+`_test.go` files and do not become production dependencies.
+
+Prefer small synthetic fixtures in Go source. If larger reusable fixtures are
+needed, put them in the owning package's `testdata` directory and check that Git
+includes them: this repository ignores many JSON and text files by default.
+Never add captured credentials or private LINE data as fixtures.
+
+## Formatting, analysis, and CI
+
+```sh
+goimports -local "github.com/kongesque/line-cli" -w internal cmd/line pkg/line pkg/e2ee pkg/runner.go
+go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
+staticcheck ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
+./build.sh
+./bin/line help
+```
+
+When changing runner or LTSM test files, format those files too. Exclude generated
+`pkg/ltsm` from vet/staticcheck. The
+[CI workflow](../.github/workflows/cli.yml) runs the main package suite on Linux,
+macOS, and Windows, with native Linux Secret Service and Windows DPAPI checks.
+Its separate crypto job runs the full runner/LTSM regression command with
+`CGO_ENABLED=0`, a 20-minute test timeout, and a 30-minute job limit. Live LINE and
+disposable booted-VM checks remain manual.

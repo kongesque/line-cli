@@ -6,16 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"time"
 )
-
-func envelopeState() *State {
-	revision := int64(172)
-	return &State{Version: 1, MID: "synthetic-mid", AccessToken: "synthetic-access", RefreshToken: "synthetic-refresh",
-		Email: "synthetic@example.test", Certificate: "synthetic-cert", Generation: "synthetic-generation",
-		RefreshAt: time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC), LastReqSeq: 73, WatchRevision: &revision,
-		ExportedKeys: map[string]string{"key": "synthetic-letter-sealing-material"}}
-}
 
 func testEnvelope(t *testing.T) ([]byte, []byte) {
 	t.Helper()

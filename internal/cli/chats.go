@@ -19,6 +19,7 @@ import (
 func (a *App) chatCommand(args []string) error {
 	fs := flag.NewFlagSet("chats", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
+	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	fs.Usage = func() {
 		fmt.Fprintln(a.Err, "Usage: line chats [options]\nShows 20 active conversations, newest first. Search also includes inactive chats.")
 		fs.PrintDefaults()
@@ -34,6 +35,11 @@ func (a *App) chatCommand(args []string) error {
 		}
 		return errors.New("invalid options; run line chats --help")
 	}
+	restore, err := a.commandDeadline(*timeout)
+	if err != nil {
+		return err
+	}
+	defer restore()
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; use line chats --search NAME")
 	}
@@ -46,7 +52,7 @@ func (a *App) chatCommand(args []string) error {
 			limitSet = true
 		}
 	})
-	unlock, err := a.Lock()
+	unlock, err := a.lock()
 	if err != nil {
 		return err
 	}
@@ -152,8 +158,8 @@ func (a *App) nameChats(chats []Chat) error {
 	names := make(map[string]string)
 	for start := 0; start < len(direct); start += 100 {
 		var response *line.ContactsResponse
-		if err := a.Manager.Do(func(api session.API) (err error) {
-			response, err = api.GetContactsV2(direct[start:min(start+100, len(direct))])
+		if err := a.Manager.DoContext(a.loginContext(), func(api session.API) (err error) {
+			response, err = api.GetContactsV2Context(a.loginContext(), direct[start:min(start+100, len(direct))])
 			return
 		}); err != nil {
 			return err
@@ -168,8 +174,8 @@ func (a *App) nameChats(chats []Chat) error {
 	// Use the validated LINE group lookup batch size.
 	for start := 0; start < len(groups); start += 20 {
 		var response *line.GetChatsResponse
-		if err := a.Manager.Do(func(api session.API) (err error) {
-			response, err = api.GetChats(groups[start:min(start+20, len(groups))], false, false)
+		if err := a.Manager.DoContext(a.loginContext(), func(api session.API) (err error) {
+			response, err = api.GetChatsContext(a.loginContext(), groups[start:min(start+20, len(groups))], false, false)
 			return
 		}); err != nil {
 			return err

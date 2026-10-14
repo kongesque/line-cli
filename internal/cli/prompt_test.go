@@ -1,85 +1,15 @@
 package cli
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
-
-type guidedAPI struct {
-	chatAPI
-	sends, reactions, removals, unsends, logins int
-}
-
-func (f *guidedAPI) GetAllContactIds() ([]string, error) { return []string{"u-alice", "u-new"}, nil }
-func (f *guidedAPI) GetProfile() (*line.Profile, error) {
-	return &line.Profile{Mid: "u-self", DisplayName: "Alex"}, nil
-}
-func (f *guidedAPI) SendMessage(_ int64, m *line.Message) (*line.Message, error) {
-	f.sends++
-	f.sent = m
-	return &line.Message{ID: "999"}, nil
-}
-func (f *guidedAPI) React(_ int64, _ string, _ line.ReactionType) error { f.reactions++; return nil }
-func (f *guidedAPI) CancelReaction(_ int64, _ string) error             { f.removals++; return nil }
-func (f *guidedAPI) UnsendMessage(_ int64, _ string) error              { f.unsends++; return nil }
-func (f *guidedAPI) DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error) {
-	return []byte("file bytes"), nil
-}
-func (f *guidedAPI) Login(email, password, certificate string) (*line.LoginResult, error) {
-	f.logins++
-	if email != "you@example.com" || password != "synthetic" {
-		return nil, errors.New("unexpected credentials")
-	}
-	return &line.LoginResult{AuthToken: "synthetic-token", NoE2EE: true}, nil
-}
-
-type checkedInput struct {
-	t      *testing.T
-	locked *bool
-	io.Reader
-	onRead func()
-}
-
-func (r checkedInput) Read(p []byte) (int, error) {
-	r.t.Helper()
-	if *r.locked {
-		r.t.Fatal("prompt held the session lock")
-	}
-	if r.onRead != nil {
-		r.onRead()
-	}
-	return r.Reader.Read(p)
-}
-
-func guidedApp(t *testing.T, input string) (*App, *guidedAPI, *bytes.Buffer, *bytes.Buffer, *bool) {
-	t.Helper()
-	f := &guidedAPI{chatAPI: chatAPI{names: map[string]string{"u-alice": "Alice", "u-new": "New contact"}, boxes: []line.MessageBox{{ID: "u-alice"}}}}
-	f.history = []*line.Message{{ID: "123", From: "u-self", To: "u-alice", Text: "My message"}, {ID: "124", From: "u-alice", To: "u-self", Text: "Their message"}, {ID: "125", From: "u-alice", ContentType: 14, ContentMetadata: map[string]string{"FILE_NAME": "notes.txt"}}}
-	a, out, diagnostics := testApp(nil)
-	a.Interactive = true
-	a.Manager.Store = &testStore{state: &session.State{Version: 1, MID: "u-self", AccessToken: "synthetic-token", Generation: "one", NoE2EE: true}}
-	a.Manager.NewClient = func(string) session.API { return f }
-	locked := false
-	a.Lock = func() (func(), error) {
-		if locked {
-			t.Fatal("nested lock")
-		}
-		locked = true
-		return func() { locked = false }, nil
-	}
-	a.In = checkedInput{t: t, locked: &locked, Reader: strings.NewReader(input)}
-	return a, f, out, diagnostics, &locked
-}
 
 func TestGuidedSendSelectsNewContactAndSendsOnce(t *testing.T) {
 	a, f, out, diagnostics, _ := guidedApp(t, "/New\n1\n\nHello คุณแฟน\n")
@@ -277,5 +207,3 @@ func TestReadableHistoryPreservesJSONAndResolvesSenders(t *testing.T) {
 		t.Fatalf("JSON fields changed: %d", len(history[0]))
 	}
 }
-
-func (f *guidedAPI) GetProfileContext(context.Context) (*line.Profile, error) { return f.GetProfile() }

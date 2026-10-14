@@ -360,6 +360,9 @@ func (c *Client) callRPCWithBaseURL(baseURL, service, method string, args ...int
 }
 
 func (c *Client) callRPCWithBaseURLContext(ctx context.Context, baseURL, service, method string, args ...interface{}) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	url := fmt.Sprintf("%s/%s/%s", baseURL, service, method)
 
 	var bodyBytes []byte
@@ -399,6 +402,9 @@ func (c *Client) callRPCWithBaseURLContext(ctx context.Context, baseURL, service
 	}
 	req.Header.Set("x-hmac", signature)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -489,6 +495,9 @@ func (c *Client) postWithHMACContext(ctx context.Context, fullURL string, body [
 	}
 	req.Header.Set("x-hmac", signature)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -562,14 +571,18 @@ func obsTypeFromSID(sid string) string {
 // UploadOBSPlain uploads plain (non-E2EE) media to a specific OID via the "m" endpoint.
 // obsType should be "image", "video", "audio", or "file".
 func (c *Client) UploadOBSPlain(data []byte, oid string, obsType string) error {
-	obsToken, err := c.AcquireEncryptedAccessToken()
+	return c.UploadOBSPlainContext(context.Background(), data, oid, obsType)
+}
+
+func (c *Client) UploadOBSPlainContext(ctx context.Context, data []byte, oid string, obsType string) error {
+	obsToken, err := c.AcquireEncryptedAccessTokenContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to acquire OBS token: %w", err)
 	}
 
 	url := fmt.Sprintf("%s/r/talk/m/%s", OBSBaseURL, oid)
 
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("failed to create OBS request: %w", err)
 	}
@@ -589,6 +602,9 @@ func (c *Client) UploadOBSPlain(data []byte, oid string, obsType string) error {
 	req.Header.Set("X-Obs-Params", obsParamsB64)
 	req.Header.Set("x-line-access", obsToken)
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	resp, err := c.obsHTTPClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("OBS upload request failed: %w", err)
@@ -612,8 +628,12 @@ func (c *Client) UploadOBS(data []byte) (string, error) {
 
 // SID: emi (images), emv (videos), ema (audio), emf (files)
 func (c *Client) UploadOBSWithSID(data []byte, sid string) (string, error) {
+	return c.UploadOBSWithSIDContext(context.Background(), data, sid)
+}
+
+func (c *Client) UploadOBSWithSIDContext(ctx context.Context, data []byte, sid string) (string, error) {
 	// First, acquire the OBS-specific encrypted access token
-	obsToken, err := c.AcquireEncryptedAccessToken()
+	obsToken, err := c.AcquireEncryptedAccessTokenContext(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to acquire OBS token: %w", err)
 	}
@@ -627,7 +647,7 @@ func (c *Client) UploadOBSWithSID(data []byte, sid string) (string, error) {
 
 	url := fmt.Sprintf("%s/r/talk/%s/reqid-%s", OBSBaseURL, sid, reqID)
 
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("failed to create OBS request: %w", err)
 	}
@@ -651,6 +671,9 @@ func (c *Client) UploadOBSWithSID(data []byte, sid string) (string, error) {
 	// Use the OBS-specific access token
 	req.Header.Set("x-line-access", obsToken)
 
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	resp, err := c.obsHTTPClient().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("OBS upload request failed: %w", err)
@@ -759,6 +782,9 @@ func (c *Client) DownloadOBSPublicResource(ctx context.Context, resourcePath str
 	}
 	req.Header.Set("User-Agent", UserAgent)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resp, err := c.obsHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("public OBS resource request failed: %w", err)
@@ -819,6 +845,9 @@ func (c *Client) DownloadAlbumPreview(ctx context.Context, oid, chatID, albumID 
 		req.Header.Set("X-Line-Access", c.AccessToken)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resp, err := c.obsHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
@@ -863,7 +892,7 @@ func (c *Client) downloadOBSWithServiceAndSIDOptions(ctx context.Context, servic
 		obsURL += query
 	}
 
-	obsToken, err := c.AcquireEncryptedAccessToken()
+	obsToken, err := c.AcquireEncryptedAccessTokenContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire encrypted access token: %w", err)
 	}
@@ -910,6 +939,9 @@ func (c *Client) checkOBSObjectReady(ctx context.Context, obsURL, obsToken, mess
 	if err != nil {
 		return fmt.Errorf("failed to create OBS object info request: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	resp, err := c.obsHTTPClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("OBS object info request failed: %w", err)
@@ -944,6 +976,9 @@ func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messag
 	req, err := c.newOBSDownloadRequest(ctx, obsURL, obsToken, messageID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OBS download request: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	resp, err := c.obsHTTPClient().Do(req)
 	if err != nil {

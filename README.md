@@ -232,6 +232,7 @@ instructions. Checks require no LINE login and run only when requested.
 
 - [CLI guide](docs/CLI.md): complete usage, troubleshooting, and server setup.
 - [Token and session audit](TOKEN_SESSION.md): refresh and recovery internals.
+- [Testing guide](docs/TESTING.md): test suites, fixtures, and CI coverage.
 - [GitHub Issues](https://github.com/kongesque/line-cli/issues): bugs and feature requests.
 
 For bug reports, include `line version`, your OS, the command, and a redacted

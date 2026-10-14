@@ -47,7 +47,13 @@ func (a *App) renderMessages(chat string, messages []messaging.Message, ids bool
 	}
 	if len(senders) > 0 {
 		var response *line.ContactsResponse
-		err := a.Manager.Do(func(api session.API) (err error) { response, err = api.GetContactsV2(senders); return })
+		err := a.Manager.DoContext(a.loginContext(), func(api session.API) (err error) {
+			response, err = api.GetContactsV2Context(a.loginContext(), senders)
+			return
+		})
+		if a.loginContext().Err() != nil {
+			return a.loginContext().Err()
+		}
 		if err == nil && response != nil {
 			for id, c := range response.Contacts {
 				names[id] = c.Contact.EffectiveDisplayName()

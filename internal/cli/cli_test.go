@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,45 +10,6 @@ import (
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
-
-type testStore struct{ state *session.State }
-
-func (s *testStore) Load() (*session.State, error)   { return s.state, nil }
-func (s *testStore) Save(state *session.State) error { s.state = state; return nil }
-func (s *testStore) Delete() error                   { s.state = nil; return nil }
-
-type readAPI struct {
-	session.API
-	pages      []*line.MessageBoxesResponse
-	cursors    []string
-	ids        []string
-	batchSizes []int
-}
-
-func (f *readAPI) GetProfile() (*line.Profile, error) {
-	return &line.Profile{Mid: "u1", DisplayName: "Name\x1b[2J\n注入"}, nil
-}
-func (f *readAPI) GetMessageBoxes(options line.MessageBoxesOptions) (*line.MessageBoxesResponse, error) {
-	page := f.pages[len(f.cursors)]
-	f.cursors = append(f.cursors, options.MinChatID)
-	return page, nil
-}
-func (f *readAPI) GetAllContactIds() ([]string, error) { return f.ids, nil }
-func (f *readAPI) GetContactsV2(ids []string) (*line.ContactsResponse, error) {
-	f.batchSizes = append(f.batchSizes, len(ids))
-	response := &line.ContactsResponse{Contacts: make(map[string]line.ContactWrapper)}
-	for _, id := range ids {
-		response.Contacts[id] = line.ContactWrapper{Contact: line.Contact{DisplayName: id}}
-	}
-	return response, nil
-}
-
-func testApp(api *readAPI) (*App, *bytes.Buffer, *bytes.Buffer) {
-	out, diagnostics := new(bytes.Buffer), new(bytes.Buffer)
-	m := session.NewManager(&testStore{state: &session.State{AccessToken: "secret"}})
-	m.NewClient = func(string) session.API { return api }
-	return &App{Out: out, Err: diagnostics, Manager: m, Version: "test", Lock: func() (func(), error) { return func() {}, nil }}, out, diagnostics
-}
 
 func TestHelpAndArgumentErrorsNeverOpenSession(t *testing.T) {
 	for _, args := range [][]string{nil, {"help"}, {"--help"}, {"version"}, {"login", "--help"}, {"whoami", "--help"}, {"invalid"}, {"login"}, {"chats", "extra"}, {"logout", "--json"}, {"whoami", "--json", "extra"}} {
@@ -145,8 +105,6 @@ func TestEmptyListsAreJSONArrays(t *testing.T) {
 	}
 }
 
-func (f *readAPI) GetProfileContext(context.Context) (*line.Profile, error) { return f.GetProfile() }
-
 type rejectedSessionAPI struct{ readAPI }
 
 func (*rejectedSessionAPI) GetProfile() (*line.Profile, error) {
@@ -166,4 +124,8 @@ func TestWhoamiRejectedSessionHasSafeReloginGuidance(t *testing.T) {
 			t.Fatal("missing safe re-login guidance or contaminated stdout", err)
 		}
 	}
+}
+
+func (f *rejectedSessionAPI) GetProfileContext(_ context.Context) (*line.Profile, error) {
+	return f.GetProfile()
 }

@@ -21,8 +21,15 @@ type promptAccount struct{ mid, generation string }
 
 // Prompts never hold a credential lock. Recheck account identity when work resumes.
 func (a *App) lock() (func(), error) {
+	if err := a.loginContext().Err(); err != nil {
+		return nil, err
+	}
 	unlock, err := a.Lock()
 	if err != nil {
+		return nil, err
+	}
+	if err := a.loginContext().Err(); err != nil {
+		unlock()
 		return nil, err
 	}
 	if a.promptAccount != nil {
@@ -238,7 +245,7 @@ func (a *App) selectMessage(chat, command string) (string, error) {
 		var c *messaging.Client
 		c, err = messaging.New(a.Manager)
 		if err == nil {
-			messages, err = c.History(id, 100)
+			messages, err = c.HistoryContext(a.loginContext(), id, 100)
 		}
 	}
 	unlock()

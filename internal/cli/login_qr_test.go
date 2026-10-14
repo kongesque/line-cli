@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,46 +12,6 @@ import (
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
-
-const syntheticQRURL = "line://au/q/synthetic-session?secret=synthetic-public-key&e2eeVersion=1"
-
-func qrApp(t *testing.T, input string) (*App, *guidedAPI, *bytes.Buffer, *bytes.Buffer, *int, *bool) {
-	t.Helper()
-	a, api, out, diagnostics, locked := guidedApp(t, input)
-	a.Manager.Store = &initiallyEmptyStore{}
-	a.Password = func() (string, error) { return "synthetic", nil }
-	a.RenderQR = func(value string, _ QRTerminal) (QRFrame, error) {
-		if value != syntheticQRURL {
-			t.Fatal("renderer received incorrect value")
-		}
-		return QRFrame{Text: "[synthetic QR]\n", Columns: 14, Rows: 1}, nil
-	}
-	a.QRTerminal = func() QRTerminal { return QRTerminal{Width: 80} }
-	calls := 0
-	a.LoginQR = func(ctx context.Context, notify func(session.QRLoginEvent) error) (*line.Profile, error) {
-		calls++
-		if !*locked {
-			t.Fatal("QR login without session lock")
-		}
-		for _, event := range []session.QRLoginEvent{
-			{Kind: session.QRLoginCode, URL: syntheticQRURL, Attempt: 1, ExpiresIn: time.Minute},
-			{Kind: session.QRLoginScanned}, {Kind: session.QRLoginPIN, PIN: "001234"},
-			{Kind: session.QRLoginPhoneAccepted}, {Kind: session.QRLoginApproved},
-		} {
-			if err := notify(event); err != nil {
-				return nil, err
-			}
-		}
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if err := a.Manager.Store.Save(&session.State{AccessToken: "synthetic-access", Certificate: "synthetic-certificate", Generation: "new", MID: "synthetic-mid", CertificateOrigin: "qr", ExportedKeys: map[string]string{"1": "synthetic-export"}}); err != nil {
-			return nil, err
-		}
-		return &line.Profile{DisplayName: "Synthetic"}, nil
-	}
-	return a, api, out, diagnostics, &calls, locked
-}
 
 func TestQRLoginSelectionAndStreams(t *testing.T) {
 	for _, flags := range [][]string{nil, {"--qr"}, {"--qr-url"}, {"--qr", "--qr-url"}, {"--headless"}, {"--headless", "--qr-url"}, {"--email", "you@example.com"}, {"--headless", "--email", "you@example.com"}} {

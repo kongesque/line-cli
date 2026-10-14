@@ -12,45 +12,6 @@ import (
 	"github.com/kongesque/line-cli/pkg/line"
 )
 
-type fileAPI struct {
-	*fakeAPI
-	order                            []string
-	uploaded                         []byte
-	data                             []byte
-	options                          line.OBSDownloadOptions
-	requestSID, requestOID, talkMeta string
-	uploadErr, plainErr              error
-	downloadErr                      error
-	downloads                        int
-}
-
-func (f *fileAPI) UploadOBSWithSID(data []byte, sid string) (string, error) {
-	f.order = append(f.order, "upload")
-	f.uploaded = append([]byte(nil), data...)
-	if sid != "emf" {
-		panic("wrong file SID")
-	}
-	return "object-id", f.uploadErr
-}
-func (f *fileAPI) UploadOBSPlain(data []byte, oid, kind string) error {
-	f.order = append(f.order, "plain_upload")
-	f.uploaded = append([]byte(nil), data...)
-	if oid != "server-id" || kind != "file" {
-		panic("wrong post-send upload target")
-	}
-	return f.plainErr
-}
-func (f *fileAPI) SendMessage(seq int64, msg *line.Message) (*line.Message, error) {
-	f.order = append(f.order, "send")
-	return f.fakeAPI.SendMessage(seq, msg)
-}
-func (f *fileAPI) DownloadOBSWithSIDOptions(_ context.Context, oid, message, sid string, opts line.OBSDownloadOptions) ([]byte, error) {
-	f.downloads++
-	f.options = opts
-	f.requestOID, f.talkMeta, f.requestSID = oid, message, sid
-	return f.data, f.downloadErr
-}
-
 type fileCrypto struct {
 	*fakeCrypto
 	payloadSent []byte

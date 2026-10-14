@@ -25,6 +25,9 @@ The runner and LTSM regression suites can be run separately with
 `pkg/ltsm` from vet/staticcheck. Do not edit `pkg/ltsm/wbc_generated.go` or its
 embedded `data/` files.
 
+See [docs/TESTING.md](docs/TESTING.md) for test tiers, shared fixtures, platform
+integration requirements, and CI coverage.
+
 ## Package layout
 
 - `cmd/line`: executable, terminal handling, and exit status.

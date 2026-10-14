@@ -16,6 +16,7 @@ func (a *App) actionCommand(command string, args []string) error {
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(a.Err)
+	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	fs.Usage = func() {
 		fmt.Fprintf(a.Err, "Usage: line %s CHAT --message ID [options]\n", command)
 		fs.PrintDefaults()
@@ -34,6 +35,11 @@ func (a *App) actionCommand(command string, args []string) error {
 		}
 		return errors.New("invalid options; run line " + command + " --help")
 	}
+	restore, err := a.commandDeadline(*timeout)
+	if err != nil {
+		return err
+	}
+	defer restore()
 	if chat == "" && fs.NArg() == 1 {
 		chat = fs.Arg(0)
 	} else if fs.NArg() != 0 {
@@ -106,9 +112,9 @@ func (a *App) actionCommand(command string, args []string) error {
 	}
 	var result *messaging.ActionResult
 	if command == "react" {
-		result, err = c.React(chat, *id, reaction, remove)
+		result, err = c.ReactContext(a.loginContext(), chat, *id, reaction, remove)
 	} else {
-		result, err = c.Unsend(chat, *id)
+		result, err = c.UnsendContext(a.loginContext(), chat, *id)
 	}
 	if err != nil {
 		return err

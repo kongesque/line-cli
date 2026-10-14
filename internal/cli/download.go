@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +20,7 @@ func (a *App) downloadCommand(args []string) error {
 	}
 	fs := flag.NewFlagSet("download", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
+	timeout := fs.Duration("timeout", 2*time.Minute, "command deadline including preparation, e.g. 30s; 0 disables it")
 	fs.Usage = func() {
 		fmt.Fprintln(a.Err, "Usage: line download CHAT --message ID --output PATH [--json]")
 		fmt.Fprintln(a.Err, "       line download CHAT --message ID --output - | COMMAND")
@@ -36,6 +36,11 @@ func (a *App) downloadCommand(args []string) error {
 		}
 		return errors.New("invalid download options")
 	}
+	restore, err := a.commandDeadline(*timeout)
+	if err != nil {
+		return err
+	}
+	defer restore()
 	if chat == "" && fs.NArg() == 1 {
 		chat = fs.Arg(0)
 	} else if fs.NArg() != 0 {
@@ -114,12 +119,7 @@ func (a *App) downloadCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx := a.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
+	ctx := a.loginContext()
 	data, err := c.DownloadFile(ctx, chat, *id)
 	if err != nil {
 		return err

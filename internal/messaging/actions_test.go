@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -90,4 +91,16 @@ func TestActionValidationBeforeMutation(t *testing.T) {
 	if _, err := c.SendReply("u-peer", "hello", "invalid"); err == nil || f.sends != 0 {
 		t.Fatal("invalid reply sent")
 	}
+}
+
+func (f *actionAPI) ReactContext(_ context.Context, seq int64, arg1 string, r line.ReactionType) error {
+	return f.React(seq, arg1, r)
+}
+
+func (f *actionAPI) CancelReactionContext(_ context.Context, seq int64, arg1 string) error {
+	return f.CancelReaction(seq, arg1)
+}
+
+func (f *actionAPI) UnsendMessageContext(_ context.Context, seq int64, arg1 string) error {
+	return f.UnsendMessage(seq, arg1)
 }

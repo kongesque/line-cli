@@ -139,8 +139,12 @@ func (c *Client) GetEncryptedIdentityV3Context(ctx context.Context) (*EncryptedI
 }
 
 func (c *Client) GetE2EEGroupSharedKey(chatMid string, groupKeyID int) (*E2EEGroupSharedKey, error) {
+	return c.GetE2EEGroupSharedKeyContext(context.Background(), chatMid, groupKeyID)
+}
+
+func (c *Client) GetE2EEGroupSharedKeyContext(ctx context.Context, chatMid string, groupKeyID int) (*E2EEGroupSharedKey, error) {
 	// args: [1, chatMid, groupKeyID]
-	resp, err := c.callRPC("TalkService", "getE2EEGroupSharedKey", 1, chatMid, groupKeyID)
+	resp, err := c.callRPCContext(ctx, "TalkService", "getE2EEGroupSharedKey", 1, chatMid, groupKeyID)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +167,11 @@ func (c *Client) GetE2EEGroupSharedKey(chatMid string, groupKeyID int) (*E2EEGro
 }
 
 func (c *Client) GetLastE2EEGroupSharedKey(chatMid string) (*E2EEGroupSharedKey, error) {
-	resp, err := c.callRPC("TalkService", "getLastE2EEGroupSharedKey", 1, chatMid)
+	return c.GetLastE2EEGroupSharedKeyContext(context.Background(), chatMid)
+}
+
+func (c *Client) GetLastE2EEGroupSharedKeyContext(ctx context.Context, chatMid string) (*E2EEGroupSharedKey, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getLastE2EEGroupSharedKey", 1, chatMid)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +195,11 @@ func (c *Client) GetLastE2EEGroupSharedKey(chatMid string) (*E2EEGroupSharedKey,
 
 // NegotiateE2EEPublicKey fetches (or renews) the public key of the person you're talking to (E2EE).
 func (c *Client) NegotiateE2EEPublicKey(mid string) (*E2EEPublicKey, error) {
-	resp, err := c.callRPC("TalkService", "negotiateE2EEPublicKey", mid)
+	return c.NegotiateE2EEPublicKeyContext(context.Background(), mid)
+}
+
+func (c *Client) NegotiateE2EEPublicKeyContext(ctx context.Context, mid string) (*E2EEPublicKey, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "negotiateE2EEPublicKey", mid)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +372,11 @@ func parseE2EEPublicKey(rawData []byte) (*E2EEPublicKey, error) {
 }
 
 func (c *Client) GetE2EEPublicKey(mid string, keyVersion, keyID int) (*E2EEPublicKey, error) {
-	resp, err := c.callRPC("TalkService", "getE2EEPublicKey", mid, keyVersion, keyID)
+	return c.GetE2EEPublicKeyContext(context.Background(), mid, keyVersion, keyID)
+}
+
+func (c *Client) GetE2EEPublicKeyContext(ctx context.Context, mid string, keyVersion, keyID int) (*E2EEPublicKey, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getE2EEPublicKey", mid, keyVersion, keyID)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +396,11 @@ func (c *Client) GetE2EEPublicKey(mid string, keyVersion, keyID int) (*E2EEPubli
 }
 
 func (c *Client) SendMessage(reqSeq int64, msg *Message) (*Message, error) {
-	resp, err := c.callRPC("TalkService", "sendMessage", reqSeq, msg)
+	return c.SendMessageContext(context.Background(), reqSeq, msg)
+}
+
+func (c *Client) SendMessageContext(ctx context.Context, reqSeq int64, msg *Message) (*Message, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "sendMessage", reqSeq, msg)
 	if err != nil {
 		return nil, err
 	}
@@ -422,12 +442,16 @@ func (c *Client) UpdateSettingsAttributes2Context(ctx context.Context, reqSeq in
 }
 
 func (c *Client) React(reqSeq int64, messageID string, reactionType ReactionType) error {
+	return c.ReactContext(context.Background(), reqSeq, messageID, reactionType)
+}
+
+func (c *Client) ReactContext(ctx context.Context, reqSeq int64, messageID string, reactionType ReactionType) error {
 	req := ReactRequest{
 		ReqSeq:       int(reqSeq),
 		MessageID:    messageID,
 		ReactionType: reactionType,
 	}
-	resp, err := c.callRPC("TalkService", "react", req)
+	resp, err := c.callRPCContext(ctx, "TalkService", "react", req)
 	if err != nil {
 		return err
 	}
@@ -446,11 +470,15 @@ func (c *Client) React(reqSeq int64, messageID string, reactionType ReactionType
 }
 
 func (c *Client) CancelReaction(reqSeq int64, messageID string) error {
+	return c.CancelReactionContext(context.Background(), reqSeq, messageID)
+}
+
+func (c *Client) CancelReactionContext(ctx context.Context, reqSeq int64, messageID string) error {
 	req := CancelReactionRequest{
 		ReqSeq:    int(reqSeq),
 		MessageID: messageID,
 	}
-	resp, err := c.callRPC("TalkService", "cancelReaction", req)
+	resp, err := c.callRPCContext(ctx, "TalkService", "cancelReaction", req)
 	if err != nil {
 		return err
 	}
@@ -476,8 +504,12 @@ func (c *Client) SendChatChecked(chatMid, messageID string) error {
 
 // GetContactsV2 fetches contact details for a list of MIDs.
 func (c *Client) GetContactsV2(mids []string) (*ContactsResponse, error) {
+	return c.GetContactsV2Context(context.Background(), mids)
+}
+
+func (c *Client) GetContactsV2Context(ctx context.Context, mids []string) (*ContactsResponse, error) {
 	req := GetContactsV2Request{TargetUserMids: mids}
-	resp, err := c.callRPC("TalkService", "getContactsV2", req, 2)
+	resp, err := c.callRPCContext(ctx, "TalkService", "getContactsV2", req, 2)
 	if err != nil {
 		return nil, err
 	}
@@ -636,12 +668,16 @@ func (c *Client) GetAllChatMids(withMemberChats, withInvitedChats bool) (*GetAll
 }
 
 func (c *Client) GetChats(mids []string, withMembers, withInvitees bool) (*GetChatsResponse, error) {
+	return c.GetChatsContext(context.Background(), mids, withMembers, withInvitees)
+}
+
+func (c *Client) GetChatsContext(ctx context.Context, mids []string, withMembers, withInvitees bool) (*GetChatsResponse, error) {
 	req := GetChatsRequest{
 		ChatMids:     mids,
 		WithMembers:  withMembers,
 		WithInvitees: withInvitees,
 	}
-	resp, err := c.callRPC("TalkService", "getChats", req, 2)
+	resp, err := c.callRPCContext(ctx, "TalkService", "getChats", req, 2)
 	if err != nil {
 		return nil, err
 	}
@@ -691,6 +727,10 @@ func (c *Client) GetLastOpRevisionContext(ctx context.Context) (int64, error) {
 
 // this token is used to encrypt images, videos, and files uploaded to LINE's OBS storage
 func (c *Client) AcquireEncryptedAccessToken() (string, error) {
+	return c.AcquireEncryptedAccessTokenContext(context.Background())
+}
+
+func (c *Client) AcquireEncryptedAccessTokenContext(ctx context.Context) (string, error) {
 	obsTokenMu.Lock()
 	if obsTokenCache != "" && time.Now().Before(obsTokenExpiry) {
 		cached := obsTokenCache
@@ -700,7 +740,7 @@ func (c *Client) AcquireEncryptedAccessToken() (string, error) {
 	obsTokenMu.Unlock()
 
 	// 2 = FeatureType::OBS_Authorization.
-	resp, err := c.callRPC("TalkService", "acquireEncryptedAccessToken", 2)
+	resp, err := c.callRPCContext(ctx, "TalkService", "acquireEncryptedAccessToken", 2)
 	if err != nil {
 		return "", err
 	}
@@ -824,7 +864,11 @@ func parseChannelTokenExpiration(raw json.RawMessage, now time.Time) time.Time {
 }
 
 func (c *Client) GetMessageBoxes(options MessageBoxesOptions) (*MessageBoxesResponse, error) {
-	resp, err := c.callRPC("TalkService", "getMessageBoxes", options, 2)
+	return c.GetMessageBoxesContext(context.Background(), options)
+}
+
+func (c *Client) GetMessageBoxesContext(ctx context.Context, options MessageBoxesOptions) (*MessageBoxesResponse, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getMessageBoxes", options, 2)
 	if err != nil {
 		return nil, err
 	}
@@ -843,7 +887,11 @@ func (c *Client) GetMessageBoxes(options MessageBoxesOptions) (*MessageBoxesResp
 }
 
 func (c *Client) GetRecentMessagesV2(chatMid string, limit int) ([]*Message, error) {
-	resp, err := c.callRPC("TalkService", "getRecentMessagesV2", chatMid, limit)
+	return c.GetRecentMessagesV2Context(context.Background(), chatMid, limit)
+}
+
+func (c *Client) GetRecentMessagesV2Context(ctx context.Context, chatMid string, limit int) ([]*Message, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getRecentMessagesV2", chatMid, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -862,7 +910,11 @@ func (c *Client) GetRecentMessagesV2(chatMid string, limit int) ([]*Message, err
 }
 
 func (c *Client) UnsendMessage(reqSeq int64, messageID string) error {
-	_, err := c.callRPC("TalkService", "unsendMessage", reqSeq, messageID)
+	return c.UnsendMessageContext(context.Background(), reqSeq, messageID)
+}
+
+func (c *Client) UnsendMessageContext(ctx context.Context, reqSeq int64, messageID string) error {
+	_, err := c.callRPCContext(ctx, "TalkService", "unsendMessage", reqSeq, messageID)
 	return err
 }
 
@@ -923,7 +975,11 @@ func (c *Client) GetLastE2EEPublicKeys(req GetLastE2EEPublicKeysRequest) (map[st
 // This must be called after creating a group so that members can decrypt group messages.
 // The LINE API expects 5 positional arguments: keyVersion, chatMid, members, keyIds, encryptedSharedKeys.
 func (c *Client) RegisterE2EEGroupKey(keyVersion int, chatMid string, members []string, keyIds []int, encryptedSharedKeys []string) error {
-	resp, err := c.callRPC("TalkService", "registerE2EEGroupKey", keyVersion, chatMid, members, keyIds, encryptedSharedKeys)
+	return c.RegisterE2EEGroupKeyContext(context.Background(), keyVersion, chatMid, members, keyIds, encryptedSharedKeys)
+}
+
+func (c *Client) RegisterE2EEGroupKeyContext(ctx context.Context, keyVersion int, chatMid string, members []string, keyIds []int, encryptedSharedKeys []string) error {
+	resp, err := c.callRPCContext(ctx, "TalkService", "registerE2EEGroupKey", keyVersion, chatMid, members, keyIds, encryptedSharedKeys)
 	if err != nil {
 		return err
 	}
@@ -989,7 +1045,11 @@ func (c *Client) FindContactByUserid(userid string) (*Contact, error) {
 
 // GetAllContactIds returns the MIDs of all contacts.
 func (c *Client) GetAllContactIds() ([]string, error) {
-	resp, err := c.callRPC("TalkService", "getAllContactIds")
+	return c.GetAllContactIdsContext(context.Background())
+}
+
+func (c *Client) GetAllContactIdsContext(ctx context.Context) ([]string, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getAllContactIds")
 	if err != nil {
 		return nil, err
 	}
@@ -1009,7 +1069,11 @@ func (c *Client) GetAllContactIds() ([]string, error) {
 
 // GetBlockedContactIds returns the MIDs of all contacts blocked by the user.
 func (c *Client) GetBlockedContactIds() ([]string, error) {
-	resp, err := c.callRPC("TalkService", "getBlockedContactIds")
+	return c.GetBlockedContactIdsContext(context.Background())
+}
+
+func (c *Client) GetBlockedContactIdsContext(ctx context.Context) ([]string, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getBlockedContactIds")
 	if err != nil {
 		return nil, err
 	}

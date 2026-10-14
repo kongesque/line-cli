@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kongesque/line-cli/internal/input"
 	"github.com/kongesque/line-cli/internal/messaging"
 )
 
@@ -20,6 +21,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(a.Err)
+	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	fs.Usage = func() {
 		fmt.Fprintf(a.Err, "Usage: line %s CHAT [options]\nCHAT is a full ID or unique exact name. Quote names with spaces.\n", command)
 		fs.PrintDefaults()
@@ -46,6 +48,11 @@ func (a *App) messageCommand(command string, args []string) error {
 		}
 		return errors.New("invalid options; run line " + command + " --help")
 	}
+	restore, err := a.commandDeadline(*timeout)
+	if err != nil {
+		return err
+	}
+	defer restore()
 	if chat == "" && fs.NArg() == 1 {
 		chat = fs.Arg(0)
 	} else if fs.NArg() != 0 {
@@ -115,9 +122,9 @@ func (a *App) messageCommand(command string, args []string) error {
 			if a.In == nil {
 				return errors.New("stdin is unavailable")
 			}
-			data, err := io.ReadAll(io.LimitReader(a.In, messaging.MaxTextUnits*4+1))
+			data, err := io.ReadAll(io.LimitReader(input.NewReader(a.loginContext(), a.In), messaging.MaxTextUnits*4+1))
 			if err != nil {
-				return errors.New("could not read message from stdin")
+				return fmt.Errorf("could not read message from stdin: %w", err)
 			}
 			if len(data) > messaging.MaxTextUnits*4 {
 				return errors.New("stdin message exceeds the CLI size limit")
@@ -170,9 +177,9 @@ func (a *App) messageCommand(command string, args []string) error {
 	if command == "send" {
 		var result *messaging.SendResult
 		if attachment != nil {
-			result, err = client.SendFile(chat, *attachment, replyTo)
+			result, err = client.SendFileContext(a.loginContext(), chat, *attachment, replyTo)
 		} else {
-			result, err = client.SendReply(chat, text, replyTo)
+			result, err = client.SendReplyContext(a.loginContext(), chat, text, replyTo)
 		}
 		if err != nil {
 			return err
@@ -195,7 +202,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		}
 		return err
 	}
-	messages, err := client.History(chat, limit)
+	messages, err := client.HistoryContext(a.loginContext(), chat, limit)
 	if err != nil {
 		return err
 	}

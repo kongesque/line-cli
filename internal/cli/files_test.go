@@ -49,3 +49,7 @@ func TestFileArgumentsValidateBeforeSession(t *testing.T) {
 		_ = a.Run(args)
 	}
 }
+
+func (f *downloadAPI) GetRecentMessagesV2Context(_ context.Context, arg0 string, arg1 int) ([]*line.Message, error) {
+	return f.GetRecentMessagesV2(arg0, arg1)
+}

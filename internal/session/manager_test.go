@@ -12,73 +12,6 @@ import (
 	"github.com/kongesque/line-cli/pkg/line"
 )
 
-type memoryStore struct {
-	state   *State
-	saves   int
-	saveErr error
-}
-
-func (s *memoryStore) Load() (*State, error) {
-	if s.state == nil {
-		return nil, ErrNotFound
-	}
-	data, _ := json.Marshal(s.state)
-	var copy State
-	json.Unmarshal(data, &copy)
-	return &copy, nil
-}
-func (s *memoryStore) Save(state *State) error {
-	if s.saveErr != nil {
-		return s.saveErr
-	}
-	s.saves++
-	data, _ := json.Marshal(state)
-	s.state = new(State)
-	return json.Unmarshal(data, s.state)
-}
-func (s *memoryStore) Delete() error { s.state = nil; return nil }
-
-type fakeAPI struct {
-	API
-	loginResults  []*line.LoginResult
-	loginCalls    int
-	waitResult    *line.LoginResult
-	waitNoE2EE    bool
-	refreshResult *line.TokenV3IssueResult
-	refreshErr    error
-	refreshCalls  int
-}
-
-func (f *fakeAPI) Login(email, password, certificate string) (*line.LoginResult, error) {
-	if certificate != "" {
-		return nil, errors.New("unexpected certificate reuse")
-	}
-	res := f.loginResults[f.loginCalls]
-	f.loginCalls++
-	return res, nil
-}
-func (f *fakeAPI) WaitForLogin(verifier string, noE2EE bool) (*line.LoginResult, error) {
-	f.waitNoE2EE = noE2EE
-	return f.waitResult, nil
-}
-func (f *fakeAPI) GetProfile() (*line.Profile, error) {
-	return &line.Profile{Mid: "u123", DisplayName: "Test"}, nil
-}
-func (f *fakeAPI) RefreshAccessToken(string) (*line.TokenV3IssueResult, error) {
-	f.refreshCalls++
-	return f.refreshResult, f.refreshErr
-}
-
-func testManager(store *memoryStore, api *fakeAPI) *Manager {
-	m := NewManager(store)
-	m.NewClient = func(string) API { return api }
-	m.Now = func() time.Time { return time.Unix(1000, 0) }
-	m.ExportKeys = func(context.Context, API, *line.LoginResult) (map[string]string, error) {
-		return map[string]string{"123": "exported-key"}, nil
-	}
-	return m
-}
-
 func TestLoginPreservesKeysAndV3TokensAfterPIN(t *testing.T) {
 	s := &memoryStore{}
 	f := &fakeAPI{
@@ -240,8 +173,6 @@ func TestReserveSequencePersistsAndStopsAtProtocolLimit(t *testing.T) {
 	}
 }
 
-func (f *fakeAPI) GetProfileContext(context.Context) (*line.Profile, error) { return f.GetProfile() }
-
 func TestEmailCompletionCancellationPreservesSession(t *testing.T) {
 	s := &memoryStore{state: &State{AccessToken: "old"}}
 	f := &fakeAPI{loginResults: []*line.LoginResult{{AuthToken: "new", E2EEPublicKey: "pub", EncryptedKeyChain: "chain"}}}
@@ -333,6 +264,33 @@ func TestRefreshRejectionRetainsCredentialsWithoutLeakingBody(t *testing.T) {
 		}
 		if s.state.AccessToken != "old" || s.saves != 0 {
 			t.Fatal("failed refresh changed stored credentials")
+		}
+	}
+}
+
+func TestMutateContextCancellationNeverReplays(t *testing.T) {
+	for _, confirmed := range []bool{false, true} {
+		s := &memoryStore{state: &State{AccessToken: "old", RefreshToken: "refresh"}}
+		f := &fakeAPI{}
+		m := testManager(s, f)
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
+		err := m.MutateContext(ctx, func(API) error {
+			calls++
+			cancel()
+			if confirmed {
+				return nil
+			}
+			return context.Canceled
+		})
+		if calls != 1 || f.refreshCalls != 0 {
+			t.Fatalf("calls=%d refreshes=%d", calls, f.refreshCalls)
+		}
+		if confirmed && err != nil {
+			t.Fatalf("lost confirmation: %v", err)
+		}
+		if !confirmed && !errors.Is(err, context.Canceled) {
+			t.Fatalf("lost cancellation: %v", err)
 		}
 	}
 }

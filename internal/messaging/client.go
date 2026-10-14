@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -123,6 +124,10 @@ type Message struct {
 }
 
 func (c *Client) History(chat string, limit int) ([]Message, error) {
+	return c.HistoryContext(context.Background(), chat, limit)
+}
+
+func (c *Client) HistoryContext(ctx context.Context, chat string, limit int) ([]Message, error) {
 	if err := ValidateChatID(chat); err != nil {
 		return nil, err
 	}
@@ -130,7 +135,7 @@ func (c *Client) History(chat string, limit int) ([]Message, error) {
 		return nil, errors.New("limit must be between 1 and 100")
 	}
 	var raw []*line.Message
-	if err := c.Session.Do(func(api session.API) (err error) { raw, err = api.GetRecentMessagesV2(chat, limit); return }); err != nil {
+	if err := c.Session.DoContext(ctx, func(api session.API) (err error) { raw, err = api.GetRecentMessagesV2Context(ctx, chat, limit); return }); err != nil {
 		return nil, err
 	}
 	result := make([]Message, 0, len(raw))
@@ -138,7 +143,13 @@ func (c *Client) History(chat string, limit int) ([]Message, error) {
 		if msg == nil {
 			continue
 		}
-		result = append(result, c.Decode(chat, msg))
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		result = append(result, c.DecodeContext(ctx, chat, msg))
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }
@@ -146,6 +157,10 @@ func (c *Client) History(chat string, limit int) ([]Message, error) {
 // Decode converts a non-nil history or stream message to safe CLI output.
 // The caller holds the session lock; key lookups never register group keys.
 func (c *Client) Decode(chat string, msg *line.Message) Message {
+	return c.DecodeContext(context.Background(), chat, msg)
+}
+
+func (c *Client) DecodeContext(ctx context.Context, chat string, msg *line.Message) Message {
 	timestamp := msg.CreatedTime
 	if timestamp == "" {
 		timestamp = "0"
@@ -163,7 +178,7 @@ func (c *Client) Decode(chat string, msg *line.Message) Message {
 	} else if !item.Encrypted {
 		item.Status, item.Text = "plaintext", msg.Text
 	} else {
-		text, err := c.decrypt(chat, msg)
+		text, err := c.decrypt(ctx, chat, msg)
 		if err != nil {
 			item.Status, item.Error = "decryption_failed", err.Error()
 		} else {
@@ -173,7 +188,7 @@ func (c *Client) Decode(chat string, msg *line.Message) Message {
 	return item
 }
 
-func (c *Client) decryptPayload(chat string, msg *line.Message) (string, error) {
+func (c *Client) decryptPayload(ctx context.Context, chat string, msg *line.Message) (string, error) {
 	if c.crypto == nil {
 		return "", errors.New("letter sealing keys unavailable; run line login")
 	}
@@ -190,11 +205,11 @@ func (c *Client) decryptPayload(chat string, msg *line.Message) (string, error) 
 	}
 	var payload string
 	if msg.ToType == 1 || msg.ToType == 2 || toType(chat) != 0 {
-		if err := c.peerByID(msg.From, sender); err != nil {
+		if err := c.peerByID(ctx, msg.From, sender); err != nil {
 			return "", err
 		}
-		if err := c.groupKey(chat, receiver); err != nil {
-			return "", errors.New("group key unavailable for this historical message")
+		if err := c.groupKey(ctx, chat, receiver); err != nil {
+			return "", fmt.Errorf("group key unavailable for this historical message: %w", err)
 		}
 		payload, _, err = c.crypto.DecryptGroupMessage(msg, chat)
 	} else {
@@ -202,7 +217,7 @@ func (c *Client) decryptPayload(chat string, msg *line.Message) (string, error) 
 		if c.crypto.IsMyKey(sender) {
 			peer, key = msg.To, receiver
 		}
-		if err := c.peerByID(peer, key); err != nil {
+		if err := c.peerByID(ctx, peer, key); err != nil {
 			return "", err
 		}
 		payload, err = c.crypto.DecryptMessageV2(msg)
@@ -213,8 +228,8 @@ func (c *Client) decryptPayload(chat string, msg *line.Message) (string, error) 
 	return payload, nil
 }
 
-func (c *Client) decrypt(chat string, msg *line.Message) (string, error) {
-	payload, err := c.decryptPayload(chat, msg)
+func (c *Client) decrypt(ctx context.Context, chat string, msg *line.Message) (string, error) {
+	payload, err := c.decryptPayload(ctx, chat, msg)
 	if err != nil {
 		return "", err
 	}
@@ -238,18 +253,30 @@ type SendResult struct {
 // Send sends exactly once after read-only preparation, encrypting unless the
 // account or peer explicitly lacks Letter Sealing support. Caller holds Lock.
 func (c *Client) Send(chat, text string) (*SendResult, error) {
-	return c.SendReply(chat, text, "")
+	return c.SendContext(context.Background(), chat, text)
+}
+
+func (c *Client) SendContext(ctx context.Context, chat, text string) (*SendResult, error) {
+	return c.SendReplyContext(ctx, chat, text, "")
 }
 
 func (c *Client) SendReply(chat, text, replyTo string) (*SendResult, error) {
-	return c.send(chat, text, replyTo, nil)
+	return c.SendReplyContext(context.Background(), chat, text, replyTo)
+}
+
+func (c *Client) SendReplyContext(ctx context.Context, chat, text, replyTo string) (*SendResult, error) {
+	return c.send(ctx, chat, text, replyTo, nil)
 }
 
 func (c *Client) SendFile(chat string, file Attachment, replyTo string) (*SendResult, error) {
-	return c.send(chat, "", replyTo, &file)
+	return c.SendFileContext(context.Background(), chat, file, replyTo)
 }
 
-func (c *Client) send(chat, text, replyTo string, file *Attachment) (*SendResult, error) {
+func (c *Client) SendFileContext(ctx context.Context, chat string, file Attachment, replyTo string) (*SendResult, error) {
+	return c.send(ctx, chat, "", replyTo, &file)
+}
+
+func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment) (*SendResult, error) {
 	if err := ValidateChatID(chat); err != nil {
 		return nil, err
 	}
@@ -271,8 +298,8 @@ func (c *Client) send(chat, text, replyTo string, file *Attachment) (*SendResult
 	kind := toType(chat)
 	if kind == 0 {
 		var blocked []string
-		if err := c.Session.Do(func(api session.API) (err error) { blocked, err = api.GetBlockedContactIds(); return }); err != nil {
-			return nil, errors.New("could not verify blocked contacts; message was not sent")
+		if err := c.Session.DoContext(ctx, func(api session.API) (err error) { blocked, err = api.GetBlockedContactIdsContext(ctx); return }); err != nil {
+			return nil, fmt.Errorf("could not verify blocked contacts; message was not sent: %w", err)
 		}
 		for _, mid := range blocked {
 			if mid == chat {
@@ -293,7 +320,7 @@ func (c *Client) send(chat, text, replyTo string, file *Attachment) (*SendResult
 	var chunks []string
 	var err error
 	if !plain && kind == 0 {
-		key, keyErr := c.negotiate(chat)
+		key, keyErr := c.negotiate(ctx, chat)
 		if errors.Is(keyErr, errNoLetterSealing) {
 			plain = true
 		} else if keyErr != nil {
@@ -308,19 +335,19 @@ func (c *Client) send(chat, text, replyTo string, file *Attachment) (*SendResult
 				chunks, err = c.crypto.EncryptMessageV2(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 0, text)
 			} else {
 				var payload []byte
-				payload, err = c.uploadFile(file, metadata)
+				payload, err = c.uploadFile(ctx, file, metadata)
 				if err == nil {
 					chunks, err = c.crypto.EncryptMessageV2Raw(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 14, payload)
 				}
 			}
 		}
 	} else if !plain {
-		err = c.groupKey(chat, 0)
+		err = c.groupKey(ctx, chat, 0)
 		if errors.Is(err, errGroupKeyMissing) || errors.Is(err, e2ee.ErrMissingOwnPrivateKey) {
-			err = c.registerGroupKey(chat)
+			err = c.registerGroupKey(ctx, chat)
 			if err == nil {
 				groupKeyRegistered = true
-				err = c.groupKey(chat, 0)
+				err = c.groupKey(ctx, chat, 0)
 			}
 		}
 		if errors.Is(err, errNoLetterSealing) {
@@ -330,7 +357,7 @@ func (c *Client) send(chat, text, replyTo string, file *Attachment) (*SendResult
 				chunks, err = c.crypto.EncryptGroupMessage(chat, c.state.MID, text)
 			} else {
 				var payload []byte
-				payload, err = c.uploadFile(file, metadata)
+				payload, err = c.uploadFile(ctx, file, metadata)
 				if err == nil {
 					chunks, err = c.crypto.EncryptGroupMessageRaw(chat, c.state.MID, 14, payload)
 				}
@@ -339,12 +366,15 @@ func (c *Client) send(chat, text, replyTo string, file *Attachment) (*SendResult
 	}
 	if err != nil {
 		if file != nil {
-			return nil, errors.New("could not prepare encrypted attachment; no message was sent, but an uploaded file may remain; check connectivity, chat membership, and Letter Sealing keys")
+			return nil, fmt.Errorf("could not prepare encrypted attachment; no message was sent, but an uploaded file may remain: %w", safePreparationError(err))
 		}
-		return nil, errors.New("could not prepare encrypted message; nothing was sent; check chat membership and Letter Sealing keys")
+		return nil, fmt.Errorf("could not prepare encrypted message; no message was sent: %w", safePreparationError(err))
 	}
 	if !plain && len(chunks) != 5 {
 		return nil, errors.New("encryption returned invalid chunks; nothing was sent")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	seq, err := c.Session.ReserveSequence()
 	if err != nil {
@@ -365,17 +395,42 @@ func (c *Client) send(chat, text, replyTo string, file *Attachment) (*SendResult
 		msg.ContentMetadata["e2eeVersion"] = "2"
 	}
 	var sent *line.Message
-	err = c.Session.Mutate(func(api session.API) (err error) { sent, err = api.SendMessage(seq, msg); return })
+	err = c.Session.MutateContext(ctx, func(api session.API) (err error) { sent, err = api.SendMessageContext(ctx, seq, msg); return })
 	if err != nil {
-		return nil, fmt.Errorf("send did not return success; delivery may have occurred; inspect history before retrying: %w", err)
+		return nil, mutationError("send did not return success; delivery may have occurred; inspect history before retrying: %w", err)
 	}
 	if sent == nil || sent.ID == "" {
 		return nil, errors.New("send returned no message ID; delivery may have occurred; inspect history before retrying")
 	}
 	if plain && file != nil {
-		if err := c.Session.Mutate(func(api session.API) error { return api.UploadOBSPlain(file.Data, sent.ID, "file") }); err != nil {
-			return nil, fmt.Errorf("message %s was created but file upload did not return success; inspect LINE before retrying: %w", sent.ID, err)
+		if err := c.Session.MutateContext(ctx, func(api session.API) error { return api.UploadOBSPlainContext(ctx, file.Data, sent.ID, "file") }); err != nil {
+			return nil, mutationError("message %s was created but file upload did not return success; inspect LINE before retrying: %w", sent.ID, err)
 		}
 	}
 	return &SendResult{ID: sent.ID, ChatID: chat, Encrypted: !plain, GroupKeyRegistered: groupKeyRegistered, RequestSequence: seq}, nil
+}
+
+// Preserve cancellation without leaking errors from the crypto runtime.
+func safePreparationError(err error) error {
+	var mutation *MutationError
+	if errors.As(err, &mutation) {
+		return mutation
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return errors.New("check connectivity, chat membership, and Letter Sealing keys")
+}
+
+// MutationError retains delivery information when cancellation follows dispatch.
+// The error describes possible remote effects without claiming a safe retry.
+type MutationError struct{ cause error }
+
+func (e *MutationError) Error() string { return e.cause.Error() }
+func (e *MutationError) Unwrap() error { return e.cause }
+func mutationError(format string, args ...any) error {
+	return &MutationError{cause: fmt.Errorf(format, args...)}
 }

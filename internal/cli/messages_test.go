@@ -10,19 +10,6 @@ import (
 	"github.com/kongesque/line-cli/pkg/line"
 )
 
-type messageAPI struct {
-	session.API
-	history []*line.Message
-	sent    *line.Message
-}
-
-func (f *messageAPI) GetRecentMessagesV2(string, int) ([]*line.Message, error) { return f.history, nil }
-func (f *messageAPI) GetBlockedContactIds() ([]string, error)                  { return nil, nil }
-func (f *messageAPI) SendMessage(_ int64, msg *line.Message) (*line.Message, error) {
-	f.sent = msg
-	return &line.Message{ID: "message-id"}, nil
-}
-
 func TestMessageArgumentsValidateBeforeSessionAccess(t *testing.T) {
 	for _, args := range [][]string{
 		{"messages", "--help"}, {"send", "--help"}, {"messages"},

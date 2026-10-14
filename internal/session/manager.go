@@ -24,22 +24,39 @@ type API interface {
 	GetEncryptedIdentityV3Context(context.Context) (*line.EncryptedIdentityV3, error)
 	RefreshAccessToken(string) (*line.TokenV3IssueResult, error)
 	GetAllContactIds() ([]string, error)
+	GetAllContactIdsContext(context.Context) ([]string, error)
 	GetContactsV2([]string) (*line.ContactsResponse, error)
+	GetContactsV2Context(context.Context, []string) (*line.ContactsResponse, error)
 	GetMessageBoxes(line.MessageBoxesOptions) (*line.MessageBoxesResponse, error)
+	GetMessageBoxesContext(context.Context, line.MessageBoxesOptions) (*line.MessageBoxesResponse, error)
 	GetRecentMessagesV2(string, int) ([]*line.Message, error)
+	GetRecentMessagesV2Context(context.Context, string, int) ([]*line.Message, error)
 	GetBlockedContactIds() ([]string, error)
+	GetBlockedContactIdsContext(context.Context) ([]string, error)
 	NegotiateE2EEPublicKey(string) (*line.E2EEPublicKey, error)
+	NegotiateE2EEPublicKeyContext(context.Context, string) (*line.E2EEPublicKey, error)
 	GetE2EEPublicKey(string, int, int) (*line.E2EEPublicKey, error)
+	GetE2EEPublicKeyContext(context.Context, string, int, int) (*line.E2EEPublicKey, error)
 	GetE2EEGroupSharedKey(string, int) (*line.E2EEGroupSharedKey, error)
+	GetE2EEGroupSharedKeyContext(context.Context, string, int) (*line.E2EEGroupSharedKey, error)
 	GetLastE2EEGroupSharedKey(string) (*line.E2EEGroupSharedKey, error)
+	GetLastE2EEGroupSharedKeyContext(context.Context, string) (*line.E2EEGroupSharedKey, error)
 	GetChats([]string, bool, bool) (*line.GetChatsResponse, error)
+	GetChatsContext(context.Context, []string, bool, bool) (*line.GetChatsResponse, error)
 	RegisterE2EEGroupKey(int, string, []string, []int, []string) error
+	RegisterE2EEGroupKeyContext(context.Context, int, string, []string, []int, []string) error
 	SendMessage(int64, *line.Message) (*line.Message, error)
+	SendMessageContext(context.Context, int64, *line.Message) (*line.Message, error)
 	React(int64, string, line.ReactionType) error
+	ReactContext(context.Context, int64, string, line.ReactionType) error
 	CancelReaction(int64, string) error
+	CancelReactionContext(context.Context, int64, string) error
 	UnsendMessage(int64, string) error
+	UnsendMessageContext(context.Context, int64, string) error
 	UploadOBSWithSID([]byte, string) (string, error)
+	UploadOBSWithSIDContext(context.Context, []byte, string) (string, error)
 	UploadOBSPlain([]byte, string, string) error
+	UploadOBSPlainContext(context.Context, []byte, string, string) error
 	DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error)
 }
 
@@ -249,7 +266,12 @@ func (m *Manager) DoContext(ctx context.Context, call func(API) error) error {
 // Mutate refreshes credentials but never replays the operation, even on auth errors.
 // A lost response may mean the server already accepted the mutation.
 func (m *Manager) Mutate(call func(API) error) error {
-	return m.do(context.Background(), call, false)
+	return m.MutateContext(context.Background(), call)
+}
+
+// MutateContext checks cancellation during preparation and never replays a mutation.
+func (m *Manager) MutateContext(ctx context.Context, call func(API) error) error {
+	return m.do(ctx, call, false)
 }
 
 func (m *Manager) do(ctx context.Context, call func(API) error, retry bool) error {
@@ -280,6 +302,9 @@ func (m *Manager) do(ctx context.Context, call func(API) error, retry bool) erro
 	err = call(api)
 	if err == nil {
 		return nil
+	}
+	if ctx.Err() != nil {
+		return remoteError("request", err)
 	}
 	if line.IsAuthError(err) {
 		original := err
@@ -394,6 +419,12 @@ type RemoteError struct {
 }
 
 func (e *RemoteError) Error() string {
+	if errors.Is(e.cause, context.Canceled) {
+		return "LINE request canceled"
+	}
+	if errors.Is(e.cause, context.DeadlineExceeded) {
+		return "LINE command deadline exceeded"
+	}
 	if line.IsAuthError(e.cause) {
 		if e.Action == "token refresh" {
 			return "LINE rejected token refresh; saved credentials were retained. Retry later or run line login if rejection persists"

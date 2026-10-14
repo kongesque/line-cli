@@ -131,9 +131,26 @@ usable saved session. Answer **no** to keep it. `--force` skips that question
 only: it does not skip storage checks, headless storage consent,
 concurrent-session checks, or protocol errors.
 
-Ctrl-C cancels prompts and QR polling. SIGINT exits 130 and SIGTERM exits 143.
+Ctrl-C cancels prompts, QR polling, and ordinary command requests. SIGINT exits 130 and SIGTERM exits 143.
 Password echo is restored before exit. Legacy email authentication requests
 still use their existing HTTP timeouts.
+
+`whoami`, `contacts`, `chats`, `messages`, `send`, `download`, `react`, and
+`unsend` accept `--timeout DURATION`, for example
+`line send "Alice" --text "Hello" --timeout 30s`. The deadline starts after
+option parsing and covers prompts/stdin, chat-name resolution, message lookup,
+authentication recovery, key preparation, and transfers. The default is `0`
+(no command deadline), except `download`, which defaults to `2m`. `--timeout 0`
+disables the command deadline; individual HTTP request limits still apply.
+A deadline failure exits nonzero (normally 1); signal exits remain 130/143.
+
+Cancellation prevents subsequent remote steps and interrupts active requests.
+Local cryptographic work and filesystem commits finish their current step
+before cancellation is checked. A successful send receipt remains success even
+if cancellation arrives just afterward. An interrupted dispatched mutation may
+already have succeeded: inspect LINE before retrying. The CLI never replays it.
+If a plaintext file message was created before its upload stopped, the error
+retains that message ID. Success output can therefore accompany a signal exit.
 
 If you cancel before the new session is saved, the old local session stays in
 place. LINE may already have replaced the old Chrome-style session if the final
@@ -281,7 +298,7 @@ never overwrite an existing destination. They verify encrypted data before
 saving, and remote metadata cannot choose the output path.
 
 `download` supports image, video, audio, and generic file messages up to 20
-MiB, with a two-minute transfer timeout. It saves the full media bytes
+MiB, with a two-minute command deadline by default (`--timeout` overrides it). It saves the full media bytes
 unchanged, so changing the output extension does not convert the format.
 Messages with an external `DOWNLOAD_URL` are not supported. Reading or
 downloading never registers a group encryption key.
@@ -782,6 +799,9 @@ subprocesses. On macOS/Linux, the password terminal test uses Python 3's
 standard-library PTY support when available. Native Linux Secret Service
 integration needs an explicitly enabled disposable D-Bus session; Windows DPAPI
 tests use temporary files.
+
+See the [testing guide](TESTING.md) for the complete suite commands, shared
+fixtures, slow crypto regressions, and CI coverage.
 
 ### Current limitations
 

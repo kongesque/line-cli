@@ -1,8 +1,8 @@
 package messaging
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -38,7 +38,7 @@ type ActionResult struct {
 }
 
 // findMessage restricts mutations to a verified message in the selected chat.
-func (c *Client) findMessage(chat, id string) (*line.Message, error) {
+func (c *Client) findMessage(ctx context.Context, chat, id string) (*line.Message, error) {
 	if err := ValidateChatID(chat); err != nil {
 		return nil, err
 	}
@@ -46,7 +46,10 @@ func (c *Client) findMessage(chat, id string) (*line.Message, error) {
 		return nil, err
 	}
 	var messages []*line.Message
-	if err := c.Session.Do(func(api session.API) (err error) { messages, err = api.GetRecentMessagesV2(chat, 100); return }); err != nil {
+	if err := c.Session.DoContext(ctx, func(api session.API) (err error) {
+		messages, err = api.GetRecentMessagesV2Context(ctx, chat, 100)
+		return
+	}); err != nil {
 		return nil, err
 	}
 	for _, msg := range messages {
@@ -58,6 +61,10 @@ func (c *Client) findMessage(chat, id string) (*line.Message, error) {
 }
 
 func (c *Client) React(chat, id, reaction string, remove bool) (*ActionResult, error) {
+	return c.ReactContext(context.Background(), chat, id, reaction, remove)
+}
+
+func (c *Client) ReactContext(ctx context.Context, chat, id, reaction string, remove bool) (*ActionResult, error) {
 	var kind line.ReactionType
 	var err error
 	if remove {
@@ -70,39 +77,46 @@ func (c *Client) React(chat, id, reaction string, remove bool) (*ActionResult, e
 			return nil, err
 		}
 	}
-	if _, err := c.findMessage(chat, id); err != nil {
+	if _, err := c.findMessage(ctx, chat, id); err != nil {
 		return nil, err
 	}
 	action := "react"
 	if remove {
 		action = "remove_reaction"
 	}
-	return c.mutateMessage(chat, id, action, func(api session.API, seq int64) error {
+	return c.mutateMessage(ctx, chat, id, action, func(api session.API, seq int64) error {
 		if remove {
-			return api.CancelReaction(seq, id)
+			return api.CancelReactionContext(ctx, seq, id)
 		}
-		return api.React(seq, id, kind)
+		return api.ReactContext(ctx, seq, id, kind)
 	})
 }
 
 func (c *Client) Unsend(chat, id string) (*ActionResult, error) {
-	msg, err := c.findMessage(chat, id)
+	return c.UnsendContext(context.Background(), chat, id)
+}
+
+func (c *Client) UnsendContext(ctx context.Context, chat, id string) (*ActionResult, error) {
+	msg, err := c.findMessage(ctx, chat, id)
 	if err != nil {
 		return nil, err
 	}
 	if msg.From != c.state.MID {
 		return nil, errors.New("only your own messages can be unsent")
 	}
-	return c.mutateMessage(chat, id, "unsend", func(api session.API, seq int64) error { return api.UnsendMessage(seq, id) })
+	return c.mutateMessage(ctx, chat, id, "unsend", func(api session.API, seq int64) error { return api.UnsendMessageContext(ctx, seq, id) })
 }
 
-func (c *Client) mutateMessage(chat, id, action string, call func(session.API, int64) error) (*ActionResult, error) {
+func (c *Client) mutateMessage(ctx context.Context, chat, id, action string, call func(session.API, int64) error) (*ActionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	seq, err := c.Session.ReserveSequence()
 	if err != nil {
 		return nil, err
 	}
-	if err := c.Session.Mutate(func(api session.API) error { return call(api, seq) }); err != nil {
-		return nil, fmt.Errorf("%s did not return success; check LINE before retrying: %w", action, err)
+	if err := c.Session.MutateContext(ctx, func(api session.API) error { return call(api, seq) }); err != nil {
+		return nil, mutationError("%s did not return success; check LINE before retrying: %w", action, err)
 	}
 	return &ActionResult{Action: action, ChatID: chat, MessageID: id, RequestSequence: seq}, nil
 }
