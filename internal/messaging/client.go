@@ -297,6 +297,12 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 	}
 	op.ChatID = chat
+	if replyTo != "" {
+		stage = "lookup"
+		if _, err := c.findMessage(ctx, chat, replyTo); err != nil {
+			return nil, err
+		}
+	}
 	stage = "preparation"
 	if c.keyError != nil {
 		return nil, fault.New("invalid_session", "preparation", c.keyError.Error(), c.keyError)

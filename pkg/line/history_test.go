@@ -54,3 +54,12 @@ func TestOlderHistoryCancellation(t *testing.T) {
 		return err
 	})
 }
+
+func TestRecentHistoryRejectsMissingSuccessPayload(t *testing.T) {
+	for _, response := range []string{`{}`, `{"code":0,"data":null}`, `{"code":0,"data":[{},{}]}`} {
+		c := newReactionTestClientWithResponse(t, "/api/talk/thrift/Talk/TalkService/getRecentMessagesV2", response, nil)
+		if _, err := c.GetRecentMessagesV2("u-chat", 1); err == nil {
+			t.Fatal("malformed history looked exhausted or exceeded count")
+		}
+	}
+}

@@ -24,7 +24,7 @@ func mediaFixture(t *testing.T, kind int, chat string, encrypted bool) (*Client,
 	c.Session.NewClient = func(string) session.API { return api }
 	msg := &line.Message{ID: "123", From: "u-peer", To: "u-self", ContentType: kind, ContentMetadata: map[string]string{"OBS_POP": "pop value"}}
 	if chat != "u-peer" {
-		msg.To, msg.ToType = chat, 2
+		msg.To, msg.ToType = chat, toType(chat)
 		f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
 	}
 	f.history = []*line.Message{msg}

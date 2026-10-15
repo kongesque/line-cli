@@ -872,18 +872,7 @@ func (c *Client) GetRecentMessagesV2Context(ctx context.Context, chatMid string,
 	if err != nil {
 		return nil, err
 	}
-	var wrapper struct {
-		Code    int        `json:"code"`
-		Message string     `json:"message"`
-		Data    []*Message `json:"data"`
-	}
-	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, err
-	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getRecentMessagesV2 failed: %s", wrapper.Message)
-	}
-	return wrapper.Data, nil
+	return decodeHistoryResponse(resp, limit)
 }
 
 func (c *Client) UnsendMessage(reqSeq int64, messageID string) error {

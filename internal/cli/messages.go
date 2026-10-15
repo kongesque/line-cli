@@ -29,6 +29,8 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	jsonOutput := fs.Bool("json", false, "write JSON to stdout")
 	limit := 20
+	var pageMode bool
+	var cursor string
 	var text string
 	var stdin bool
 	var replyTo string
@@ -36,12 +38,14 @@ func (a *App) messageCommand(command string, args []string) error {
 	var attachment *messaging.Attachment
 	showIDs := fs.Bool("show-ids", false, "show message IDs in human output")
 	if command == "messages" {
-		fs.IntVar(&limit, "limit", 20, "recent messages to fetch (1–100)")
+		fs.IntVar(&limit, "limit", 20, "maximum messages to fetch (1–100)")
+		fs.BoolVar(&pageMode, "page", false, "return a JSON history page with continuation cursor (requires --json)")
+		fs.StringVar(&cursor, "cursor", "", "continue a history page (requires --page --json)")
 	} else {
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
 		fs.StringVar(&filePath, "file", "", "send a generic file attachment (up to 20 MiB)")
-		fs.StringVar(&replyTo, "reply-to", "", "reply to this message ID")
+		fs.StringVar(&replyTo, "reply-to", "", "reply to a verified message (lookup: up to 10 pages / 1000 records / 30s)")
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -62,6 +66,27 @@ func (a *App) messageCommand(command string, args []string) error {
 	guided := a.Interactive && !*jsonOutput && !stdin
 	if chat != "" || !guided {
 		if err := validateSelector(chat); err != nil {
+			return err
+		}
+	}
+	if pageMode && !*jsonOutput {
+		return errors.New("--page requires --json")
+	}
+	cursorSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "cursor" {
+			cursorSet = true
+		}
+	})
+	if cursorSet {
+		if !pageMode || !*jsonOutput {
+			return errors.New("--cursor requires --page --json")
+		}
+		cursorChat := strings.TrimPrefix(chat, "id:")
+		if !fullChatID.MatchString(chat) && !strings.HasPrefix(chat, "id:") {
+			cursorChat = ""
+		}
+		if err := messaging.ValidateHistoryCursor(cursor, cursorChat); err != nil {
 			return err
 		}
 	}
@@ -208,7 +233,16 @@ func (a *App) messageCommand(command string, args []string) error {
 		}
 		return a.confirmedOutput(op, err)
 	}
-	messages, err := client.HistoryContext(a.loginContext(), chat, limit)
+	var messages []messaging.Message
+	var page *messaging.HistoryPage
+	if pageMode {
+		page, err = client.HistoryPageContext(a.loginContext(), chat, limit, cursor)
+		if err == nil {
+			messages = page.Messages
+		}
+	} else {
+		messages, err = client.HistoryContext(a.loginContext(), chat, limit)
+	}
 	if err != nil {
 		return err
 	}
@@ -219,7 +253,11 @@ func (a *App) messageCommand(command string, args []string) error {
 		}
 	}
 	if *jsonOutput {
-		err = a.json(messages)
+		if pageMode {
+			err = a.json(page)
+		} else {
+			err = a.json(messages)
+		}
 	} else {
 		err = a.renderMessages(displayChat, messages, *showIDs)
 	}

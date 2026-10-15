@@ -119,7 +119,7 @@ func TestActionOutcomesRetainLargeMessageIDs(t *testing.T) {
 	for _, action := range []string{"react", "remove_reaction", "unsend"} {
 		c, api, _, store := setup(t, true)
 		const id = "9007199254740993"
-		api.history = []*line.Message{{ID: id, From: "u-self"}}
+		api.history = []*line.Message{{ID: id, From: "u-self", To: "u-peer"}}
 		f := &actionAPI{fakeAPI: api, err: io.EOF}
 		c.Session.NewClient = func(string) session.API { return f }
 		var err error

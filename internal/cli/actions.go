@@ -22,7 +22,7 @@ func (a *App) actionCommand(command string, args []string) error {
 		fmt.Fprintf(a.Err, "Usage: line %s CHAT --message ID [options]\n", command)
 		fs.PrintDefaults()
 	}
-	id := fs.String("message", "", "target message ID (must be among the latest 100 messages)")
+	id := fs.String("message", "", "target message ID (lookup: up to 10 pages / 1000 records / 30s)")
 	jsonOutput := fs.Bool("json", false, "write JSON")
 	var reaction string
 	var remove bool

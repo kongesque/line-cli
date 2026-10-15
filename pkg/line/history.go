@@ -26,20 +26,24 @@ func (c *Client) GetPreviousMessagesV2Context(ctx context.Context, chat string, 
 	if err != nil {
 		return nil, err
 	}
+	return decodeHistoryResponse(resp, count)
+}
+
+func decodeHistoryResponse(resp []byte, count int) ([]*Message, error) {
 	var wrapper struct {
 		Code *int            `json:"code"`
 		Data json.RawMessage `json:"data"`
 	}
 	if json.Unmarshal(resp, &wrapper) != nil || wrapper.Code == nil || *wrapper.Code != 0 {
-		return nil, errors.New("older-history request failed")
+		return nil, errors.New("history request failed")
 	}
 	// A missing/null payload must not masquerade as the end of history.
 	var messages []*Message
 	if len(wrapper.Data) == 0 || wrapper.Data[0] != '[' || json.Unmarshal(wrapper.Data, &messages) != nil {
-		return nil, errors.New("invalid older-history response")
+		return nil, errors.New("invalid history response")
 	}
 	if len(messages) > count {
-		return nil, errors.New("older-history response exceeds requested count")
+		return nil, errors.New("history response exceeds requested count")
 	}
 	return messages, nil
 }

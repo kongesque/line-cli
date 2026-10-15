@@ -284,7 +284,7 @@ func (r checkedInput) Read(p []byte) (int, error) {
 func guidedApp(t *testing.T, input string) (*App, *guidedAPI, *bytes.Buffer, *bytes.Buffer, *bool) {
 	t.Helper()
 	f := &guidedAPI{chatAPI: chatAPI{names: map[string]string{"u-alice": "Alice", "u-new": "New contact"}, boxes: []line.MessageBox{{ID: "u-alice"}}}}
-	f.history = []*line.Message{{ID: "123", From: "u-self", To: "u-alice", Text: "My message"}, {ID: "124", From: "u-alice", To: "u-self", Text: "Their message"}, {ID: "125", From: "u-alice", ContentType: 14, ContentMetadata: map[string]string{"FILE_NAME": "notes.txt"}}}
+	f.history = []*line.Message{{ID: "123", From: "u-self", To: "u-alice", Text: "My message"}, {ID: "124", From: "u-alice", To: "u-self", Text: "Their message"}, {ID: "125", From: "u-alice", To: "u-self", ContentType: 14, ContentMetadata: map[string]string{"FILE_NAME": "notes.txt"}}}
 	a, out, diagnostics := testApp(nil)
 	a.Interactive = true
 	a.Manager.Store = &testStore{state: &session.State{Version: 1, MID: "u-self", AccessToken: "synthetic-token", Generation: "one", NoE2EE: true}}
