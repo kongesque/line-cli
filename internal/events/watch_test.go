@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
@@ -473,5 +474,16 @@ func TestWatchBoundsConsecutiveAuthRecovery(t *testing.T) {
 		if err == nil || f.refreshes != 1 || len(f.revisions) != 2 || s.state.Invalidated != terminal {
 			t.Fatal("repeated SSE auth error retried refresh or misclassified logout", err)
 		}
+	}
+}
+
+func TestEventDecoderSharesSafeLocationModel(t *testing.T) {
+	event, _, err := decodeEvent("operation", `{"revision":"2","type":26,"message":{"id":"9007199254740993","from":"u-peer","to":"u-self","contentType":15,"location":{"title":"Park","latitude":25,"longitude":121}}}`, 1, &messaging.Client{})
+	if err != nil || event == nil || event.Message == nil || event.Message.Content.Location == nil || event.Message.ChatID != "u-peer" {
+		t.Fatalf("location model not shared: %v", err)
+	}
+	data, _ := json.Marshal(event)
+	if strings.Contains(string(data), `"content"`) || strings.Contains(string(data), `"location"`) {
+		t.Fatal("legacy watch schema changed")
 	}
 }

@@ -16,6 +16,8 @@ import (
 	"github.com/kongesque/line-cli/pkg/line"
 )
 
+var errNoNames = errors.New("LINE returned no names")
+
 func (a *App) chatCommand(args []string) error {
 	fs := flag.NewFlagSet("chats", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
@@ -28,6 +30,7 @@ func (a *App) chatCommand(args []string) error {
 	search := fs.String("search", "", "find chat names containing this text (case-insensitive)")
 	limit := fs.Int("limit", 20, "maximum rows; 0 shows all")
 	ids := fs.Bool("show-ids", false, "show full IDs below names")
+	details := fs.Bool("details", false, "include names, activity, and unread counts in a versioned envelope (requires --json)")
 	jsonOutput := fs.Bool("json", false, "write JSON (all chats, unlimited by default)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -42,6 +45,9 @@ func (a *App) chatCommand(args []string) error {
 	defer restore()
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; use line chats --search NAME")
+	}
+	if *details && !*jsonOutput {
+		return errors.New("--details requires --json")
 	}
 	if *limit < 0 {
 		return errors.New("limit must be 0 or greater")
@@ -58,7 +64,7 @@ func (a *App) chatCommand(args []string) error {
 	}
 	defer unlock()
 	// Preserve the original unbounded ID-only JSON contract for scripts.
-	legacyJSON := *jsonOutput && *search == ""
+	legacyJSON := *jsonOutput && *search == "" && !*details
 	chats, err := a.chatBoxes(!*all && !*jsonOutput && *search == "", !legacyJSON)
 	if err != nil {
 		return err
@@ -78,7 +84,12 @@ func (a *App) chatCommand(args []string) error {
 		chats = chats[:min(*limit, len(chats))]
 	}
 	if err := a.nameChats(chats); err != nil {
-		return err
+		if !*details || *search != "" {
+			return err
+		}
+		if fatal := enrichmentError(err); fatal != nil {
+			return fatal
+		}
 	}
 	if *search != "" {
 		matches := make([]Chat, 0)
@@ -91,6 +102,9 @@ func (a *App) chatCommand(args []string) error {
 		if *limit > 0 {
 			chats = chats[:min(*limit, len(chats))]
 		}
+	}
+	if *details {
+		return a.writeDetailedChats(chats)
 	}
 	if *jsonOutput {
 		return a.json(chats)
@@ -165,7 +179,7 @@ func (a *App) nameChats(chats []Chat) error {
 			return err
 		}
 		if response == nil {
-			return errors.New("LINE returned no contact names")
+			return errNoNames
 		}
 		for id, wrapper := range response.Contacts {
 			names[id] = wrapper.Contact.EffectiveDisplayName()
@@ -181,7 +195,7 @@ func (a *App) nameChats(chats []Chat) error {
 			return err
 		}
 		if response == nil {
-			return errors.New("LINE returned no group names")
+			return errNoNames
 		}
 		for _, chat := range response.Chats {
 			names[chat.ChatMid] = chat.ChatName

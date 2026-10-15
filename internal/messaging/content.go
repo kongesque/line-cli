@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/url"
 	"strconv"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -76,7 +77,7 @@ func decodeContent(msg *line.Message, encrypted bool, payload string) Content {
 			Location *line.MessageLocation `json:"location"`
 			FileName *string               `json:"fileName"`
 		}
-		if len(payload) > maxContentBytes || json.Unmarshal([]byte(payload), &body) != nil || payload == "null" {
+		if len(payload) > maxContentBytes || !strings.HasPrefix(strings.TrimSpace(payload), "{") || json.Unmarshal([]byte(payload), &body) != nil {
 			c.Status = "malformed_metadata"
 			return c
 		}
@@ -101,7 +102,7 @@ func decodeContent(msg *line.Message, encrypted bool, payload string) Content {
 	}
 	if location != nil && (msg.ContentType == 0 || msg.ContentType == 15) {
 		c.Kind = "location"
-		if math.IsNaN(location.Latitude) || math.IsInf(location.Latitude, 0) || math.IsNaN(location.Longitude) || math.IsInf(location.Longitude, 0) || math.Abs(location.Latitude) > 90 || math.Abs(location.Longitude) > 180 {
+		if location.Malformed() || math.IsNaN(location.Latitude) || math.IsInf(location.Latitude, 0) || math.IsNaN(location.Longitude) || math.IsInf(location.Longitude, 0) || math.Abs(location.Latitude) > 90 || math.Abs(location.Longitude) > 180 {
 			c.Status = "malformed_metadata"
 		} else {
 			copy := *location
@@ -196,7 +197,7 @@ func decodeMentions(raw, text string) ([]Mention, bool) {
 	for _, m := range body.Mentions {
 		s, e1 := strconv.Atoi(m.Start)
 		e, e2 := strconv.Atoi(m.End)
-		if e1 != nil || e2 != nil || s >= e || !boundaries[s] || !boundaries[e] || (m.All != "1" && ValidateChatID(m.MID) != nil) || (m.All == "1" && m.MID != "") {
+		if (m.All != "" && m.All != "1") || (m.MID != "" && !strings.HasPrefix(strings.ToLower(m.MID), "u")) || e1 != nil || e2 != nil || s >= e || !boundaries[s] || !boundaries[e] || (m.All != "1" && ValidateChatID(m.MID) != nil) || (m.All == "1" && m.MID != "") {
 			return nil, false
 		}
 		for _, p := range result {
@@ -213,7 +214,7 @@ func decodeMentions(raw, text string) ([]Mention, bool) {
 // arbitrary strings, URLs, image resources, postback data, or unknown objects.
 func decodeRich(alt, raw string) (*RichContent, bool) {
 	r := &RichContent{Text: []string{}, Links: []string{}}
-	if len(alt) > maxContentBytes || !utf8.ValidString(alt) || len(raw) > maxContentBytes {
+	if len(alt) > maxContentBytes || !utf8.ValidString(alt) || len(raw) > maxContentBytes || !utf8.ValidString(raw) {
 		return r, false
 	}
 	r.AltText = alt
@@ -227,6 +228,9 @@ func decodeRich(alt, raw string) (*RichContent, bool) {
 	nodes, total := 0, 0
 	var walk func(map[string]json.RawMessage, int) bool
 	walk = func(node map[string]json.RawMessage, depth int) bool {
+		if node == nil {
+			return false
+		}
 		nodes++
 		if depth > 16 || nodes > 256 {
 			r.Truncated = true

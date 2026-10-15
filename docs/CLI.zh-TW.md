@@ -792,3 +792,13 @@ line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
 逾時回傳錯誤，不會當作讀完；部分解密失敗仍輸出含游標的分頁物件並以非零碼結束。
 目標查找的 `message_not_found` 只表示可取得的歷史中沒有目標；
 `lookup_incomplete` 表示已達頁數上限，`deadline_exceeded` 表示已逾時。
+
+### 詳細內容 JSON
+
+```sh
+line chats --details --json
+line messages CHAT_ID --details --json --resolve-names
+line messages CHAT_ID --details --page --json --limit 50
+```
+
+`--details` 必須搭配 `--json`，回傳 `schema_version: 1` 的物件。訊息包含聊天室 ID、收到的提及、位置、解密後的檔名、附件大小／時長、聯絡人、貼圖 ID，以及有上限的圖文訊息文字和連結。`--resolve-names` 可選擇批次查詢傳送者名稱。聊天室詳細資料包含名稱、活動時間及未讀數；未知值為 `null`。原有 JSON 與 watch 格式不變。解密失敗仍輸出部分結果並以非零代碼結束；欄位、狀態與限制詳見 [詳細輸出規格](CONTENT.md)。

@@ -150,3 +150,25 @@ func TestLegacyJSONDoesNotAcquireDetailedFields(t *testing.T) {
 		t.Fatalf("legacy changed: %s", data)
 	}
 }
+
+func TestWireLocationMissingCoordinatesNeverBecomesZero(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"latitude":null,"longitude":1}`, `{"latitude":2}`, `{"latitude":"wrong","longitude":2}`} {
+		var msg line.Message
+		if err := json.Unmarshal([]byte(`{"contentType":15,"location":`+raw+`}`), &msg); err != nil {
+			t.Fatal(err)
+		}
+		if got := decodeContent(&msg, false, ""); got.Status != "malformed_metadata" || got.Location != nil {
+			t.Fatal("invented location", got)
+		}
+		if got := decodeContent(&line.Message{}, true, `{"location":`+raw+`}`); got.Status != "malformed_metadata" || got.Location != nil {
+			t.Fatal("invented encrypted location", got)
+		}
+	}
+	var msg line.Message
+	if err := json.Unmarshal([]byte(`{"contentType":15,"location":{"latitude":0,"longitude":0}}`), &msg); err != nil {
+		t.Fatal(err)
+	}
+	if got := decodeContent(&msg, false, ""); got.Status != "ok" || got.Location == nil {
+		t.Fatal("rejected actual zero coordinates")
+	}
+}

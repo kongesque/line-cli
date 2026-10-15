@@ -831,3 +831,13 @@ IDは文字列のまま、新しいページは数値IDの降順です。カー�
 タイムアウトは末尾として扱いません。一部の復号失敗ではカーソル付きページを出力し、非ゼロで終了します。
 対象検索の `message_not_found` は取得可能な履歴内の不在のみを示します。
 `lookup_incomplete` はページ数上限、`deadline_exceeded` は時間制限です。
+
+### 詳細コンテンツ JSON
+
+```sh
+line chats --details --json
+line messages CHAT_ID --details --json --resolve-names
+line messages CHAT_ID --details --page --json --limit 50
+```
+
+`--details` は `--json` と併用し、`schema_version: 1` のオブジェクトを返します。チャット ID、受信したメンション、位置、復号したファイル名、添付のサイズ・再生時間、連絡先、スタンプ ID、上限付きのリッチテキストとリンクを取得できます。`--resolve-names` は送信者名をバッチで取得する任意の指定です。チャットの詳細には名前、最終活動時刻、未読数が含まれ、不明な値は `null` です。既存の JSON と watch 形式は変わりません。復号失敗時も部分結果を出力し、終了コードは非ゼロになります。フィールド・状態・制限は [詳細出力仕様](CONTENT.md) を参照してください。
