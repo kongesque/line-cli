@@ -63,7 +63,8 @@ func (a *App) Run(args []string) (err error) {
 		}
 	}
 	originalOut, originalErr, interactive := a.Out, a.Err, a.Interactive
-	a.Out = errorWriter{a.Out}
+	output := &errorWriter{Writer: a.Out}
+	a.Out = output
 	var diagnostics diagnosticBuffer
 	if a.JSONErrors {
 		a.Err = &diagnostics
@@ -72,6 +73,9 @@ func (a *App) Run(args []string) (err error) {
 	defer func() {
 		a.Out, a.Err, a.Interactive = originalOut, originalErr, interactive
 		if a.JSONErrors {
+			if err == nil {
+				err = output.firstErr
+			}
 			if err == nil {
 				if diagnostics.Len() > 0 {
 					_, err = originalErr.Write(diagnostics.Bytes())
@@ -101,15 +105,21 @@ func (b *diagnosticBuffer) Write(p []byte) (int, error) {
 
 func (b *diagnosticBuffer) WriteString(s string) (int, error) { return b.Write([]byte(s)) }
 
-type errorWriter struct{ io.Writer }
+type errorWriter struct {
+	io.Writer
+	firstErr error
+}
 
-func (w errorWriter) Write(p []byte) (int, error) {
+func (w *errorWriter) Write(p []byte) (int, error) {
 	n, err := w.Writer.Write(p)
 	if err == nil && n < len(p) {
 		err = io.ErrShortWrite
 	}
 	if err != nil {
 		err = fault.New("output_failed", "output", "Could not write command output.", err)
+		if w.firstErr == nil {
+			w.firstErr = err
+		}
 	}
 	return n, err
 }

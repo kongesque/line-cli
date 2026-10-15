@@ -125,7 +125,7 @@ func TestJSONErrorHelpAndAppReuse(t *testing.T) {
 	if err := a.Run([]string{"version"}); err != nil || a.JSONErrors {
 		t.Fatal("state leaked", err)
 	}
-	if _, err := (errorWriter{failedWriter{io.ErrClosedPipe}}).Write(nil); !errors.Is(err, io.ErrClosedPipe) {
+	if _, err := (&errorWriter{Writer: failedWriter{io.ErrClosedPipe}}).Write(nil); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatal("lost output cause")
 	}
 }
@@ -151,5 +151,58 @@ func TestSignalAfterSuccessRetainsConfirmedReceipt(t *testing.T) {
 	detail := machineDetail(t, a.SignalError())
 	if out.Len() == 0 || detail.Code != "cancelled" || detail.Mutation.Outcome != fault.Confirmed || detail.Mutation.MessageID != "message-id" {
 		t.Fatal("signal hid successful receipt")
+	}
+}
+
+type transientOutputWriter struct {
+	firstErr error
+	short    bool
+	calls    int
+}
+
+func (w *transientOutputWriter) Write(p []byte) (int, error) {
+	w.calls++
+	if w.calls == 1 {
+		if w.short {
+			return len(p) - 1, nil
+		}
+		return 0, w.firstErr
+	}
+	return len(p), nil
+}
+
+func TestJSONErrorsRetainIgnoredFirstOutputFailure(t *testing.T) {
+	for _, short := range []bool{false, true} {
+		a, _, diagnostics := testApp(nil)
+		a.Manager.Store = &statusTestStore{status: session.StorageStatus{Email: "synthetic@example.test"}}
+		first := errors.New("secret output details")
+		if short {
+			first = io.ErrShortWrite
+		}
+		writer := &transientOutputWriter{firstErr: first, short: short}
+		a.Out = writer
+		err := a.Run([]string{"--error-format=json", "auth", "status"})
+		detail := machineDetail(t, err)
+		if writer.calls < 2 || detail.Code != "output_failed" || detail.Stage != "output" || !errors.Is(err, first) || diagnostics.Len() != 0 {
+			t.Fatalf("ignored output failure: calls=%d error=%v", writer.calls, err)
+		}
+		body, _ := json.Marshal(detail)
+		if strings.Contains(string(body), "secret output details") {
+			t.Fatal("leaked output cause")
+		}
+		if err := a.Run([]string{"--error-format=json", "version"}); err != nil {
+			t.Fatal("retained error leaked to next run", err)
+		}
+	}
+}
+
+func TestJSONErrorsKeepOperationFailureWhenOutputAlsoFailed(t *testing.T) {
+	a, _, _ := testApp(nil)
+	a.Manager.Store = &statusTestStore{err: session.ErrStorageFormat}
+	a.Out = &transientOutputWriter{firstErr: io.ErrClosedPipe}
+	err := a.Run([]string{"--error-format=json", "auth", "status"})
+	detail := machineDetail(t, err)
+	if detail.Code != "storage_invalid_format" || !errors.Is(err, session.ErrStorageFormat) || session.StorageExitCode(err) != 65 {
+		t.Fatalf("output error hid operation failure: %v", err)
 	}
 }
