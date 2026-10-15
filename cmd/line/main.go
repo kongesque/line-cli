@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 
 	"golang.org/x/term"
 
@@ -24,7 +25,13 @@ func run() int {
 	signals := newCommandSignals()
 	defer signals.close()
 	ctx := signals.ctx
-	loggingIn := len(os.Args) > 1 && os.Args[1] == "login"
+	commandArgs := os.Args[1:]
+	if len(commandArgs) > 1 && commandArgs[0] == "--error-format" {
+		commandArgs = commandArgs[2:]
+	} else if len(commandArgs) > 0 && strings.HasPrefix(commandArgs[0], "--error-format=") {
+		commandArgs = commandArgs[1:]
+	}
+	loggingIn := len(commandArgs) > 0 && commandArgs[0] == "login"
 	stdinFD := int(os.Stdin.Fd())
 	source, closeInput := commandInput(ctx, stdinFD)
 	defer closeInput()
@@ -51,5 +58,9 @@ func run() int {
 		app.MigrateHeadless = func(accepted bool) error { return session.MigrateHeadless(ctx, accepted) }
 	}
 	err := app.Run(os.Args[1:])
-	return commandExit(err, int(signals.code.Load()), os.Stderr)
+	code := int(signals.code.Load())
+	if err == nil && code != 0 && app.JSONErrors {
+		err = app.SignalError()
+	}
+	return commandExit(err, code, os.Stderr)
 }

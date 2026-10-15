@@ -761,3 +761,9 @@ Python 3 標準函式庫的 PTY 功能。原生 Linux Secret Service 整合測�
 
 LINE CLI 是衍生自 `beeper/line` 的獨立專案，並非 LINE 官方產品，
 也不需要 Beeper 或 Matrix 家伺服器。
+
+## 結構化錯誤
+
+在指令前加上 `--error-format=json`，例如 `line --error-format=json send CHAT_ID --stdin --json`。錯誤會以單一 JSON 物件輸出至 stderr；stdout 的成功結果及部分結果陣列維持原格式。此模式停用互動提示，適用於八個核心指令及 `auth status`；登入、登出、遷移、watch 與 update 保留原有診斷方式。
+
+錯誤包含代碼、階段，以及已知的聊天／訊息 ID、請求序號與各變更步驟的結果。`unknown` 表示結果不明，重試前請先在 LINE 確認。檔案訊息已建立但上傳失敗，或傳送成功但輸出失敗時，已確認的訊息資訊仍會保留。儲存與訊號結束代碼不變。完整欄位與代碼請參閱[錯誤格式說明](ERRORS.md)。

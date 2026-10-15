@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -48,6 +49,12 @@ func TestSignalInputHelper(t *testing.T) {
 		a := &cli.App{Interactive: true, Context: s.ctx, In: in, Out: os.Stdout, Err: os.Stderr,
 			Manager: &session.Manager{Store: confirmationStore{}}, Lock: func() (func(), error) { return func() {}, nil }}
 		err = a.Run([]string{"login"})
+	case "output":
+		store := &signalSendStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
+		manager := session.NewManager(store)
+		manager.NewClient = func(string) session.API { return &cancelledSendAPI{cancel: func() {}, confirmed: true} }
+		a := &cli.App{Context: s.ctx, Out: os.Stdout, Err: os.Stderr, Manager: manager, Lock: func() (func(), error) { return func() {}, nil }}
+		err = a.Run([]string{"--error-format=json", "send", "id:c-group", "--text", "synthetic", "--json"})
 	case "poll":
 		io.WriteString(os.Stderr, "Waiting for scan\n")
 		<-s.ctx.Done()
@@ -190,3 +197,59 @@ type signalSendStore struct{ state *session.State }
 func (s *signalSendStore) Load() (*session.State, error)   { return s.state, nil }
 func (s *signalSendStore) Save(state *session.State) error { s.state = state; return nil }
 func (s *signalSendStore) Delete() error                   { return nil }
+
+func TestMachineErrorExitChannelAndStorageCodes(t *testing.T) {
+	for _, tc := range []struct {
+		err          error
+		signal, code int
+	}{
+		{session.ErrBusy, 0, 75}, {session.ErrStorageFormat, 0, 65},
+		{session.ErrDurabilityUncertain, 0, 74}, {context.Canceled, 0, 130},
+		{context.DeadlineExceeded, 0, 1}, {context.Canceled, 143, 143},
+	} {
+		var stdout, stderr bytes.Buffer
+		a := &cli.App{Out: &stdout, Err: &stderr, Lock: func() (func(), error) { return nil, tc.err }}
+		err := a.Run([]string{"--error-format=json", "whoami", "--json"})
+		code := commandExit(err, tc.signal, &stderr)
+		var envelope struct {
+			Schema int `json:"schema"`
+			Error  struct {
+				Code string `json:"code"`
+			} `json:"error"`
+			ExitCode int `json:"exit_code"`
+		}
+		if json.Unmarshal(stderr.Bytes(), &envelope) != nil || code != tc.code || envelope.ExitCode != tc.code || envelope.Schema != 1 || envelope.Error.Code == "" || stdout.Len() != 0 {
+			t.Fatalf("bad envelope/code: %d %s", code, stderr.String())
+		}
+	}
+}
+
+func TestBrokenStdoutPipeRetainsConfirmedReceipt(t *testing.T) {
+	readEnd, writeEnd, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	readEnd.Close()
+	defer writeEnd.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSignalInputHelper$")
+	cmd.Env = append(os.Environ(), "LINE_CLI_TEST_INPUT_MODE=output")
+	cmd.Stdout = writeEnd
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	var exit *exec.ExitError
+	var envelope struct {
+		Error struct {
+			Code     string `json:"code"`
+			Mutation struct {
+				Outcome   string `json:"outcome"`
+				MessageID string `json:"message_id"`
+			} `json:"mutation"`
+		} `json:"error"`
+	}
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || json.Unmarshal(stderr.Bytes(), &envelope) != nil || envelope.Error.Code != "output_failed" || envelope.Error.Mutation.Outcome != "confirmed" || envelope.Error.Mutation.MessageID != "123" {
+		t.Fatalf("lost receipt after broken pipe: %v %s", err, stderr.String())
+	}
+}

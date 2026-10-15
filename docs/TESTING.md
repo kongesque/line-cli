@@ -30,6 +30,13 @@ Windows CI uses the same package list without `-race`:
 go test ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
 ```
 
+Structured error tests cover stderr envelopes, unchanged stdout arrays, storage
+and signal exit codes, large message IDs, redaction, and failures after confirmed
+delivery. Mutation tests cover pre-dispatch cancellation, sequence persistence,
+authentication rejection followed by failed recovery, lost/missing receipts,
+preparation side effects, and plaintext-file upload failures without replay.
+All use synthetic APIs/transports; no live LINE mutation is authorized by them.
+
 Command cancellation tests use fake requests and synthetic subprocesses. Unix
 terminal-restoration tests use Python 3's standard-library PTY support when
 available. OS-specific files use suffixes such as `_linux_test.go` and

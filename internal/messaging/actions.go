@@ -3,9 +3,11 @@ package messaging
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
@@ -107,7 +109,10 @@ func (c *Client) UnsendContext(ctx context.Context, chat, id string) (*ActionRes
 	return c.mutateMessage(ctx, chat, id, "unsend", func(api session.API, seq int64) error { return api.UnsendMessageContext(ctx, seq, id) })
 }
 
-func (c *Client) mutateMessage(ctx context.Context, chat, id, action string, call func(session.API, int64) error) (*ActionResult, error) {
+func (c *Client) mutateMessage(ctx context.Context, chat, id, action string, call func(session.API, int64) error) (result *ActionResult, resultErr error) {
+	op := &fault.Mutation{Action: action, ChatID: chat, MessageID: id, Outcome: fault.NotAttempted}
+	stage := "persist_sequence"
+	defer func() { resultErr = mutationFailure(op, stage, resultErr) }()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -115,8 +120,10 @@ func (c *Client) mutateMessage(ctx context.Context, chat, id, action string, cal
 	if err != nil {
 		return nil, err
 	}
-	if err := c.Session.MutateContext(ctx, func(api session.API) error { return call(api, seq) }); err != nil {
-		return nil, mutationError("%s did not return success; check LINE before retrying: %w", action, err)
+	op.RequestSequence = &seq
+	stage = action
+	if err := c.attempt(ctx, op, stage, true, func(api session.API) error { return call(api, seq) }); err != nil {
+		return nil, fmt.Errorf("%s did not return success; check LINE before retrying: %w", action, err)
 	}
 	return &ActionResult{Action: action, ChatID: chat, MessageID: id, RequestSequence: seq}, nil
 }

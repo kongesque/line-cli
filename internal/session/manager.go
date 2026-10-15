@@ -271,7 +271,7 @@ func (m *Manager) Mutate(call func(API) error) error {
 
 // MutateContext checks cancellation during preparation and never replays a mutation.
 func (m *Manager) MutateContext(ctx context.Context, call func(API) error) error {
-	return m.do(ctx, call, false)
+	return m.mutateContext(ctx, call)
 }
 
 func (m *Manager) do(ctx context.Context, call func(API) error, retry bool) error {

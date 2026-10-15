@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"golang.org/x/crypto/hkdf"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
@@ -125,16 +127,17 @@ func decryptAttachment(data []byte, key string, video bool) ([]byte, error) {
 	return plain, nil
 }
 
-func (c *Client) uploadFile(ctx context.Context, file *Attachment, metadata map[string]string) ([]byte, error) {
+func (c *Client) uploadFile(ctx context.Context, file *Attachment, metadata map[string]string, op *fault.Mutation) ([]byte, error) {
 	data, key, err := encryptFile(file.Data)
 	if err != nil {
 		return nil, err
 	}
 	var oid string
-	if err := c.Session.MutateContext(ctx, func(api session.API) (err error) { oid, err = api.UploadOBSWithSIDContext(ctx, data, "emf"); return }); err != nil {
-		return nil, mutationError("attachment upload did not return success; an uploaded file may remain; inspect LINE before retrying: %w", err)
+	if err := c.attempt(ctx, op, "attachment_upload", false, func(api session.API) (err error) { oid, err = api.UploadOBSWithSIDContext(ctx, data, "emf"); return }); err != nil {
+		return nil, fmt.Errorf("attachment upload did not return success; an uploaded file may remain; inspect LINE before retrying: %w", err)
 	}
 	if oid == "" {
+		op.Steps[len(op.Steps)-1].Outcome = fault.Unknown
 		return nil, errors.New("file upload returned no object ID")
 	}
 	metadata["OID"], metadata["SID"], metadata["ENC_KM"] = oid, "emf", key
@@ -152,10 +155,10 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 		return nil, err
 	}
 	if !IsDownloadable(msg.ContentType) {
-		return nil, errors.New("download supports image, video, audio, and file messages only")
+		return nil, fault.New("unsupported_content", "lookup", "download supports image, video, audio, and file messages only", nil)
 	}
 	if msg.ContentMetadata["DOWNLOAD_URL"] != "" {
-		return nil, errors.New("downloads from external media URLs are not supported")
+		return nil, fault.New("unsupported_content", "lookup", "downloads from external media URLs are not supported", nil)
 	}
 	if n, err := strconv.ParseInt(msg.ContentMetadata["FILE_SIZE"], 10, 64); err == nil && (n < 0 || n > MaxAttachmentBytes) {
 		return nil, errors.New("attachment exceeds the CLI limit of 20 MiB")
@@ -177,7 +180,7 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 		}
 		payload, err := c.decryptPayload(ctx, chat, msg)
 		if err != nil {
-			return nil, err
+			return nil, fault.New("decryption_failed", "decode", "Could not decrypt the attachment metadata.", err)
 		}
 		var body struct {
 			Key string `json:"keyMaterial"`
@@ -233,7 +236,7 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 	if key != "" {
 		data, err = decryptAttachment(data, key, msg.ContentType == 2)
 		if err != nil {
-			return nil, err
+			return nil, fault.New("decryption_failed", "decode", "Could not authenticate or decrypt the attachment.", err)
 		}
 	}
 	if len(data) > MaxAttachmentBytes {

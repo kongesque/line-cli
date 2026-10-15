@@ -40,6 +40,7 @@ func (a *App) authCommand(args []string) error {
 	if !ok {
 		return errors.New("local storage status is unavailable")
 	}
+	a.errorStage = "storage"
 	unlock, err := a.Lock()
 	if err != nil {
 		if jsonOutput {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/input"
 	"github.com/kongesque/line-cli/internal/messaging"
 )
@@ -137,6 +138,7 @@ func (a *App) messageCommand(command string, args []string) error {
 			}
 		}
 	}
+	a.identifyMutation(chat, "")
 	displayChat := strings.TrimPrefix(chat, "id:")
 	if guided && (chat == "" || promptText) {
 		var err error
@@ -170,6 +172,9 @@ func (a *App) messageCommand(command string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if a.errorMutation != nil {
+		a.errorMutation.ChatID = chat
+	}
 	client, err := messaging.New(a.Manager)
 	if err != nil {
 		return err
@@ -184,8 +189,9 @@ func (a *App) messageCommand(command string, args []string) error {
 		if err != nil {
 			return err
 		}
+		op := &fault.Mutation{Action: "send", ChatID: result.ChatID, MessageID: result.ID, RequestSequence: &result.RequestSequence, Attempted: true, Outcome: fault.Confirmed}
 		if *jsonOutput {
-			return a.json(result)
+			return a.confirmedOutput(op, a.json(result))
 		}
 		mode := "encrypted"
 		if !result.Encrypted {
@@ -200,7 +206,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		if err == nil && *showIDs {
 			_, err = fmt.Fprintln(a.Out, "ID: "+terminalText(result.ID))
 		}
-		return err
+		return a.confirmedOutput(op, err)
 	}
 	messages, err := client.HistoryContext(a.loginContext(), chat, limit)
 	if err != nil {
@@ -221,7 +227,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		return err
 	}
 	if failed > 0 {
-		return fmt.Errorf("%d messages could not be decrypted; see each message's status/error", failed)
+		return fault.New("decryption_failed", "decode", fmt.Sprintf("%d messages could not be decrypted; see each message's status/error", failed), nil)
 	}
 	return nil
 }

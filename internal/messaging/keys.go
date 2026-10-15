@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/session"
 	gen "github.com/kongesque/line-cli/pkg"
 	"github.com/kongesque/line-cli/pkg/e2ee"
@@ -103,7 +104,7 @@ func (c *Client) groupKey(ctx context.Context, chat string, id int) error {
 	return nil
 }
 
-func (c *Client) registerGroupKey(ctx context.Context, chat string) error {
+func (c *Client) registerGroupKey(ctx context.Context, chat string, op *fault.Mutation) error {
 	var response *line.GetChatsResponse
 	if err := c.Session.DoContext(ctx, func(api session.API) (err error) {
 		response, err = api.GetChatsContext(ctx, []string{chat}, true, true)
@@ -166,11 +167,11 @@ func (c *Client) registerGroupKey(ctx context.Context, chat string) error {
 			return errors.New("could not wrap group key for every member")
 		}
 	}
-	err = c.Session.MutateContext(ctx, func(api session.API) error {
+	err = c.attempt(ctx, op, "group_key_registration", false, func(api session.API) error {
 		return api.RegisterE2EEGroupKeyContext(ctx, 1, chat, members, keyIDs, wrapped)
 	})
 	if err != nil {
-		return mutationError("group-key registration did not return success; it may have completed; inspect LINE before retrying: %w", err)
+		return fmt.Errorf("group-key registration did not return success; it may have completed; inspect LINE before retrying: %w", err)
 	}
 	return nil
 }

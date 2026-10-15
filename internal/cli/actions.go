@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/messaging"
 )
 
@@ -66,6 +67,7 @@ func (a *App) actionCommand(command string, args []string) error {
 			}
 		}
 	}
+	a.identifyMutation(chat, *id)
 	if guided && (chat == "" || *id == "" || (command == "react" && reaction == "" && !remove)) {
 		var err error
 		chat, _, err = a.selectChat(chat)
@@ -106,6 +108,10 @@ func (a *App) actionCommand(command string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if a.errorMutation != nil {
+		a.errorMutation.ChatID = chat
+		a.errorMutation.MessageID = *id
+	}
 	c, err := messaging.New(a.Manager)
 	if err != nil {
 		return err
@@ -119,9 +125,10 @@ func (a *App) actionCommand(command string, args []string) error {
 	if err != nil {
 		return err
 	}
+	op := &fault.Mutation{Action: result.Action, ChatID: result.ChatID, MessageID: result.MessageID, RequestSequence: &result.RequestSequence, Attempted: true, Outcome: fault.Confirmed}
 	if *jsonOutput {
-		return a.json(result)
+		return a.confirmedOutput(op, a.json(result))
 	}
 	_, err = fmt.Fprintln(a.Out, map[string]string{"react": "Reaction added.", "remove_reaction": "Reaction removed.", "unsend": "Message unsent."}[result.Action])
-	return err
+	return a.confirmedOutput(op, err)
 }

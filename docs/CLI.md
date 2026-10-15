@@ -444,6 +444,23 @@ If some messages cannot be decrypted, `messages --json` still writes the full
 array with a status for each message, then exits 1. It never prints encrypted
 chunks or raw server response bodies.
 
+### Structured errors
+
+Use `line --error-format=json COMMAND ... --json` for one structured error on
+stderr while keeping the existing success and partial-result JSON on stdout.
+The global option must precede the command and disables guided prompts. It
+supports the eight core commands and `auth status`; login, logout, migration,
+watch, and update retain their existing diagnostics.
+
+Errors include a stable code and stage. Message mutations also retain known IDs,
+the request sequence, whether the action was attempted, its outcome, and any
+preparation/upload steps. A created plaintext-file message is reported separately
+from a failed upload. A successful send with failed output remains confirmed.
+Never automatically retry an `unknown` mutation, even for a transient transport
+error. Inspect LINE first. Storage and signal exit codes are unchanged.
+
+See [the error schema, codes, and outcome examples](ERRORS.md).
+
 ### JSON lookup results
 
 `contacts --mid MID --json` returns an array, even for one ID. Every record has
