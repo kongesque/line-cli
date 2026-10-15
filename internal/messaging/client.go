@@ -171,6 +171,11 @@ func (c *Client) DecodeContext(ctx context.Context, chat string, msg *line.Messa
 	item := Message{ID: msg.ID, From: msg.From, To: msg.To, CreatedTime: timestamp, ContentType: msg.ContentType,
 		ReplyTo: msg.RelatedMessageID, Reactions: msg.Reactions,
 		Encrypted: len(msg.Chunks) > 0 || msg.ContentMetadata["e2eeVersion"] != ""}
+	// Storage/encryption markers also prohibit a plaintext content projection when
+	// chunks are absent or damaged, matching attachment download validation.
+	if IsDownloadable(msg.ContentType) && (msg.ContentMetadata["OID"] != "" || msg.ContentMetadata["ENC_KM"] != "" || strings.HasPrefix(msg.ContentMetadata["SID"], "em")) {
+		item.Encrypted = true
+	}
 	item.ChatID = chat
 	// Keep the legacy projection and expose richer decoding separately.
 	if IsDownloadable(msg.ContentType) {

@@ -70,7 +70,9 @@ never falls back to an outer filename, text, or location. Partial decryption
 failures still write the envelope and return a nonzero exit, including for
 attachments in detailed mode. Malformed metadata and unsupported types are
 reported per message without making the command fail. Legacy mode keeps its
-previous status/partial-error contract.
+previous status/partial-error contract. Attachment encryption/storage markers
+also set `encrypted: true` when chunks are missing, preventing a plaintext
+detailed projection of damaged encrypted metadata.
 
 ## Allowed content fields
 

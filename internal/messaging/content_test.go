@@ -88,6 +88,9 @@ func TestMentionsValidateUTF16AndBounds(t *testing.T) {
 			t.Fatal("accepted malformed mentions")
 		}
 	}
+	if _, ok := decodeMentions(`{"MENTIONEES":[]}`, strings.Repeat("x", maxContentBytes+1)); ok {
+		t.Fatal("unbounded mention text accepted")
+	}
 	mentions, ok := decodeMentions(`{"MENTIONEES":[{"S":"3","E":"8","A":"1"}]}`, "😀 @Peer")
 	if !ok || len(mentions) != 1 || !mentions[0].All {
 		t.Fatal("mention all lost")
@@ -170,5 +173,16 @@ func TestWireLocationMissingCoordinatesNeverBecomesZero(t *testing.T) {
 	}
 	if got := decodeContent(&msg, false, ""); got.Status != "ok" || got.Location == nil {
 		t.Fatal("rejected actual zero coordinates")
+	}
+}
+
+func TestAttachmentEncryptionMarkersDoNotPermitPlaintextProjection(t *testing.T) {
+	for key, value := range map[string]string{"e2eeVersion": "2", "SID": "emf", "ENC_KM": "secret", "OID": "object"} {
+		c, f, crypto, _ := setup(t, true)
+		raw := &line.Message{ContentType: 14, ContentMetadata: map[string]string{key: value, "FILE_NAME": "outer fallback"}}
+		got := c.Decode("u-peer", raw)
+		if !got.Encrypted || got.Content.Status != "decryption_failed" || got.Content.Attachment != nil || crypto.decryptCalls != 0 || f.sends != 0 || f.registrations != 0 {
+			t.Fatalf("unsafe marker %s: %+v", key, got.Content)
+		}
 	}
 }

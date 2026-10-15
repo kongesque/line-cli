@@ -152,7 +152,7 @@ func decodeContent(msg *line.Message, encrypted bool, payload string) Content {
 		}
 	case 13:
 		c.Contact = &SharedContact{MID: bounded(msg.ContentMetadata["mid"]), DisplayName: bounded(msg.ContentMetadata["displayName"])}
-		if ValidateChatID(c.Contact.MID) != nil {
+		if ValidateChatID(c.Contact.MID) != nil || !strings.HasPrefix(strings.ToLower(c.Contact.MID), "u") {
 			c.Status = "malformed_metadata"
 			c.Contact = nil
 		}
@@ -173,7 +173,7 @@ func decodeMentions(raw, text string) ([]Mention, bool) {
 	if raw == "" {
 		return nil, true
 	}
-	if len(raw) > maxContentBytes {
+	if len(raw) > maxContentBytes || len(text) > maxContentBytes || !utf8.ValidString(text) {
 		return nil, false
 	}
 	var body struct {

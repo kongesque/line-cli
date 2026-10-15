@@ -257,7 +257,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	failed := 0
 	for _, message := range messages {
-		if message.Status == "decryption_failed" || (details && message.Content.Status == "decryption_failed") {
+		if (!details && message.Status == "decryption_failed") || (details && message.Content.Status == "decryption_failed") {
 			failed++
 		}
 	}

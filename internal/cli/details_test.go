@@ -26,7 +26,7 @@ func TestDetailedHistoryAndPage(t *testing.T) {
 	for _, page := range []bool{false, true} {
 		a, out, _ := testApp(nil)
 		f := &chatAPI{names: map[string]string{"u-peer": "Peer"}}
-		f.history = []*line.Message{{ID: "9007199254740993", From: "u-peer", To: "u-self", CreatedTime: "10", DeliveredTime: "20", ContentType: 14, ContentMetadata: map[string]string{"FILE_NAME": "notes.txt", "FILE_SIZE": "7", "ENC_KM": "not-output"}}}
+		f.history = []*line.Message{{ID: "9007199254740993", From: "u-peer", To: "u-self", CreatedTime: "10", DeliveredTime: "20", ContentType: 14, ContentMetadata: map[string]string{"FILE_NAME": "notes.txt", "FILE_SIZE": "7", "UNRESTRICTED": "not-output"}}}
 		a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 		a.Manager.NewClient = func(string) session.API { return f }
 		args := []string{"messages", "id:u-peer", "--details", "--json", "--resolve-names"}
@@ -144,3 +144,14 @@ func TestEnrichmentPreservesStorageAndCancellation(t *testing.T) {
 type failingDetailStore struct{ testStore }
 
 func (*failingDetailStore) Load() (*session.State, error) { return nil, session.ErrHostConsent }
+
+func TestDecodedPreviewDoesNotUseOuterFileName(t *testing.T) {
+	m := messaging.Message{ContentType: 14, FileName: "untrusted", Content: messaging.Content{Kind: "file", Status: "ok", Attachment: &messaging.AttachmentInfo{Type: "file"}}}
+	if got := messagePreview(m); got != "[File: (name unavailable)]" {
+		t.Fatalf("untrusted filename fallback: %s", got)
+	}
+	m = messaging.Message{ContentType: 17, Content: messaging.Content{Kind: "rich", Status: "unsupported", Rich: &messaging.RichContent{}}}
+	if got := messagePreview(m); got == "" {
+		t.Fatal("unsupported rich message disappeared")
+	}
+}

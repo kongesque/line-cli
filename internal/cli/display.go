@@ -25,7 +25,7 @@ func messagePreview(m messaging.Message) string {
 	if m.Content.Contact != nil {
 		return "[Contact: " + terminalText(m.Content.Contact.DisplayName) + " · " + terminalText(m.Content.Contact.MID) + "]"
 	}
-	if m.Content.Rich != nil {
+	if m.Content.Rich != nil && (m.Content.Rich.AltText != "" || len(m.Content.Rich.Text) > 0 || len(m.Content.Rich.Links) > 0) {
 		return terminalText(strings.Join(append(append([]string{m.Content.Rich.AltText}, m.Content.Rich.Text...), m.Content.Rich.Links...), "\n"))
 	}
 	if m.Content.Sticker != nil {
@@ -34,6 +34,9 @@ func messagePreview(m messaging.Message) string {
 	if m.Content.Attachment != nil && m.Content.Attachment.Name != nil {
 		kind := map[string]string{"file": "File", "image": "Image", "video": "Video", "audio": "Audio"}[m.Content.Attachment.Type]
 		return "[" + kind + ": " + terminalText(*m.Content.Attachment.Name) + "]"
+	}
+	if m.ContentType == 14 && m.Content.Attachment != nil {
+		return "[File: (name unavailable)]"
 	}
 	if m.ContentType == 14 {
 		return "[File: " + terminalText(m.FileName) + "]"
