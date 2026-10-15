@@ -178,7 +178,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 				if _, err := w.state(generation); err != nil {
 					return err
 				}
-				event, next, err := decodeEvent(kind, data, revision, decoder)
+				event, next, err := decodeEventContext(ctx, kind, data, revision, decoder)
 				if err != nil {
 					return err
 				}
@@ -302,6 +302,10 @@ func wait(ctx context.Context, delay time.Duration) error {
 }
 
 func decodeEvent(kind, data string, current int64, decoder *messaging.Client) (*Event, int64, error) {
+	return decodeEventContext(context.Background(), kind, data, current, decoder)
+}
+
+func decodeEventContext(ctx context.Context, kind, data string, current int64, decoder *messaging.Client) (*Event, int64, error) {
 	if kind == "fullSync" {
 		var payload struct {
 			NextRevision json.Number `json:"nextRevision"`
@@ -341,7 +345,7 @@ func decodeEvent(kind, data string, current int64, decoder *messaging.Client) (*
 		if messaging.ValidateChatID(chat) != nil {
 			return nil, current, errors.New("LINE message has an invalid chat ID; resume position was not advanced")
 		}
-		msg := decoder.Decode(chat, op.Message)
+		msg := decoder.DecodeContext(ctx, chat, op.Message)
 		event.Event, event.ChatID, event.Message = "message", chat, &msg
 	}
 	return event, next, nil
