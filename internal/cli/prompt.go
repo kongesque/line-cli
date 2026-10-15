@@ -21,6 +21,7 @@ type promptAccount struct{ mid, generation string }
 
 // Prompts never hold a credential lock. Recheck account identity when work resumes.
 func (a *App) lock() (func(), error) {
+	a.errorStage = "preparation"
 	if err := a.loginContext().Err(); err != nil {
 		return nil, err
 	}

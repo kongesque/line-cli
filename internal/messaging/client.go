@@ -299,7 +299,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	op.ChatID = chat
 	stage = "preparation"
 	if c.keyError != nil {
-		return nil, c.keyError
+		return nil, fault.New("invalid_session", "preparation", c.keyError.Error(), c.keyError)
 	}
 	kind := toType(chat)
 	if kind == 0 {
@@ -420,7 +420,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	if sent == nil || sent.ID == "" {
 		op.Outcome = fault.Unknown
 		op.Steps[len(op.Steps)-1].Outcome = fault.Unknown
-		return nil, errors.New("send returned no message ID; delivery may have occurred; inspect history before retrying")
+		return nil, fault.New("remote_failed", "send", "send returned no message ID; delivery may have occurred; inspect history before retrying", nil)
 	}
 	op.MessageID = sent.ID
 	if plain && file != nil {
@@ -435,7 +435,8 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 // Preserve cancellation without leaking errors from the crypto runtime.
 func safePreparationError(err error) error {
 	var attempt *session.MutationAttemptError
-	if errors.As(err, &attempt) {
+	var remote *session.RemoteError
+	if errors.As(err, &attempt) || errors.As(err, &remote) {
 		return err
 	}
 	if errors.Is(err, context.Canceled) {
@@ -444,5 +445,5 @@ func safePreparationError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return context.DeadlineExceeded
 	}
-	return errors.New("check connectivity, chat membership, and Letter Sealing keys")
+	return fault.New("encryption_failed", "preparation", "check connectivity, chat membership, and Letter Sealing keys", err)
 }

@@ -343,8 +343,27 @@ func IsAuthoritativeRejection(err error) bool {
 	if !errors.As(err, &response) {
 		return false
 	}
-	return response.Status == 401 || response.Status == 403 ||
-		(response.Status == 200 || response.Status == 400) && IsAuthError(response)
+	if response.Status == 401 || response.Status == 403 {
+		return true
+	}
+	if response.Status != 200 && response.Status != 400 {
+		return false
+	}
+	var envelope struct {
+		Code int               `json:"code"`
+		Data talkExceptionData `json:"data"`
+	}
+	if json.Unmarshal([]byte(response.body), &envelope) != nil {
+		return false
+	}
+	if envelope.Code == 119 || envelope.Code == 10004 {
+		return true
+	}
+	if envelope.Code != 10051 {
+		return false
+	}
+	return (envelope.Data.Name == "TokenAuthException" && (envelope.Data.Code == 3 || envelope.Data.Code == 4)) ||
+		(envelope.Data.Name == "TalkException" && (envelope.Data.Code == 8 || envelope.Data.Code == 83 && strings.EqualFold(envelope.Data.Reason, "invalid sender key")))
 }
 
 // mutationResponse requires an explicit success envelope, including for void

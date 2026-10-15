@@ -51,5 +51,9 @@ func run() int {
 		app.MigrateHeadless = func(accepted bool) error { return session.MigrateHeadless(ctx, accepted) }
 	}
 	err := app.Run(os.Args[1:])
-	return commandExit(err, int(signals.code.Load()), os.Stderr)
+	code := int(signals.code.Load())
+	if err == nil && code != 0 && app.JSONErrors {
+		err = app.SignalError()
+	}
+	return commandExit(err, code, os.Stderr)
 }

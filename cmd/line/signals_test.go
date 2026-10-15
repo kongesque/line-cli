@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -190,3 +191,29 @@ type signalSendStore struct{ state *session.State }
 func (s *signalSendStore) Load() (*session.State, error)   { return s.state, nil }
 func (s *signalSendStore) Save(state *session.State) error { s.state = state; return nil }
 func (s *signalSendStore) Delete() error                   { return nil }
+
+func TestMachineErrorExitChannelAndStorageCodes(t *testing.T) {
+	for _, tc := range []struct {
+		err          error
+		signal, code int
+	}{
+		{session.ErrBusy, 0, 75}, {session.ErrStorageFormat, 0, 65},
+		{session.ErrDurabilityUncertain, 0, 74}, {context.Canceled, 0, 130},
+		{context.DeadlineExceeded, 0, 1}, {context.Canceled, 143, 143},
+	} {
+		var stdout, stderr bytes.Buffer
+		a := &cli.App{Out: &stdout, Err: &stderr, Lock: func() (func(), error) { return nil, tc.err }}
+		err := a.Run([]string{"--error-format=json", "whoami", "--json"})
+		code := commandExit(err, tc.signal, &stderr)
+		var envelope struct {
+			Schema int `json:"schema"`
+			Error  struct {
+				Code string `json:"code"`
+			} `json:"error"`
+			ExitCode int `json:"exit_code"`
+		}
+		if json.Unmarshal(stderr.Bytes(), &envelope) != nil || code != tc.code || envelope.ExitCode != tc.code || envelope.Schema != 1 || envelope.Error.Code == "" || stdout.Len() != 0 {
+			t.Fatalf("bad envelope/code: %d %s", code, stderr.String())
+		}
+	}
+}

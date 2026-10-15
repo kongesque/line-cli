@@ -12,13 +12,14 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
 
 const help = `LINE — your conversations from the terminal
 
-Usage: line <command> [options]
+Usage: line [--error-format text|json] <command> [options]
 
 Everyday commands:
   login       Sign in by QR code (--email ADDRESS for email login)
@@ -46,11 +47,16 @@ Examples:
   line chats --search "Family"
 
 whoami, contacts, chats, messages, send, download, react, and unsend accept --timeout.
+Use --error-format=json before a core command or auth status for JSON errors on stderr.
+This disables prompts and preserves stdout success/partial-result formats.
 In a terminal, missing details are prompted for. Ctrl-C cancels.
 Use --show-ids for IDs, --json for scripts, or COMMAND --help for all options.
 `
 
 type App struct {
+	JSONErrors       bool
+	errorStage       string
+	errorMutation    *fault.Mutation
 	Interactive      bool
 	StdoutIsTerminal bool
 	input            *bufio.Reader
@@ -76,7 +82,7 @@ type App struct {
 }
 
 // Run validates command arguments before accessing Keychain or the network.
-func (a *App) Run(args []string) error {
+func (a *App) run(args []string) error {
 	a.input, a.promptAccount, a.loginSnapshot = nil, nil, nil
 	if len(args) == 0 {
 		_, err := io.WriteString(a.Out, help)

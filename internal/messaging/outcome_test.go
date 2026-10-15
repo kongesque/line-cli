@@ -99,3 +99,42 @@ func TestCancelledUploadRetainsSeparateOutcomes(t *testing.T) {
 		t.Fatalf("bad upload outcome: %+v", e.Mutation)
 	}
 }
+
+type missingReceiptAPI struct{ *fakeAPI }
+
+func (f missingReceiptAPI) SendMessageContext(_ context.Context, seq int64, msg *line.Message) (*line.Message, error) {
+	f.fakeAPI.SendMessage(seq, msg)
+	return nil, nil
+}
+func TestMissingSendReceiptIsUnknown(t *testing.T) {
+	c, api, _, _ := setup(t, true)
+	c.Session.NewClient = func(string) session.API { return missingReceiptAPI{api} }
+	_, err := c.Send("u-peer", "synthetic")
+	e := mutationDetails(t, err)
+	if e.Mutation.Outcome != fault.Unknown || e.Mutation.Steps[0].Outcome != fault.Unknown || api.sends != 1 {
+		t.Fatalf("false confirmation: %+v", e)
+	}
+}
+func TestActionOutcomesRetainLargeMessageIDs(t *testing.T) {
+	for _, action := range []string{"react", "remove_reaction", "unsend"} {
+		c, api, _, store := setup(t, true)
+		const id = "9007199254740993"
+		api.history = []*line.Message{{ID: id, From: "u-self"}}
+		f := &actionAPI{fakeAPI: api, err: io.EOF}
+		c.Session.NewClient = func(string) session.API { return f }
+		var err error
+		if action == "unsend" {
+			_, err = c.Unsend("u-peer", id)
+		} else {
+			reaction := "like"
+			if action == "remove_reaction" {
+				reaction = ""
+			}
+			_, err = c.React("u-peer", id, reaction, action == "remove_reaction")
+		}
+		e := mutationDetails(t, err)
+		if e.Mutation.Action != action || e.Mutation.MessageID != id || e.Mutation.Outcome != fault.Unknown || *e.Mutation.RequestSequence != store.state.LastReqSeq || f.calls != 1 {
+			t.Fatalf("bad action outcome: %+v", e)
+		}
+	}
+}

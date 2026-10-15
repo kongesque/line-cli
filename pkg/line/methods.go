@@ -409,15 +409,10 @@ func (c *Client) SendMessageContext(ctx context.Context, reqSeq int64, msg *Mess
 	}
 
 	var wrapper struct {
-		Code    int      `json:"code"`
-		Message string   `json:"message"`
-		Data    *Message `json:"data"`
+		Data *Message `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
-	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("sendMessage failed: %s", wrapper.Message)
 	}
 	return wrapper.Data, nil
 }
@@ -459,22 +454,7 @@ func (c *Client) ReactContext(ctx context.Context, reqSeq int64, messageID strin
 	if err != nil {
 		return err
 	}
-	if err := mutationResponse(resp); err != nil {
-		return err
-	}
-
-	var wrapper struct {
-		Code    int             `json:"code"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return err
-	}
-	if wrapper.Code != 0 {
-		return fmt.Errorf("react failed: code %d message %s data %s", wrapper.Code, wrapper.Message, string(wrapper.Data))
-	}
-	return nil
+	return mutationResponse(resp)
 }
 
 func (c *Client) CancelReaction(reqSeq int64, messageID string) error {
@@ -490,22 +470,7 @@ func (c *Client) CancelReactionContext(ctx context.Context, reqSeq int64, messag
 	if err != nil {
 		return err
 	}
-	if err := mutationResponse(resp); err != nil {
-		return err
-	}
-
-	var wrapper struct {
-		Code    int             `json:"code"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return err
-	}
-	if wrapper.Code != 0 {
-		return fmt.Errorf("cancelReaction failed: code %d message %s data %s", wrapper.Code, wrapper.Message, string(wrapper.Data))
-	}
-	return nil
+	return mutationResponse(resp)
 }
 
 // SendChatChecked sends a read receipt for a message in a chat
@@ -998,21 +963,7 @@ func (c *Client) RegisterE2EEGroupKeyContext(ctx context.Context, keyVersion int
 	if err != nil {
 		return err
 	}
-	if err := mutationResponse(resp); err != nil {
-		return err
-	}
-
-	var wrapper struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return fmt.Errorf("failed to parse registerE2EEGroupKey response: %w", err)
-	}
-	if wrapper.Code != 0 {
-		return fmt.Errorf("registerE2EEGroupKey failed: %s", wrapper.Message)
-	}
-	return nil
+	return mutationResponse(resp)
 }
 
 // InviteIntoChat invites users into an existing LINE group chat.

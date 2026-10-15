@@ -155,10 +155,10 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 		return nil, err
 	}
 	if !IsDownloadable(msg.ContentType) {
-		return nil, errors.New("download supports image, video, audio, and file messages only")
+		return nil, fault.New("unsupported_content", "lookup", "download supports image, video, audio, and file messages only", nil)
 	}
 	if msg.ContentMetadata["DOWNLOAD_URL"] != "" {
-		return nil, errors.New("downloads from external media URLs are not supported")
+		return nil, fault.New("unsupported_content", "lookup", "downloads from external media URLs are not supported", nil)
 	}
 	if n, err := strconv.ParseInt(msg.ContentMetadata["FILE_SIZE"], 10, 64); err == nil && (n < 0 || n > MaxAttachmentBytes) {
 		return nil, errors.New("attachment exceeds the CLI limit of 20 MiB")
@@ -180,7 +180,7 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 		}
 		payload, err := c.decryptPayload(ctx, chat, msg)
 		if err != nil {
-			return nil, err
+			return nil, fault.New("decryption_failed", "decode", "Could not decrypt the attachment metadata.", err)
 		}
 		var body struct {
 			Key string `json:"keyMaterial"`
@@ -236,7 +236,7 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 	if key != "" {
 		data, err = decryptAttachment(data, key, msg.ContentType == 2)
 		if err != nil {
-			return nil, err
+			return nil, fault.New("decryption_failed", "decode", "Could not authenticate or decrypt the attachment.", err)
 		}
 	}
 	if len(data) > MaxAttachmentBytes {
