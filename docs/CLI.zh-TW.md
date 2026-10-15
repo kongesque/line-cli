@@ -276,7 +276,7 @@ line unsend "Alice" --message MY_MESSAGE_ID
 表情回應可選 `like`、`love`、`laugh`、`surprise`、`sad` 或 `angry`。
 只能收回自己傳送的訊息，且須符合 LINE 伺服器的規則。
 
-這些指令會在指定聊天室最近 100 則訊息中搜尋。下載不會覆寫既有檔案；
+下載、反應、收回與 `send --reply-to` 共用指定聊天室的查找流程：最多 10 頁、每頁 100 筆、30 秒；較短的 `--timeout` 優先。回覆會先確認目標屬於該聊天室，再上傳、註冊群組金鑰或傳送。互動選單仍顯示最近 100 則；較舊訊息請直接指定 ID。下載不會覆寫既有檔案；
 儲存前會驗證加密資料，遠端中繼資料也不能決定輸出路徑。
 
 `download` 支援最大 20 MiB 的圖片、影片、音訊與一般檔案訊息，預設整個指令的期限為兩分鐘（可用 `--timeout` 調整）。
@@ -752,7 +752,7 @@ Python 3 標準函式庫的 PTY 功能。原生 Linux Secret Service 整合測�
 
 - 每位作業系統使用者只能儲存一個 LINE 帳號。
 - QR 登入為實驗性功能，不支援停用 Letter Sealing 的帳號。
-- 只能讀取近期歷史訊息，每次最多 100 則。
+- 每頁最多 100 則；使用 `--page --json` 與游標可讀取仍可取得的較舊歷史。查找操作目標最多 10 頁、30 秒。
 - 支援傳送一般檔案，但不支援貼圖或專用媒體傳送。
 - 支援下載最大 20 MiB 的圖片、影片、音訊與檔案，不支援外部媒體網址。
 - 讀取訊息不會標示已讀。
@@ -767,3 +767,28 @@ LINE CLI 是衍生自 `beeper/line` 的獨立專案，並非 LINE 官方產品�
 在指令前加上 `--error-format=json`，例如 `line --error-format=json send CHAT_ID --stdin --json`。錯誤會以單一 JSON 物件輸出至 stderr；stdout 的成功結果及部分結果陣列維持原格式。此模式停用互動提示，適用於八個核心指令及 `auth status`；登入、登出、遷移、watch 與 update 保留原有診斷方式。
 
 錯誤包含代碼、階段，以及已知的聊天／訊息 ID、請求序號與各變更步驟的結果。`unknown` 表示結果不明，重試前請先在 LINE 確認。檔案訊息已建立但上傳失敗，或傳送成功但輸出失敗時，已確認的訊息資訊仍會保留。儲存與訊號結束代碼不變。完整欄位與代碼請參閱[錯誤格式說明](ERRORS.md)。
+
+
+### 歷史分頁 JSON
+
+```sh
+line messages CHAT_ID --page --json --limit 50
+line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
+```
+
+預設文字依建立時間由舊到新排列；原有 `--json` 陣列保留伺服器順序。
+`--page` 必須搭配 `--json`，`--cursor` 必須搭配兩者。每次讀取一頁，回傳
+`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
+`exhausted`、`stop_reason` 與可選的 `next_cursor`。訊息 ID 保持字串，
+新分頁依數值 ID 由新到舊排列。將游標原樣傳回同一聊天室；游標保存精確的
+送達時間，不會用建立時間代替。
+
+`count_limit` 表示達到筆數上限，`page_limit` 表示取得較短的非空頁；都不代表
+已讀完。移除重複錨點後沒有訊息才回傳 `end_of_available_history`、
+`exhausted: true` 並省略游標。要求 100 筆可能因錨點而只回傳 99 筆。
+伺服器可能不再提供更舊資料，並不保證完整歷史或固定保存期限。
+
+無效游標、錯誤聊天室、缺少送達時間或未向前推進的頁面會明確失敗。
+逾時回傳錯誤，不會當作讀完；部分解密失敗仍輸出含游標的分頁物件並以非零碼結束。
+目標查找的 `message_not_found` 只表示可取得的歷史中沒有目標；
+`lookup_incomplete` 表示已達頁數上限，`deadline_exceeded` 表示已逾時。

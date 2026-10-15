@@ -31,6 +31,7 @@ type API interface {
 	GetMessageBoxesContext(context.Context, line.MessageBoxesOptions) (*line.MessageBoxesResponse, error)
 	GetRecentMessagesV2(string, int) ([]*line.Message, error)
 	GetRecentMessagesV2Context(context.Context, string, int) ([]*line.Message, error)
+	GetPreviousMessagesV2Context(context.Context, string, line.MessageIDWrapper, int) ([]*line.Message, error)
 	GetBlockedContactIds() ([]string, error)
 	GetBlockedContactIdsContext(context.Context) ([]string, error)
 	NegotiateE2EEPublicKey(string) (*line.E2EEPublicKey, error)

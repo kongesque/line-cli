@@ -267,3 +267,7 @@ func (f *fileAPI) UploadOBSPlainContext(_ context.Context, data []byte, oid, kin
 func (f *fileAPI) SendMessageContext(_ context.Context, seq int64, msg *line.Message) (*line.Message, error) {
 	return f.SendMessage(seq, msg)
 }
+
+func (f *fakeAPI) GetPreviousMessagesV2Context(context.Context, string, line.MessageIDWrapper, int) ([]*line.Message, error) {
+	return nil, nil
+}

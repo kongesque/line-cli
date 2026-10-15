@@ -244,9 +244,38 @@ line messages "Alice" --show-ids
 line messages CHAT_ID --json
 ```
 
-`messages` fetches 1–100 recent messages and displays them oldest to newest.
+By default, `messages` fetches 1–100 recent messages. Human output sorts by
+created time, oldest first; legacy `--json` retains the server's array order.
 `--show-ids` includes the IDs needed for replies, reactions, downloads, and
-unsend.
+unsend. To continue into older available history, use the opt-in page contract:
+
+```sh
+line messages CHAT_ID --page --json --limit 50
+line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
+```
+
+`--page` requires `--json`; `--cursor` requires both. Each call reads one page,
+returning a schema-1 object with `schema_version`, `chat_id`, `order`, `messages`,
+`exhausted`, `stop_reason`, and optional `next_cursor`. `messages` contains the
+same safe fields as the legacy array, ordered newest first by numeric message
+ID (`order: "newest_first"`). IDs remain strings. Pass `next_cursor` unchanged
+with the same chat. It contains the exact delivered time and message ID; created
+time is never substituted. Invalid or mismatched cursors fail before history
+retrieval (a chat name must first be resolved).
+
+`stop_reason` is `count_limit` when the requested number was returned,
+`page_limit` for a shorter nonempty page, or `end_of_available_history` when no
+messages remain after removing the inclusive anchor. Only the last case sets
+`exhausted: true` and omits `next_cursor`. A short page is not proof of exhaustion;
+a request for 100 may return 99 because the anchor occupies one slot. A cursor
+may lead to an empty next page. This reads only history still available to this
+client; it does not promise all historical messages or a fixed retention period.
+Missing delivered times or nonadvancing/malformed pages fail explicitly.
+
+`--timeout` covers page retrieval and decoding. Timeout/cancellation returns an
+error, never an exhaustion result. Partial decryption failures still emit the
+page object, including its cursor, with a nonzero exit; inspect each message's
+status before continuing. Ordinary `--json` still returns an array.
 
 Reading history does not mark messages as read or save their text locally. Some
 older encrypted messages may be unavailable if LINE no longer provides their
@@ -293,8 +322,18 @@ line unsend "Alice" --message MY_MESSAGE_ID
 Reactions are `like`, `love`, `laugh`, `surprise`, `sad`, and `angry`. You can
 unsend only your own messages, subject to LINE's server rules.
 
-These commands search the latest 100 messages in the selected chat. Downloads
-never overwrite an existing destination. They verify encrypted data before
+Downloads, reactions, unsend, and `send --reply-to` share a read-only lookup in
+the selected chat: at most 10 pages of 100 records each and 30 seconds, including
+authentication recovery. A shorter command deadline takes precedence. The lookup
+checks chat identity; unsend also checks ownership. Replies must find their target
+before any upload, group-key registration, or send. A target outside this search
+boundary is rejected locally. This is bounded pagination, not a global ID search.
+
+An empty older page reports `message_not_found` in available history; reaching
+the page budget reports `lookup_incomplete`, and a time budget reports
+`deadline_exceeded`. None proves that the message never existed. Interactive
+message choosers still show the latest 100; supply an explicit older message ID
+to use the extended lookup. Downloads never overwrite an existing destination. They verify encrypted data before
 saving, and remote metadata cannot choose the output path.
 
 `download` supports image, video, audio, and generic file messages up to 20
@@ -825,7 +864,7 @@ fixtures, slow crypto regressions, and CI coverage.
 - One saved LINE account per operating-system user.
 - QR login is experimental and cannot handle accounts with Letter Sealing
   disabled.
-- History is recent only, with at most 100 messages per read.
+- History pages contain at most 100 messages; use `--page --json` and its cursor for older available history. Action/reply lookup is bounded to 10 pages and 30 seconds.
 - Sending supports generic files, but not stickers or specialized media sends.
 - Downloads support images, video, audio, and files up to 20 MiB; external
   media URLs are unsupported.

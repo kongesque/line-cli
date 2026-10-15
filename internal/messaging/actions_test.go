@@ -37,7 +37,7 @@ func TestReactionAndUnsendAreScopedAndNeverRetried(t *testing.T) {
 	c, f, _, _ := setup(t, true)
 	a := &actionAPI{fakeAPI: f}
 	c.Session.NewClient = func(string) session.API { return a }
-	f.history = []*line.Message{{ID: "123", From: "u-peer"}, {ID: "124", From: "u-self"}}
+	f.history = []*line.Message{{ID: "123", From: "u-peer", To: "u-self", DeliveredTime: "10"}, {ID: "124", From: "u-self", To: "u-peer", DeliveredTime: "11"}}
 	if _, err := c.Unsend("u-peer", "123"); err == nil || a.calls != 0 {
 		t.Fatal("unsent another person's message")
 	}
@@ -63,6 +63,7 @@ func TestReactionAndUnsendAreScopedAndNeverRetried(t *testing.T) {
 func TestReplyPreservesEncryptionAndRelationFields(t *testing.T) {
 	for _, plain := range []bool{true, false} {
 		c, f, _, _ := setup(t, plain)
+		f.history = []*line.Message{{ID: "123", From: "u-peer", To: "u-self"}}
 		result, err := c.SendReply("u-peer", "reply", "123")
 		if err != nil {
 			t.Fatal(err)

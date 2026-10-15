@@ -39,29 +39,6 @@ type ActionResult struct {
 	RequestSequence int64  `json:"request_sequence"`
 }
 
-// findMessage restricts mutations to a verified message in the selected chat.
-func (c *Client) findMessage(ctx context.Context, chat, id string) (*line.Message, error) {
-	if err := ValidateChatID(chat); err != nil {
-		return nil, err
-	}
-	if err := ValidateMessageID(id); err != nil {
-		return nil, err
-	}
-	var messages []*line.Message
-	if err := c.Session.DoContext(ctx, func(api session.API) (err error) {
-		messages, err = api.GetRecentMessagesV2Context(ctx, chat, 100)
-		return
-	}); err != nil {
-		return nil, err
-	}
-	for _, msg := range messages {
-		if msg != nil && msg.ID == id {
-			return msg, nil
-		}
-	}
-	return nil, errors.New("message was not found in the selected chat's 100 most recent messages")
-}
-
 func (c *Client) React(chat, id, reaction string, remove bool) (*ActionResult, error) {
 	return c.ReactContext(context.Background(), chat, id, reaction, remove)
 }

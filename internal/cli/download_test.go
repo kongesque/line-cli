@@ -40,7 +40,8 @@ func (f *mediaDownloadAPI) DownloadOBSWithSIDOptions(context.Context, string, st
 func downloadApp(t *testing.T, kind int) (*App, *mediaDownloadAPI, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	a, out, diag := testApp(nil)
-	api := &mediaDownloadAPI{message: &line.Message{ID: "123", ContentType: kind}, data: []byte{0, 1, 255, 254, 10, 13, 0}}
+	api := &mediaDownloadAPI{message: &line.Message{ID: "123", From: downloadChat, To: "u-self", ContentType: kind}, data: []byte{0, 1, 255, 254, 10, 13, 0}}
+	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic"}}
 	a.Manager.NewClient = func(string) session.API { return api }
 	return a, api, out, diag
 }
@@ -229,6 +230,9 @@ func TestGuidedDownloadMediaChooser(t *testing.T) {
 		{ID: "103", ContentType: 3, CreatedTime: "1700000000002"},
 		{ID: "104", ContentType: 14, CreatedTime: "1700000000003", ContentMetadata: map[string]string{"FILE_NAME": "notes.txt"}},
 		{ID: "105", ContentType: 7},
+	}
+	for _, msg := range api.history {
+		msg.From, msg.To = "u-alice", "u-self"
 	}
 	if err := a.Run([]string{"download"}); err != nil {
 		t.Fatal(err)

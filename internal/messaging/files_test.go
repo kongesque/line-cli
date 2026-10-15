@@ -38,6 +38,7 @@ func TestFileSendEnvelopeAndUploadOrdering(t *testing.T) {
 			c.crypto = crypt
 			c.Session.NewClient = func(string) session.API { return api }
 			f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
+			f.history = []*line.Message{{ID: "123", From: "u-self", To: chat, ToType: toType(chat)}}
 			attachment := Attachment{Name: "notes.pdf", Data: []byte("private attachment bytes")}
 			result, err := c.SendFile(chat, attachment, "123")
 			if err != nil {

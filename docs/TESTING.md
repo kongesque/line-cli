@@ -37,6 +37,13 @@ authentication rejection followed by failed recovery, lost/missing receipts,
 preparation side effects, and plaintext-file upload failures without replay.
 All use synthetic APIs/transports; no live LINE mutation is authorized by them.
 
+History tests cover lossless IDs/delivered times, chat-bound cursors, inclusive
+and exclusive anchors, short/empty/malformed/nonadvancing pages, bounded lookup,
+authentication recovery, wrong-chat replies, ownership, and older targets across
+reply/download/react/unsend. CLI tests preserve legacy arrays and partial-error
+behavior alongside the opt-in page object. Protocol evidence is static Chrome
+extension source; these tests do not establish live server interoperability.
+
 Command cancellation tests use fake requests and synthetic subprocesses. Unix
 terminal-restoration tests use Python 3's standard-library PTY support when
 available. OS-specific files use suffixes such as `_linux_test.go` and

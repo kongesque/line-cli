@@ -13,7 +13,7 @@ import (
 type downloadAPI struct{ session.API }
 
 func (*downloadAPI) GetRecentMessagesV2(string, int) ([]*line.Message, error) {
-	return []*line.Message{{ID: "123", ContentType: 14}}, nil
+	return []*line.Message{{ID: "123", From: downloadChat, To: "u-self", ContentType: 14}}, nil
 }
 func (*downloadAPI) DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error) {
 	return []byte("downloaded file"), nil
@@ -21,6 +21,7 @@ func (*downloadAPI) DownloadOBSWithSIDOptions(context.Context, string, string, s
 
 func TestDownloadPublishesFileAndNeverOverwrites(t *testing.T) {
 	a, out, _ := testApp(nil)
+	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic"}}
 	a.Manager.NewClient = func(string) session.API { return &downloadAPI{} }
 	path := filepath.Join(t.TempDir(), "output.bin")
 	args := []string{"download", "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--message", "123", "--output", path, "--json"}

@@ -84,7 +84,8 @@ in Chrome. Arbitrary remote URL downloads are outside this implementation;
 the CLI reports that variant as unsupported instead of silently fetching the
 message-ID object or forwarding credentials to another host.
 
-Downloads remain limited to the selected chat's latest 100 messages and
-20 MiB of plaintext. Full verified bytes are buffered before publication to a
+Downloads use shared selected-chat lookup bounded to 10 pages, at most 1000
+returned records, and 30 seconds; see [history](history.md). Plaintext downloads
+remain limited to 20 MiB. Full verified bytes are buffered before publication to a
 file or stdout. No live capture was needed to resolve these code paths; live
 interoperability has not been claimed.
