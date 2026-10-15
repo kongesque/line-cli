@@ -404,6 +404,10 @@ func (c *Client) SendMessageContext(ctx context.Context, reqSeq int64, msg *Mess
 	if err != nil {
 		return nil, err
 	}
+	if err := mutationResponse(resp); err != nil {
+		return nil, err
+	}
+
 	var wrapper struct {
 		Code    int      `json:"code"`
 		Message string   `json:"message"`
@@ -455,6 +459,10 @@ func (c *Client) ReactContext(ctx context.Context, reqSeq int64, messageID strin
 	if err != nil {
 		return err
 	}
+	if err := mutationResponse(resp); err != nil {
+		return err
+	}
+
 	var wrapper struct {
 		Code    int             `json:"code"`
 		Message string          `json:"message"`
@@ -482,6 +490,10 @@ func (c *Client) CancelReactionContext(ctx context.Context, reqSeq int64, messag
 	if err != nil {
 		return err
 	}
+	if err := mutationResponse(resp); err != nil {
+		return err
+	}
+
 	var wrapper struct {
 		Code    int             `json:"code"`
 		Message string          `json:"message"`
@@ -914,8 +926,11 @@ func (c *Client) UnsendMessage(reqSeq int64, messageID string) error {
 }
 
 func (c *Client) UnsendMessageContext(ctx context.Context, reqSeq int64, messageID string) error {
-	_, err := c.callRPCContext(ctx, "TalkService", "unsendMessage", reqSeq, messageID)
-	return err
+	resp, err := c.callRPCContext(ctx, "TalkService", "unsendMessage", reqSeq, messageID)
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
 }
 
 func (c *Client) SendChatRemoved(reqSeq int64, chatMid, lastReadMessageId string, lastReadMessageTime int64) error {
@@ -983,6 +998,10 @@ func (c *Client) RegisterE2EEGroupKeyContext(ctx context.Context, keyVersion int
 	if err != nil {
 		return err
 	}
+	if err := mutationResponse(resp); err != nil {
+		return err
+	}
+
 	var wrapper struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`

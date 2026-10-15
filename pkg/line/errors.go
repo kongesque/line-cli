@@ -334,3 +334,27 @@ func isExceptionCode(err error, name string, code int) bool {
 	}
 	return strings.EqualFold(envelope.Data.Name, name) && envelope.Data.Code == code
 }
+
+// IsAuthoritativeRejection deliberately accepts only typed authentication
+// rejections. Generic gateway errors, timeouts, and message text are not proof
+// that a mutation had no effect. Other service exceptions remain unknown.
+func IsAuthoritativeRejection(err error) bool {
+	var response *ResponseError
+	if !errors.As(err, &response) {
+		return false
+	}
+	return response.Status == 401 || response.Status == 403 ||
+		(response.Status == 200 || response.Status == 400) && IsAuthError(response)
+}
+
+// mutationResponse requires an explicit success envelope, including for void
+// methods. A malformed/missing receipt cannot establish remote success.
+func mutationResponse(body []byte) error {
+	var envelope struct {
+		Code *int `json:"code"`
+	}
+	if json.Unmarshal(body, &envelope) != nil || envelope.Code == nil {
+		return errors.New("LINE returned an invalid mutation response")
+	}
+	return responseError(200, body)
+}

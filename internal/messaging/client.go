@@ -11,6 +11,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/e2ee"
 	"github.com/kongesque/line-cli/pkg/line"
@@ -276,7 +277,10 @@ func (c *Client) SendFileContext(ctx context.Context, chat string, file Attachme
 	return c.send(ctx, chat, "", replyTo, &file)
 }
 
-func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment) (*SendResult, error) {
+func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment) (result *SendResult, resultErr error) {
+	op := &fault.Mutation{Action: "send", Outcome: fault.NotAttempted}
+	stage := "validation"
+	defer func() { resultErr = mutationFailure(op, stage, resultErr) }()
 	if err := ValidateChatID(chat); err != nil {
 		return nil, err
 	}
@@ -292,6 +296,8 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 			return nil, err
 		}
 	}
+	op.ChatID = chat
+	stage = "preparation"
 	if c.keyError != nil {
 		return nil, c.keyError
 	}
@@ -335,7 +341,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 				chunks, err = c.crypto.EncryptMessageV2(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 0, text)
 			} else {
 				var payload []byte
-				payload, err = c.uploadFile(ctx, file, metadata)
+				payload, err = c.uploadFile(ctx, file, metadata, op)
 				if err == nil {
 					chunks, err = c.crypto.EncryptMessageV2Raw(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 14, payload)
 				}
@@ -344,7 +350,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	} else if !plain {
 		err = c.groupKey(ctx, chat, 0)
 		if errors.Is(err, errGroupKeyMissing) || errors.Is(err, e2ee.ErrMissingOwnPrivateKey) {
-			err = c.registerGroupKey(ctx, chat)
+			err = c.registerGroupKey(ctx, chat, op)
 			if err == nil {
 				groupKeyRegistered = true
 				err = c.groupKey(ctx, chat, 0)
@@ -357,7 +363,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 				chunks, err = c.crypto.EncryptGroupMessage(chat, c.state.MID, text)
 			} else {
 				var payload []byte
-				payload, err = c.uploadFile(ctx, file, metadata)
+				payload, err = c.uploadFile(ctx, file, metadata, op)
 				if err == nil {
 					chunks, err = c.crypto.EncryptGroupMessageRaw(chat, c.state.MID, 14, payload)
 				}
@@ -365,6 +371,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 	}
 	if err != nil {
+		if len(op.Steps) > 0 && op.Steps[len(op.Steps)-1].Outcome != fault.Confirmed {
+			stage = op.Steps[len(op.Steps)-1].Stage
+		}
 		if file != nil {
 			return nil, fmt.Errorf("could not prepare encrypted attachment; no message was sent, but an uploaded file may remain: %w", safePreparationError(err))
 		}
@@ -376,10 +385,12 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	stage = "persist_sequence"
 	seq, err := c.Session.ReserveSequence()
 	if err != nil {
 		return nil, err
 	}
+	op.RequestSequence = &seq
 	now := c.Session.Now().UnixMilli()
 	msg := &line.Message{ID: fmt.Sprintf("local-%d", now), From: c.state.MID, To: chat, ToType: kind,
 		CreatedTime: json.Number(strconv.FormatInt(now, 10)), ContentType: contentType, HasContent: file != nil, ContentMetadata: metadata}
@@ -395,16 +406,27 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		msg.ContentMetadata["e2eeVersion"] = "2"
 	}
 	var sent *line.Message
-	err = c.Session.MutateContext(ctx, func(api session.API) (err error) { sent, err = api.SendMessageContext(ctx, seq, msg); return })
+	stage = "send"
+	err = c.attempt(ctx, op, stage, true, func(api session.API) (err error) { sent, err = api.SendMessageContext(ctx, seq, msg); return })
 	if err != nil {
-		return nil, mutationError("send did not return success; delivery may have occurred; inspect history before retrying: %w", err)
+		if op.Outcome == fault.NotAttempted {
+			return nil, fmt.Errorf("send was not attempted: %w", err)
+		}
+		if op.Outcome == fault.Rejected {
+			return nil, fmt.Errorf("LINE rejected the send: %w", err)
+		}
+		return nil, fmt.Errorf("send did not return success; delivery may have occurred; inspect history before retrying: %w", err)
 	}
 	if sent == nil || sent.ID == "" {
+		op.Outcome = fault.Unknown
+		op.Steps[len(op.Steps)-1].Outcome = fault.Unknown
 		return nil, errors.New("send returned no message ID; delivery may have occurred; inspect history before retrying")
 	}
+	op.MessageID = sent.ID
 	if plain && file != nil {
-		if err := c.Session.MutateContext(ctx, func(api session.API) error { return api.UploadOBSPlainContext(ctx, file.Data, sent.ID, "file") }); err != nil {
-			return nil, mutationError("message %s was created but file upload did not return success; inspect LINE before retrying: %w", sent.ID, err)
+		stage = "attachment_upload"
+		if err := c.attempt(ctx, op, stage, false, func(api session.API) error { return api.UploadOBSPlainContext(ctx, file.Data, sent.ID, "file") }); err != nil {
+			return nil, fmt.Errorf("message %s was created but file upload did not return success; inspect LINE before retrying: %w", sent.ID, err)
 		}
 	}
 	return &SendResult{ID: sent.ID, ChatID: chat, Encrypted: !plain, GroupKeyRegistered: groupKeyRegistered, RequestSequence: seq}, nil
@@ -412,9 +434,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 
 // Preserve cancellation without leaking errors from the crypto runtime.
 func safePreparationError(err error) error {
-	var mutation *MutationError
-	if errors.As(err, &mutation) {
-		return mutation
+	var attempt *session.MutationAttemptError
+	if errors.As(err, &attempt) {
+		return err
 	}
 	if errors.Is(err, context.Canceled) {
 		return context.Canceled
@@ -423,14 +445,4 @@ func safePreparationError(err error) error {
 		return context.DeadlineExceeded
 	}
 	return errors.New("check connectivity, chat membership, and Letter Sealing keys")
-}
-
-// MutationError retains delivery information when cancellation follows dispatch.
-// The error describes possible remote effects without claiming a safe retry.
-type MutationError struct{ cause error }
-
-func (e *MutationError) Error() string { return e.cause.Error() }
-func (e *MutationError) Unwrap() error { return e.cause }
-func mutationError(format string, args ...any) error {
-	return &MutationError{cause: fmt.Errorf(format, args...)}
 }
