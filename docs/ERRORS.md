@@ -18,8 +18,9 @@ JSON error mode disables guided prompts and requires explicit command arguments.
 It does not imply `--json`: use both options for JSON success output. A failed
 command writes one JSON object followed by a newline to stderr, without the
 flag parser's human diagnostics. Success and help retain their usual output.
-No new wrapper is added to stdout. In particular, partial history and partial
-contact results remain arrays on stdout and still exit nonzero.
+JSON error mode adds no wrapper to stdout. Partial legacy history and contact
+results remain arrays and still exit nonzero. Explicit `messages --page --json`
+uses its page object on stdout, including for partial decryption failures.
 
 ## Schema 1
 
@@ -60,12 +61,16 @@ an operation ledger and does not supply a deduplication or replay API.
 | `session_changed` | Saved account changed during the command. |
 | `busy` | Another command holds the session lock. |
 | `authentication_failed` | Authentication failed; inspect the mutation outcome independently. |
+| `invalid_cursor` | Malformed/unsupported history cursor or cursor bound to another chat. |
+| `history_invalid` | History has invalid identity/order/data or no valid delivered-time continuation anchor. |
+| `message_not_found` | Target absent from available history in the selected chat; older history may be unavailable. |
+| `lookup_incomplete` | The 10-page lookup budget was reached before finding the target. |
 | `unsupported_content` | Requested download content is unsupported. |
 | `decryption_failed` | History contains failed decryptions, or an attachment could not be decrypted/authenticated. |
 | `encryption_failed` | Message encryption/key preparation failed. |
 | `remote_failed` | Remote request failed or a send receipt was missing. |
 | `cancelled` | Cancellation, including a signal. |
-| `deadline_exceeded` | Command timeout expired. |
+| `deadline_exceeded` | Command timeout or the 30-second lookup budget expired; stage `lookup` identifies lookup. |
 | `input_failed` | A local input could not be read. |
 | `output_failed` | Command output could not be written; a mutation may already be confirmed. |
 | `storage_<reason>` | Classified storage failure; suffix matches `auth status`'s storage reason. |
