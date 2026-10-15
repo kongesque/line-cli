@@ -28,6 +28,7 @@ func TestAuthoritativeRejectionIsConservative(t *testing.T) {
 		{responseError(200, []byte(`{"code":10004}`)), true},
 		{responseError(500, []byte(`{"code":10004}`)), false},
 		{responseError(400, []byte(`{"code":10051,"data":{"name":"TalkException","code":5}}`)), false},
+		{responseError(400, []byte(`{"code":999,"message":"access token refresh required"}`)), false},
 		{errors.New("HTTP 403 secret"), false}, {context.Canceled, false}, {io.EOF, false},
 	} {
 		if IsAuthoritativeRejection(tc.err) != tc.want {

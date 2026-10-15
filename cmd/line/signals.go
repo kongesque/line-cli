@@ -26,6 +26,9 @@ type commandSignals struct {
 }
 
 func newCommandSignals() *commandSignals {
+	// Let writes return EPIPE so a confirmed mutation can still be reported on
+	// stderr. Go otherwise terminates immediately on a broken stdout pipe.
+	signal.Ignore(syscall.SIGPIPE)
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &commandSignals{ctx: ctx, cancel: cancel, done: make(chan struct{}), signals: make(chan os.Signal, 2)}
 	signal.Notify(s.signals, os.Interrupt, syscall.SIGTERM)

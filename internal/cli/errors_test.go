@@ -139,3 +139,17 @@ func TestKnownIDsSurviveLockFailure(t *testing.T) {
 		t.Fatalf("lost known IDs: %+v", detail)
 	}
 }
+
+func TestSignalAfterSuccessRetainsConfirmedReceipt(t *testing.T) {
+	a, out, _ := testApp(nil)
+	f := &messageAPI{}
+	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
+	a.Manager.NewClient = func(string) session.API { return f }
+	if err := a.Run([]string{"--error-format=json", "send", outcomeChat, "--text", "synthetic", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	detail := machineDetail(t, a.SignalError())
+	if out.Len() == 0 || detail.Code != "cancelled" || detail.Mutation.Outcome != fault.Confirmed || detail.Mutation.MessageID != "message-id" {
+		t.Fatal("signal hid successful receipt")
+	}
+}
