@@ -587,9 +587,13 @@ func (c *Client) UploadOBSPlainContext(ctx context.Context, data []byte, oid str
 		return fmt.Errorf("failed to create OBS request: %w", err)
 	}
 
+	name := fmt.Sprintf("%d", time.Now().UnixMilli())
+	if obsType == "image" {
+		name += ".jpg"
+	}
 	obsParams := map[string]string{
 		"ver":  "2.0",
-		"name": fmt.Sprintf("%d", time.Now().UnixMilli()),
+		"name": name,
 		"type": obsType,
 	}
 	obsParamsJSON, _ := json.Marshal(obsParams)

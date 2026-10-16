@@ -78,7 +78,7 @@ an operation ledger and does not supply a deduplication or replay API.
 
 Stages identify where work stopped: `validation`, `lock`, `storage`,
 `preparation`, `lookup`, `decode`, `persist_sequence`, `group_key_registration`,
-`attachment_upload`, `send`, `react`, `remove_reaction`, `unsend`, `output`, or
+`attachment_upload`, `preview_upload`, `send`, `react`, `remove_reaction`, `unsend`, `output`, or
 `completion` (a signal after the command completed).
 
 Exit codes are unchanged: ordinary errors are 1, storage errors retain
@@ -132,3 +132,9 @@ No mutation is retried for reporting failures.
 
 These contracts are covered with synthetic APIs and transports. They do not
 constitute a new live LINE compatibility validation.
+
+Native image sends record full encrypted upload (`attachment_upload`), encrypted
+preview (`preview_upload`), and `send` separately. An upload may leave an object
+without creating a message. Plain image upload follows message creation, so its
+failure retains the confirmed message receipt just like a generic-file upload.
+Never infer that an upload or send can safely be retried from a transport error.

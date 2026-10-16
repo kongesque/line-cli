@@ -96,10 +96,10 @@ func PrepareImage(ctx context.Context, file Attachment) (*PreparedImage, error) 
 
 func (c *Client) SendImageContext(ctx context.Context, chat string, img PreparedImage, replyTo string) (*SendResult, error) {
 	if replyTo != "" {
-		return nil, fault.New("invalid_argument", "validation", "--image cannot be combined with --reply-to; Chrome image replies are not supported", nil)
+		return nil, fault.New("invalid_arguments", "validation", "--image cannot be combined with --reply-to; image reply support is unverified", nil)
 	}
 	if len(img.file.Data) == 0 || len(img.preview) == 0 {
-		return nil, fault.New("invalid_argument", "validation", "image must be prepared before sending", nil)
+		return nil, fault.New("invalid_arguments", "validation", "image must be prepared before sending", nil)
 	}
 	return c.send(ctx, chat, "", replyTo, &img.file, nil, &img)
 }
@@ -127,7 +127,7 @@ func (c *Client) uploadAttachment(ctx context.Context, file *Attachment, img *Pr
 	}
 	if oid == "" {
 		op.Steps[len(op.Steps)-1].Outcome = fault.Unknown
-		return nil, errors.New("image upload returned no object ID")
+		return nil, fault.New("remote_failed", "attachment_upload", "image upload returned no object ID; inspect LINE before retrying", nil)
 	}
 	if err := c.attempt(ctx, op, "preview_upload", false, func(api session.API) error {
 		return api.UploadOBSWithOIDAndSIDContext(ctx, preview, oid+"__ud-preview", "emi")

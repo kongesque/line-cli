@@ -69,6 +69,9 @@ func TestImageUploadTransportContracts(t *testing.T) {
 					t.Fatal("bad plain image URL")
 				}
 			}
+			if kind == "plain" && !strings.HasSuffix(params["name"], ".jpg") {
+				t.Fatal("plain image filename must identify JPEG")
+			}
 			if params["ver"] != "2.0" || params["type"] != typ || params["name"] == "" {
 				t.Fatal("incorrect OBS parameters")
 			}

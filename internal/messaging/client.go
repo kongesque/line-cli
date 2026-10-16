@@ -488,6 +488,10 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 
 // Preserve cancellation without leaking errors from the crypto runtime.
 func safePreparationError(err error) error {
+	var safe *fault.Error
+	if errors.As(err, &safe) {
+		return safe
+	}
 	var attempt *session.MutationAttemptError
 	var remote *session.RemoteError
 	if errors.As(err, &attempt) || errors.As(err, &remote) {

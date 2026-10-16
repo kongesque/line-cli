@@ -243,6 +243,13 @@ func TestImageCapabilitiesAndValidationFailClosed(t *testing.T) {
 			if f.sends != 0 || f.registrations != 0 || store.state.LastReqSeq != 0 {
 				t.Fatal("mutation after invalid preparation")
 			}
+			if mode == "missing-oid" {
+				var safe *fault.Error
+				var mutation *MutationError
+				if !errors.As(err, &safe) || safe.Code != "remote_failed" || safe.Stage != "attachment_upload" || !errors.As(err, &mutation) || mutation.Mutation.Steps[0].Outcome != fault.Unknown {
+					t.Fatal("missing upload receipt classification", err)
+				}
+			}
 			if mode != "missing-oid" && len(api.order) != 0 {
 				t.Fatal("upload after invalid preparation")
 			}
@@ -283,7 +290,11 @@ func TestImagePreparation(t *testing.T) {
 	oversized := append([]byte(nil), data...)
 	binary.BigEndian.PutUint32(oversized[16:], 20000)
 	binary.BigEndian.PutUint32(oversized[29:], crc32.ChecksumIEEE(oversized[12:29]))
-	for _, bad := range [][]byte{nil, []byte("not an image"), []byte("GIF89a"), data[:len(data)/2], animated, oversized, make([]byte, MaxAttachmentBytes+1)} {
+	pixels := append([]byte(nil), data...)
+	binary.BigEndian.PutUint32(pixels[16:], 10000)
+	binary.BigEndian.PutUint32(pixels[20:], 5000)
+	binary.BigEndian.PutUint32(pixels[29:], crc32.ChecksumIEEE(pixels[12:29]))
+	for _, bad := range [][]byte{nil, []byte("not an image"), []byte("GIF89a"), data[:len(data)/2], animated, oversized, pixels, make([]byte, MaxAttachmentBytes+1)} {
 		if _, err := PrepareImage(context.Background(), Attachment{Name: "bad.png", Data: bad}); err == nil {
 			t.Fatal("invalid/animated/oversized image accepted")
 		}
