@@ -26,6 +26,7 @@ Everyday commands:
   whoami      Show your signed-in account
   contacts    Find friends (--search NAME) or look up people (--mid MID)
   chats       Browse recent conversations
+  members     List group members and invitees
   messages    Choose a chat and read messages
   send        Choose a recipient and write a message
   logout      Sign out on this device
@@ -46,7 +47,7 @@ Examples:
   line send "Alice" --file report.pdf
   line chats --search "Family"
 
-whoami, contacts, chats, messages, send, download, react, and unsend accept --timeout.
+whoami, contacts, chats, members, messages, send, download, react, and unsend accept --timeout.
 Use --error-format=json before a core command or auth status for JSON errors on stderr.
 This disables prompts and preserves stdout success/partial-result formats.
 In a terminal, missing details are prompted for. Ctrl-C cancels.
@@ -108,6 +109,8 @@ func (a *App) run(args []string) error {
 		return a.actionCommand(command, args[1:])
 	case "watch":
 		return a.watchCommand(args[1:])
+	case "members":
+		return a.membersCommand(args[1:])
 	case "contacts":
 		return a.contactsCommand(args[1:])
 	case "chats":

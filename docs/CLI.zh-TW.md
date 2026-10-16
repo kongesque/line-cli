@@ -127,7 +127,7 @@ QR 登入目前不支援停用 Letter Sealing 的帳號。已儲存的 QR 憑證
 Ctrl-C 可取消提示與 QR 輪詢。SIGINT 的結束代碼為 130，SIGTERM 為 143。
 結束前會恢復終端機的密碼回顯設定。舊版電子郵件驗證請求仍沿用原有的 HTTP 逾時設定。
 
-`whoami`、`contacts`、`chats`、`messages`、`send`、`download`、`react` 與 `unsend`
+`whoami`、`contacts`、`chats`、`members`、`messages`、`send`、`download`、`react` 與 `unsend`
 支援 `--timeout DURATION`，例如 `line send "Alice" --text "Hello" --timeout 30s`。
 期限從選項解析後開始，涵蓋提示、stdin、聊天室名稱解析、訊息查找、驗證恢復、金鑰準備與傳輸。
 預設為 `0`（不設指令期限），但 `download` 預設為 `2m`；`--timeout 0` 可停用。
@@ -235,6 +235,32 @@ line messages CHAT_ID --json
 若 LINE 不再提供原裝置金鑰，部分較舊的加密訊息可能無法讀取。
 
 <a id="send-messages-and-files"></a>
+
+### 查看群組成員並標註
+
+```sh
+line members "Family group" --json
+line send "Family group" --text '😀 @Alex' --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]'
+line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"all":true}]'
+```
+
+請將 `USER_MID` 換成 `members` 回傳的完整使用者 MID。`members` 支援群組 ID
+或唯一的完整群組名稱，以及 `--timeout` 和全域 JSON 錯誤格式；不支援一對一
+聊天室或舊式多人聊天室。查詢不會協商或註冊加密金鑰，也不會傳送已讀回條。
+
+JSON 包含 `schema_version:1`、`chat`、`members`、`invitees`、
+`members_complete`、`invitees_complete`。目前成員與受邀者分開列出，依 MID
+排序；每筆包含 `mid`、可為 `null` 的有效名稱 `name`、`name_status`
+（`resolved` 或 `unavailable`）及 `self`。清單明確為空仍屬完整，省略或
+`null` 表示不完整。個人檔案查詢失敗時保留 MID，不會憑空補入自己。
+完整性只描述這次成員清單回應，不代表名稱齊全或日後成員不會變更。
+
+`--mentions` 接受最多 100 筆 JSON 物件。`start` 包含起點、`end` 不含終點，
+以實際文字的 UTF-16 單位計算；`😀` 占兩個單位。每筆指定完整 `mid` 或
+`all:true`，範圍不可重疊或切開代理對。僅輸入 `@名字` 不會建立標註。
+全體標註僅限群組或多人聊天室。可搭配 `--text`、`--stdin`、`--reply-to`，
+不可搭配 `--file` 或互動輸入訊息。參數會在存取工作階段前驗證；既有的加密
+檢查與單次傳送規則不變。標註中繼資料與 Chrome 一樣保留在加密文字之外。
 
 ### 傳送訊息與檔案
 

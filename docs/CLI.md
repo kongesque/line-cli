@@ -135,7 +135,7 @@ Ctrl-C cancels prompts, QR polling, and ordinary command requests. SIGINT exits 
 Password echo is restored before exit. Legacy email authentication requests
 still use their existing HTTP timeouts.
 
-`whoami`, `contacts`, `chats`, `messages`, `send`, `download`, `react`, and
+`whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `react`, and
 `unsend` accept `--timeout DURATION`, for example
 `line send "Alice" --text "Hello" --timeout 30s`. The deadline starts after
 option parsing and covers prompts/stdin, chat-name resolution, message lookup,
@@ -297,6 +297,42 @@ batches. Chat details consistently include names, activity, and unread counts;
 unknown values are explicit `null`. Legacy JSON remains unchanged. See the
 [detailed field contract](CONTENT.md) for statuses, unknown values, bounds, and
 partial-result handling. Human output also uses the decoded content summaries.
+
+### List group members and mention someone
+
+```sh
+line members "Family group" --json
+line members "Family group" --timeout 30s
+line send "Family group" --text '😀 @Alex' --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]'
+line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"all":true}]'
+```
+
+Replace `USER_MID` with a full user MID from `members`. The command returns
+current `members` and `invitees` separately, sorted by MID. Each entry has `mid`,
+nullable effective `name`, `name_status` (`resolved` or `unavailable`), and `self`.
+The schema-1 envelope also has `chat`, `members_complete`, and
+`invitees_complete`. A present empty list is complete; an omitted/null list is
+incomplete. Failed profile lookups leave names unavailable without discarding
+the membership snapshot. Self is marked only if returned; no member is invented.
+Completeness describes the membership response, not profile availability or
+future changes. Direct chats and legacy rooms are unsupported by `members`.
+It never negotiates or registers encryption keys or sends read receipts.
+
+`--mentions` is an explicit JSON array, limited to 100 entries. `start` is
+inclusive and `end` exclusive, measured in UTF-16 code units of the exact text:
+`😀` occupies two units. Each span needs either a full user `mid` or `all:true`.
+Spans cannot overlap or split a surrogate pair. Literal `@name` text does not
+create mentions. Mention-all requires a group or room. Mentions support
+`--text`, `--stdin`, and `--reply-to`; they cannot accompany `--file` or a
+prompted message. Invalid input is rejected before session access. The existing
+single-attempt send and encryption rules apply. Mention metadata remains
+outside the encrypted text, matching Chrome.
+
+For a script, keep offsets aligned with the unmodified stdin content:
+
+```sh
+printf '%s' '😀 @Alex' | line send "Family group" --stdin --reply-to MESSAGE_ID --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]' --json
+```
 
 ### Send messages and files
 
@@ -505,7 +541,7 @@ chunks or raw server response bodies.
 Use `line --error-format=json COMMAND ... --json` for one structured error on
 stderr while keeping the existing success and partial-result JSON on stdout.
 The global option must precede the command and disables guided prompts. It
-supports the eight core commands and `auth status`; login, logout, migration,
+supports the core commands and `auth status`; login, logout, migration,
 watch, and update retain their existing diagnostics.
 
 Errors include a stable code and stage. Message mutations also retain known IDs,

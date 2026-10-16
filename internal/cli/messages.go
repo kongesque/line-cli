@@ -36,6 +36,9 @@ func (a *App) messageCommand(command string, args []string) error {
 	var stdin bool
 	var replyTo string
 	var filePath string
+	var mentionsJSON string
+	var mentions []messaging.Mention
+	var mentionsSet bool
 	var attachment *messaging.Attachment
 	showIDs := fs.Bool("show-ids", false, "show message IDs in human output")
 	if command == "messages" {
@@ -45,6 +48,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		fs.BoolVar(&pageMode, "page", false, "return a JSON history page with continuation cursor (requires --json)")
 		fs.StringVar(&cursor, "cursor", "", "continue a history page (requires --page --json)")
 	} else {
+		fs.StringVar(&mentionsJSON, "mentions", "", "explicit JSON mention array: [{\"start\":0,\"end\":5,\"mid\":\"USER_MID\"}] (UTF-16 offsets; text/stdin only)")
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
 		fs.StringVar(&filePath, "file", "", "send a generic file attachment (up to 20 MiB)")
@@ -83,6 +87,9 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	cursorSet := false
 	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "mentions" {
+			mentionsSet = true
+		}
 		if f.Name == "cursor" {
 			cursorSet = true
 		}
@@ -127,6 +134,15 @@ func (a *App) messageCommand(command string, args []string) error {
 		if sources != 1 && !(sources == 0 && guided) {
 			return errors.New("provide exactly one of --text TEXT, --stdin, or --file PATH")
 		}
+		if mentionsSet {
+			if hasFile || (!hasText && !stdin) {
+				return errors.New("--mentions requires --text or --stdin and cannot be combined with --file")
+			}
+			mentions, err = messaging.ParseMentions(mentionsJSON)
+			if err != nil {
+				return err
+			}
+		}
 		promptText = sources == 0 && guided
 		if hasFile {
 			file, err := os.Open(filePath)
@@ -169,6 +185,19 @@ func (a *App) messageCommand(command string, args []string) error {
 		if attachment == nil && !promptText {
 			if err := messaging.ValidateText(text); err != nil {
 				return err
+			}
+		}
+	}
+	if mentionsSet {
+		if _, err := messaging.EncodeMentions(text, mentions); err != nil {
+			return err
+		}
+		if fullChatID.MatchString(chat) || strings.HasPrefix(chat, "id:") {
+			id := strings.TrimPrefix(chat, "id:")
+			for _, mention := range mentions {
+				if mention.All && strings.HasPrefix(strings.ToLower(id), "u") {
+					return errors.New("mention-all requires a group or room")
+				}
 			}
 		}
 	}
@@ -218,7 +247,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		if attachment != nil {
 			result, err = client.SendFileContext(a.loginContext(), chat, *attachment, replyTo)
 		} else {
-			result, err = client.SendReplyContext(a.loginContext(), chat, text, replyTo)
+			result, err = client.SendMentionsContext(a.loginContext(), chat, text, replyTo, mentions)
 		}
 		if err != nil {
 			return err

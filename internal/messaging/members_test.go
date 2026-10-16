@@ -2,7 +2,10 @@ package messaging
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/kongesque/line-cli/internal/session"
 
 	"github.com/kongesque/line-cli/pkg/line"
 )
@@ -54,5 +57,35 @@ func TestMembershipRejectsInconsistentResponse(t *testing.T) {
 		if _, err := MembershipContext(context.Background(), nil, chat); err == nil {
 			t.Fatal("accepted unsupported chat")
 		}
+	}
+}
+
+type membershipRecoveryAPI struct {
+	*fakeAPI
+	calls int
+}
+
+func (f *membershipRecoveryAPI) GetChatsContext(ctx context.Context, ids []string, members, invitees bool) (*line.GetChatsResponse, error) {
+	f.calls++
+	if f.calls == 1 {
+		return nil, errors.New(`{"code":119}`)
+	}
+	if f.store.state.AccessToken != "refreshed" {
+		return nil, errors.New("retry before persisted token")
+	}
+	return f.fakeAPI.GetChatsContext(ctx, ids, members, invitees)
+}
+func (f *membershipRecoveryAPI) RefreshAccessToken(string) (*line.TokenV3IssueResult, error) {
+	return &line.TokenV3IssueResult{AccessToken: "refreshed", RefreshToken: "rotated"}, nil
+}
+func TestMembershipReadRecoversAuthentication(t *testing.T) {
+	c, f, _, store := setup(t, false)
+	store.state.RefreshToken = "refresh"
+	f.chats = &line.GetChatsResponse{Chats: []line.Chat{{ChatMid: "c-group", Extra: line.ChatExtra{GroupExtra: &line.GroupExtra{MemberMids: line.FlexibleMidMap{"u-peer": true}}}}}}
+	api := &membershipRecoveryAPI{fakeAPI: f}
+	c.Session.NewClient = func(string) session.API { return api }
+	result, err := MembershipContext(context.Background(), c.Session, "c-group")
+	if err != nil || api.calls != 2 || !result.MembersComplete || f.registrations != 0 || store.state.LastReqSeq != 0 {
+		t.Fatalf("membership recovery failed: %v", err)
 	}
 }

@@ -9,7 +9,7 @@ line --error-format=json auth status --json
 ```
 
 `--error-format json` is equivalent. The default is `text`. This option supports
-`whoami`, `contacts`, `chats`, `messages`, `send`, `download`, `react`, `unsend`,
+`whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `react`, `unsend`,
 `auth status`, help, and version. Login, logout, migration, watch, and update keep
 their existing diagnostic contracts; requesting JSON errors for them fails
 locally before doing work. An invalid error-format option itself uses text.
