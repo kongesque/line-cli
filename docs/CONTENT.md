@@ -83,7 +83,7 @@ detailed projection of damaged encrypted metadata.
 | Field | Contents |
 | --- | --- |
 | `text` | Decrypted or plaintext text |
-| `mentions` | Entries with inclusive `start`, exclusive `end` in UTF-16 code units, and either `mid` or `all:true`; incoming metadata only |
+| `mentions` | Entries with inclusive `start`, exclusive `end` in UTF-16 code units, and either `mid` or `all:true`; incoming metadata; the same field names are accepted by `send --mentions` |
 | `location` | `title`, `address`, `latitude`, `longitude`; missing/invalid coordinates are malformed |
 | `attachment` | Category `type`, nullable `name`, nullable `size_bytes`, nullable `duration_ms` (audio/video); MIME type is not guessed |
 | `contact` | `mid`, `display_name` |

@@ -1,6 +1,9 @@
 package line
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+)
 
 type FlexibleMidMap map[string]bool
 
@@ -27,7 +30,7 @@ func (f *FlexibleMidMap) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	return nil
+	return errors.New("invalid membership list")
 }
 
 type LoginRequest struct {

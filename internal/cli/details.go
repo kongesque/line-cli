@@ -60,13 +60,21 @@ type detailedHistory struct {
 }
 
 func (a *App) senderNames(messages []messaging.Message) (map[string]string, error) {
+	ids := make([]string, 0, len(messages))
+	for _, m := range messages {
+		ids = append(ids, m.From)
+	}
+	return a.profileNames(ids)
+}
+
+func (a *App) profileNames(mids []string) (map[string]string, error) {
 	names := make(map[string]string)
 	seen := make(map[string]bool)
 	var ids []string
-	for _, m := range messages {
-		if m.From != "" && !seen[m.From] {
-			seen[m.From] = true
-			ids = append(ids, m.From)
+	for _, mid := range mids {
+		if mid != "" && !seen[mid] {
+			seen[mid] = true
+			ids = append(ids, mid)
 		}
 	}
 	for start := 0; start < len(ids); start += 100 {
@@ -82,7 +90,14 @@ func (a *App) senderNames(messages []messaging.Message) (map[string]string, erro
 			return nil, fatal
 		}
 		if err == nil && response != nil {
+			requested := make(map[string]bool)
+			for _, id := range ids[start:min(start+100, len(ids))] {
+				requested[id] = true
+			}
 			for id, wrapper := range response.Contacts {
+				if !requested[id] || (wrapper.Contact.Mid != "" && wrapper.Contact.Mid != id) {
+					continue
+				}
 				names[id] = wrapper.Contact.EffectiveDisplayName()
 			}
 		}

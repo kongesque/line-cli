@@ -137,7 +137,7 @@ Ctrl-Cで入力やQRのポーリングをキャンセルできます。SIGINTの
 終了前にパスワード入力のエコー設定を元に戻します。従来のメール認証リクエストには、
 既存のHTTPタイムアウトが引き続き適用されます。
 
-`whoami`、`contacts`、`chats`、`messages`、`send`、`download`、`react`、`unsend` は
+`whoami`、`contacts`、`chats`、`members`、`messages`、`send`、`download`、`react`、`unsend` は
 `--timeout DURATION` に対応します。例: `line send "Alice" --text "Hello" --timeout 30s`。
 期限はオプション解析後に始まり、入力・stdin、チャット名の解決、メッセージ検索、認証の回復、
 鍵の準備、転送を含みます。既定は `0`（コマンドの期限なし）ですが、`download` は `2m` です。
@@ -247,6 +247,36 @@ line messages CHAT_ID --json
 
 履歴を読んでも既読にはならず、本文をローカルに保存することもありません。
 元の端末の鍵をLINEから取得できなくなった場合、古い暗号化メッセージの一部は読めないことがあります。
+
+### グループメンバーの確認とメンション
+
+```sh
+line members "Family group" --json
+line send "Family group" --text '😀 @Alex' --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]'
+line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"all":true}]'
+```
+
+`USER_MID` は `members` が返す完全なユーザー MID に置き換えてください。
+`members` はグループ ID または一意に一致する名前、`--timeout`、グローバルな
+JSON エラー形式に対応します。個別トークと旧形式の複数人トークには未対応です。
+暗号鍵の取得・登録や既読通知は行いません。
+
+JSON は `schema_version:1`、`chat`、`members`、`invitees`、
+`members_complete`、`invitees_complete` を含みます。現在のメンバーと招待中の
+ユーザーを別々に MID 順で返します。各項目は `mid`、実効表示名 `name`
+（不明なら `null`）、`name_status`（`resolved` または `unavailable`）、`self`
+を持ちます。明示的な空リストは完全、省略または `null` は不完全です。
+プロフィール取得に失敗しても MID は保持し、自分自身を勝手に追加しません。
+完全性は取得したメンバーリストを表し、名前の取得状況や将来の変更を保証しません。
+
+`--mentions` は最大 100 件の JSON オブジェクトを受け取ります。`start` は開始位置を
+含み、`end` は終了位置を含みません。実際の本文の UTF-16 単位で指定するため、
+`😀` は 2 単位です。各項目に完全な `mid` または `all:true` を指定し、範囲の
+重複やサロゲートペアの分割はできません。単なる `@名前` はメンションになりません。
+全員へのメンションはグループまたは複数人トークに限定されます。`--text`、
+`--stdin`、`--reply-to` と併用でき、`--file` や対話式の本文入力とは併用できません。
+入力はセッションへのアクセス前に検証します。暗号化と一度だけ送信する規則は
+維持され、メンション情報は Chrome と同様に暗号化本文の外に置かれます。
 
 <a id="send-messages-and-files"></a>
 
@@ -803,7 +833,7 @@ BeeperやMatrixホームサーバーも必要ありません。
 
 ## 構造化エラー
 
-コマンドの前に `--error-format=json` を指定します（例：`line --error-format=json send CHAT_ID --stdin --json`）。エラーは stderr に単一の JSON オブジェクトとして出力され、stdout の成功結果と部分結果の配列は従来の形式を保ちます。対話プロンプトは無効になります。対象は 8 つの基本コマンドと `auth status` です。ログイン、ログアウト、移行、watch、update は従来の診断方式を使用します。
+コマンドの前に `--error-format=json` を指定します（例：`line --error-format=json send CHAT_ID --stdin --json`）。エラーは stderr に単一の JSON オブジェクトとして出力され、stdout の成功結果と部分結果の配列は従来の形式を保ちます。対話プロンプトは無効になります。対象は基本コマンドと `auth status` です。ログイン、ログアウト、移行、watch、update は従来の診断方式を使用します。
 
 エラーにはコード、処理段階、既知のチャット／メッセージ ID、リクエスト番号、各変更処理の結果が含まれます。`unknown` の場合は再試行前に LINE を確認してください。ファイルメッセージ作成後のアップロード失敗や送信後の出力失敗でも、確認済みのメッセージ情報は保持されます。ストレージとシグナルの終了コードは変わりません。詳細は[エラー形式とコード](ERRORS.md)を参照してください。
 

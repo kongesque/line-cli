@@ -24,6 +24,15 @@ names, storage/cancellation propagation, partial results, and legacy JSON
 compatibility. Event tests verify the shared decoder with unchanged watch JSON.
 No content test downloads media, registers keys, or sends read receipts.
 
+Membership tests distinguish absent/null, complete empty, malformed, and populated
+member maps; keep invitees separate; retain MIDs when profiles are unavailable;
+and verify self identification, bounded name batches, cancellation, and read-only
+behavior without crypto initialization. Outgoing mention tests cover full MIDs,
+UTF-16 surrogate boundaries, overlap, explicit mention-all, local validation,
+text/stdin/reply flows, encrypted/plaintext metadata, saved sequences, failed key
+preparation, and lost responses without retries. Protocol tests verify `getChats`
+request flags and reject malformed/missing success payloads.
+
 ### Main contributor suite
 
 On macOS and Linux:
