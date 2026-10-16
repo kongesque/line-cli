@@ -495,7 +495,7 @@ func (c *Client) GetContactsV2Context(ctx context.Context, mids []string) (*Cont
 		Message string `json:"message"`
 		Data    struct {
 			Contacts map[string]*struct {
-				Contact *Contact `json:"contact"`
+				Contact json.RawMessage `json:"contact"`
 			} `json:"contacts"`
 		} `json:"data"`
 	}
@@ -511,12 +511,20 @@ func (c *Client) GetContactsV2Context(ctx context.Context, mids []string) (*Cont
 	}
 	result := &ContactsResponse{Contacts: make(map[string]ContactWrapper, len(wrapper.Data.Contacts))}
 	for mid, entry := range wrapper.Data.Contacts {
-		// An omitted map entry is unavailable. A present entry must contain a
-		// profile; null/missing wrappers must not become resolved empty contacts.
-		if entry == nil || entry.Contact == nil {
-			return nil, errors.New("getContactsV2 returned an invalid contact entry")
+		// LINE can return a missing or explicit null profile for a chat whose
+		// contact is unavailable. Treat either like an omitted map entry, not an
+		// empty profile. A null wrapper is still a malformed response.
+		if entry == nil {
+			return nil, errors.New("getContactsV2 returned a null contact wrapper")
 		}
-		result.Contacts[mid] = ContactWrapper{Contact: *entry.Contact}
+		if len(entry.Contact) == 0 || string(entry.Contact) == "null" {
+			continue
+		}
+		var contact Contact
+		if err := json.Unmarshal(entry.Contact, &contact); err != nil {
+			return nil, errors.New("getContactsV2 returned an invalid contact profile")
+		}
+		result.Contacts[mid] = ContactWrapper{Contact: contact}
 	}
 	return result, nil
 }
