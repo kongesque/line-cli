@@ -167,3 +167,21 @@ macOS, and Windows, with native Linux Secret Service and Windows DPAPI checks.
 Its separate crypto job runs the full runner/LTSM regression command with
 `CGO_ENABLED=0`, a 20-minute test timeout, and a 30-minute job limit. Live LINE and
 disposable booted-VM checks remain manual.
+
+## Native still-image regression coverage
+
+Synthetic image tests cover decoded JPEG/PNG validation, compressed size and
+decoded-dimension limits, animation rejection, transparent backgrounds, EXIF
+orientation, metadata removal, normalized full/preview dimensions, DM/group/room
+envelopes, and authenticating both encrypted uploads. Transport tests assert the
+media capability request, OBS SID/path/headers, and context cancellation.
+CLI tests verify pre-session input validation, explicit image-reply rejection,
+unchanged generic-file bytes, success JSON, and confirmed-message errors after
+plaintext upload failure. Fault tests cover every upload/send boundary, missing
+capabilities/keys/membership, missing receipts, lost responses, and no retries.
+
+The original eight audit probes now have permanent corrected-behavior coverage:
+`internal/messaging/cancellation_test.go` and `internal/cli/deadline_test.go`,
+`internal/cli/history_test.go`/`details_test.go` (CLI JSON order/details), `history_test.go` (reply identity and timestamp cursors),
+`content_test.go` (authenticated filenames, mentions and locations), and protocol
+`history_test.go` (delivered timestamps). No `/tmp` audit overlay is needed.

@@ -276,13 +276,13 @@ func (c *Client) SendReply(chat, text, replyTo string) (*SendResult, error) {
 }
 
 func (c *Client) SendReplyContext(ctx context.Context, chat, text, replyTo string) (*SendResult, error) {
-	return c.send(ctx, chat, text, replyTo, nil, nil)
+	return c.send(ctx, chat, text, replyTo, nil, nil, nil)
 }
 
 // SendMentionsContext sends explicit mentions with the ordinary single-attempt
 // text/reply flow. It does not derive mentions from literal @name text.
 func (c *Client) SendMentionsContext(ctx context.Context, chat, text, replyTo string, mentions []Mention) (*SendResult, error) {
-	return c.send(ctx, chat, text, replyTo, nil, mentions)
+	return c.send(ctx, chat, text, replyTo, nil, mentions, nil)
 }
 
 func (c *Client) SendFile(chat string, file Attachment, replyTo string) (*SendResult, error) {
@@ -290,10 +290,10 @@ func (c *Client) SendFile(chat string, file Attachment, replyTo string) (*SendRe
 }
 
 func (c *Client) SendFileContext(ctx context.Context, chat string, file Attachment, replyTo string) (*SendResult, error) {
-	return c.send(ctx, chat, "", replyTo, &file, nil)
+	return c.send(ctx, chat, "", replyTo, &file, nil, nil)
 }
 
-func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment, mentions []Mention) (result *SendResult, resultErr error) {
+func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment, mentions []Mention, image *PreparedImage) (result *SendResult, resultErr error) {
 	op := &fault.Mutation{Action: "send", Outcome: fault.NotAttempted}
 	stage := "validation"
 	defer func() { resultErr = mutationFailure(op, stage, resultErr) }()
@@ -345,6 +345,16 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 	}
 	plain := c.state.NoE2EE
+	if image != nil && !plain {
+		var flow *line.MediaMessageFlowResponse
+		if err := c.Session.DoContext(ctx, func(api session.API) (err error) { flow, err = api.DetermineMediaMessageFlowContext(ctx, chat); return }); err != nil {
+			return nil, err
+		}
+		if flow == nil || (flow.FlowMap["1"] != 1 && flow.FlowMap["1"] != 2) {
+			return nil, errors.New("LINE returned no supported image upload capability")
+		}
+		plain = flow.FlowMap["1"] == 1
+	}
 	groupKeyRegistered := false
 	metadata := make(map[string]string)
 	if mentionMetadata != "" {
@@ -353,9 +363,16 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	contentType := 0
 	if file != nil {
 		contentType = 14
+		if image != nil {
+			contentType = 1
+		}
 		metadata["FILE_NAME"] = file.Name
 		metadata["FILE_SIZE"] = strconv.Itoa(len(file.Data))
-		metadata["contentType"] = "14"
+		metadata["contentType"] = strconv.Itoa(contentType)
+		if image != nil {
+			// Chrome's ordinary image envelope has no generic-file metadata.
+			clear(metadata)
+		}
 	}
 	var chunks []string
 	if !plain && kind == 0 {
@@ -374,9 +391,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 				chunks, err = c.crypto.EncryptMessageV2(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 0, text)
 			} else {
 				var payload []byte
-				payload, err = c.uploadFile(ctx, file, metadata, op)
+				payload, err = c.uploadAttachment(ctx, file, image, metadata, op)
 				if err == nil {
-					chunks, err = c.crypto.EncryptMessageV2Raw(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), 14, payload)
+					chunks, err = c.crypto.EncryptMessageV2Raw(chat, c.state.MID, runtimeKey, key.PublicKey, own, int(peer), contentType, payload)
 				}
 			}
 		}
@@ -396,9 +413,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 				chunks, err = c.crypto.EncryptGroupMessage(chat, c.state.MID, text)
 			} else {
 				var payload []byte
-				payload, err = c.uploadFile(ctx, file, metadata, op)
+				payload, err = c.uploadAttachment(ctx, file, image, metadata, op)
 				if err == nil {
-					chunks, err = c.crypto.EncryptGroupMessageRaw(chat, c.state.MID, 14, payload)
+					chunks, err = c.crypto.EncryptGroupMessageRaw(chat, c.state.MID, contentType, payload)
 				}
 			}
 		}
@@ -458,7 +475,11 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	op.MessageID = sent.ID
 	if plain && file != nil {
 		stage = "attachment_upload"
-		if err := c.attempt(ctx, op, stage, false, func(api session.API) error { return api.UploadOBSPlainContext(ctx, file.Data, sent.ID, "file") }); err != nil {
+		obsType := "file"
+		if image != nil {
+			obsType = "image"
+		}
+		if err := c.attempt(ctx, op, stage, false, func(api session.API) error { return api.UploadOBSPlainContext(ctx, file.Data, sent.ID, obsType) }); err != nil {
 			return nil, fmt.Errorf("message %s was created but file upload did not return success; inspect LINE before retrying: %w", sent.ID, err)
 		}
 	}
@@ -467,6 +488,10 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 
 // Preserve cancellation without leaking errors from the crypto runtime.
 func safePreparationError(err error) error {
+	var safe *fault.Error
+	if errors.As(err, &safe) {
+		return safe
+	}
 	var attempt *session.MutationAttemptError
 	var remote *session.RemoteError
 	if errors.As(err, &attempt) || errors.As(err, &remote) {

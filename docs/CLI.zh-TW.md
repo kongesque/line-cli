@@ -257,7 +257,7 @@ JSON 包含 `schema_version:1`、`chat`、`members`、`invitees`、
 以實際文字的 UTF-16 單位計算；`😀` 占兩個單位。每筆指定完整 `mid` 或
 `all:true`，範圍不可重疊或切開代理對。僅輸入 `@名字` 不會建立標註。
 全體標註僅限群組或多人聊天室。可搭配 `--text`、`--stdin`、`--reply-to`，
-不可搭配 `--file` 或互動輸入訊息。參數會在存取工作階段前驗證；既有的加密
+不可搭配 `--file`、`--image` 或互動輸入訊息。參數會在存取工作階段前驗證；既有的加密
 檢查與單次傳送規則不變。標註中繼資料與 Chrome 一樣保留在加密文字之外。
 
 <a id="send-messages-and-files"></a>
@@ -270,10 +270,23 @@ line send "Alice" --stdin < message.txt
 line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
 line send "Family group" --file ./report.pdf
 line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
+line send "Family group" --image ./screenshot.png --json
 ```
 
-`--text`、`--stdin`、`--file` 必須擇一使用。文字不能為空，長度上限為 10,000 個 UTF-16 單位。
+`--text`、`--stdin`、`--file`、`--image` 必須擇一使用。文字不能為空，長度上限為 10,000 個 UTF-16 單位。
 一般檔案最大為 20 MiB。透過 `--file` 傳送的圖片、影片與音訊都會以一般檔案呈現。
+
+`--image` 會以圖片訊息傳送經實際解碼驗證的 JPEG 或靜態 PNG：上限為 20 MiB、
+4,000 萬像素，且單邊不超過 16384 像素。會套用 EXIF 方向、移除中繼資料、
+將透明區域填白，再依比例轉為品質 60、總像素不超過 1280×1280 的 JPEG。
+加密傳送另上傳 384×384 範圍內、品質 30 的 JPEG 預覽；要保留原始位元組請用 `--file`。
+不支援 GIF、動態 PNG、BMP、WebP 或原生影音傳送。圖片處理在存取工作階段前完成。
+`--image` 不可搭配文字、stdin、file、mentions 或 `--reply-to`，因 Chrome 圖片流程
+尚無已驗證的回覆支援。
+
+圖片傳送使用伺服器明確回報的加密／明文能力；缺漏、無效或查詢失敗均不會開始傳送。
+完整圖片、預覽和訊息各只嘗試一次。明文訊息建立後上傳失敗，結構化錯誤仍保留
+已確認的訊息 ID；結果不明時請先查看 LINE 再重試。詳見[圖片協定證據](protocol/endpoints/image-send.md)，尚未進行真實帳號互通測試。
 
 聊天室支援時，CLI 會使用 Letter Sealing。缺少金鑰、群組成員資料不完整，或傳輸失敗時，
 加密傳送會中止，不會默默改傳明文。只有明確執行群組傳送，且掌握所有目前成員時，
@@ -779,7 +792,7 @@ Python 3 標準函式庫的 PTY 功能。原生 Linux Secret Service 整合測�
 - 每位作業系統使用者只能儲存一個 LINE 帳號。
 - QR 登入為實驗性功能，不支援停用 Letter Sealing 的帳號。
 - 每頁最多 100 則；使用 `--page --json` 與游標可讀取仍可取得的較舊歷史。查找操作目標最多 10 頁、30 秒。
-- 支援傳送一般檔案，但不支援貼圖或專用媒體傳送。
+- 支援一般檔案與 JPEG/PNG 靜態圖片；不支援原生影音、動態圖片、圖片回覆或貼圖傳送。
 - 支援下載最大 20 MiB 的圖片、影片、音訊與檔案，不支援外部媒體網址。
 - 讀取訊息不會標示已讀。
 - 發行版執行檔尚未經過數位簽署或公證。

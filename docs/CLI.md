@@ -342,11 +342,30 @@ line send "Alice" --stdin < message.txt
 line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
 line send "Family group" --file ./report.pdf
 line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
+line send "Family group" --image ./screenshot.png --json
 ```
 
-Choose exactly one of `--text`, `--stdin`, or `--file`. Text must be nonempty
+Choose exactly one of `--text`, `--stdin`, `--file`, or `--image`. Text must be nonempty
 and at most 10,000 UTF-16 units. Generic files can be up to 20 MiB. Images,
 video, and audio sent with `--file` appear as ordinary files.
+
+`--image` sends a native still-image message from actual JPEG or PNG data, up to
+20 MiB, 40 million decoded pixels, and 16384 pixels on either axis. It applies
+EXIF orientation, removes metadata, flattens transparency onto white, and converts
+to JPEG at quality 60 with at most 1280×1280 total pixels (aspect ratio preserved).
+Encrypted sends also upload a JPEG preview fitting 384×384 at quality 30.
+Use `--file` to preserve original bytes. GIF, animated PNG, BMP, WebP, and native
+audio/video sends are unsupported. Image preparation is local and precedes session
+access. `--image` cannot be combined with text, stdin, file, mentions, or
+`--reply-to`: Chrome's image path does not establish reply support.
+
+Image sends use the server's explicit encrypted/plaintext media capability.
+A missing or invalid capability fails locally before mutation. Full encrypted
+upload, preview upload, and message send each happen once. A failed upload after
+plaintext message creation retains that confirmed message ID in structured errors;
+unknown outcomes require checking LINE before retrying. See
+[image protocol evidence](protocol/endpoints/image-send.md) for details. Live
+interoperability has not been verified.
 
 The CLI uses Letter Sealing when the conversation supports it. Missing keys,
 incomplete group membership, or a transport failure stop an encrypted send
@@ -918,7 +937,7 @@ fixtures, slow crypto regressions, and CI coverage.
 - QR login is experimental and cannot handle accounts with Letter Sealing
   disabled.
 - History pages contain at most 100 messages; use `--page --json` and its cursor for older available history. Action/reply lookup is bounded to 10 pages and 30 seconds.
-- Sending supports generic files, but not stickers or specialized media sends.
+- Sending supports generic files and native JPEG/PNG still images; native audio/video, animated images, image replies, and sticker sends are unsupported.
 - Downloads support images, video, audio, and files up to 20 MiB; external
   media URLs are unsupported.
 - Reading messages does not mark them as read.

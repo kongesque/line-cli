@@ -45,6 +45,7 @@ Examples:
   line messages "Alice"
   line send "Alice" --text "Hello!"
   line send "Alice" --file report.pdf
+  line send "Alice" --image screenshot.png
   line chats --search "Family"
 
 whoami, contacts, chats, members, messages, send, download, react, and unsend accept --timeout.

@@ -35,7 +35,8 @@ func (a *App) messageCommand(command string, args []string) error {
 	var text string
 	var stdin bool
 	var replyTo string
-	var filePath string
+	var filePath, imagePath string
+	var preparedImage *messaging.PreparedImage
 	var mentionsJSON string
 	var mentions []messaging.Mention
 	var mentionsSet bool
@@ -52,6 +53,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
 		fs.StringVar(&filePath, "file", "", "send a generic file attachment (up to 20 MiB)")
+		fs.StringVar(&imagePath, "image", "", "send a native still image (JPEG/PNG, up to 20 MiB / 40 million pixels; converted to JPEG; no --reply-to)")
 		fs.StringVar(&replyTo, "reply-to", "", "reply to a verified message (lookup: up to 10 pages / 1000 records / 30s)")
 	}
 	if err := fs.Parse(args); err != nil {
@@ -116,8 +118,11 @@ func (a *App) messageCommand(command string, args []string) error {
 				return err
 			}
 		}
-		hasText, hasFile := false, false
+		hasText, hasFile, hasImage := false, false, false
 		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "image" {
+				hasImage = true
+			}
 			if f.Name == "file" {
 				hasFile = true
 			}
@@ -126,25 +131,31 @@ func (a *App) messageCommand(command string, args []string) error {
 			}
 		})
 		sources := 0
-		for _, enabled := range []bool{hasText, stdin, hasFile} {
+		for _, enabled := range []bool{hasText, stdin, hasFile, hasImage} {
 			if enabled {
 				sources++
 			}
 		}
 		if sources != 1 && !(sources == 0 && guided) {
-			return errors.New("provide exactly one of --text TEXT, --stdin, or --file PATH")
+			return errors.New("provide exactly one of --text TEXT, --stdin, --file PATH, or --image PATH")
 		}
 		if mentionsSet {
-			if hasFile || (!hasText && !stdin) {
-				return errors.New("--mentions requires --text or --stdin and cannot be combined with --file")
+			if hasFile || hasImage || (!hasText && !stdin) {
+				return errors.New("--mentions requires --text or --stdin and cannot be combined with --file or --image")
 			}
 			mentions, err = messaging.ParseMentions(mentionsJSON)
 			if err != nil {
 				return err
 			}
 		}
+		if hasImage && replyTo != "" {
+			return errors.New("--image cannot be combined with --reply-to; image reply support is unverified")
+		}
 		promptText = sources == 0 && guided
-		if hasFile {
+		if hasFile || hasImage {
+			if hasImage {
+				filePath = imagePath
+			}
 			file, err := os.Open(filePath)
 			if err != nil {
 				return fmt.Errorf("open attachment: %w", err)
@@ -166,6 +177,12 @@ func (a *App) messageCommand(command string, args []string) error {
 			attachment = &messaging.Attachment{Name: filepath.Base(filePath), Data: data}
 			if err := attachment.Validate(); err != nil {
 				return err
+			}
+			if hasImage {
+				preparedImage, err = messaging.PrepareImage(a.loginContext(), *attachment)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -244,7 +261,9 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	if command == "send" {
 		var result *messaging.SendResult
-		if attachment != nil {
+		if preparedImage != nil {
+			result, err = client.SendImageContext(a.loginContext(), chat, *preparedImage, replyTo)
+		} else if attachment != nil {
 			result, err = client.SendFileContext(a.loginContext(), chat, *attachment, replyTo)
 		} else {
 			result, err = client.SendMentionsContext(a.loginContext(), chat, text, replyTo, mentions)

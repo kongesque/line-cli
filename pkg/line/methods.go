@@ -1056,21 +1056,28 @@ func (c *Client) GetBlockedContactIdsContext(ctx context.Context) ([]string, err
 // DetermineMediaMessageFlow asks the server which upload path to use for media
 // in a given chat. Flow value 2 = E2EE encrypted upload, 1 = plain upload.
 func (c *Client) DetermineMediaMessageFlow(chatMid string) (*MediaMessageFlowResponse, error) {
+	return c.DetermineMediaMessageFlowContext(context.Background(), chatMid)
+}
+
+func (c *Client) DetermineMediaMessageFlowContext(ctx context.Context, chatMid string) (*MediaMessageFlowResponse, error) {
 	req := map[string]string{"chatMid": chatMid}
-	resp, err := c.callRPC("TalkService", "determineMediaMessageFlow", req)
+	resp, err := c.callRPCContext(ctx, "TalkService", "determineMediaMessageFlow", req)
 	if err != nil {
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int                      `json:"code"`
-		Message string                   `json:"message"`
-		Data    MediaMessageFlowResponse `json:"data"`
+		Code    *int                      `json:"code"`
+		Message string                    `json:"message"`
+		Data    *MediaMessageFlowResponse `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse determineMediaMessageFlow response: %w", err)
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("determineMediaMessageFlow failed: %s", wrapper.Message)
+	if wrapper.Code == nil || *wrapper.Code != 0 {
+		return nil, errors.New("determineMediaMessageFlow returned no success")
 	}
-	return &wrapper.Data, nil
+	if wrapper.Data == nil || len(wrapper.Data.FlowMap) == 0 {
+		return nil, errors.New("media flow response has no capabilities")
+	}
+	return wrapper.Data, nil
 }
