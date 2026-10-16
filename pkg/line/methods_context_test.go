@@ -31,6 +31,10 @@ func TestGetEncryptedIdentityV3ContextCancellation(t *testing.T) {
 
 func TestCommandRPCsPropagateCancellation(t *testing.T) {
 	calls := map[string]func(*Client, context.Context) error{
+		"media flow": func(c *Client, ctx context.Context) error {
+			_, e := c.DetermineMediaMessageFlowContext(ctx, "u-peer")
+			return e
+		},
 		"contacts": func(c *Client, ctx context.Context) error { _, e := c.GetAllContactIdsContext(ctx); return e },
 		"contact names": func(c *Client, ctx context.Context) error {
 			_, e := c.GetContactsV2Context(ctx, []string{"u-peer"})
@@ -101,7 +105,7 @@ func TestOBSTokenPreparationCancellation(t *testing.T) {
 	obsTokenCache = ""
 	obsTokenMu.Unlock()
 	defer func() { obsTokenMu.Lock(); obsTokenCache, obsTokenExpiry = old, expiry; obsTokenMu.Unlock() }()
-	for _, name := range []string{"upload", "plain upload", "download"} {
+	for _, name := range []string{"upload", "plain upload", "preview upload", "download"} {
 		t.Run(name, func(t *testing.T) {
 			testRPCContextCancellation(t, name, func(c *Client, ctx context.Context) error {
 				c.OBSClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -112,6 +116,8 @@ func TestOBSTokenPreparationCancellation(t *testing.T) {
 				case "upload":
 					_, e := c.UploadOBSWithSIDContext(ctx, []byte("synthetic"), "emf")
 					return e
+				case "preview upload":
+					return c.UploadOBSWithOIDAndSIDContext(ctx, nil, "oid__ud-preview", "emi")
 				case "plain upload":
 					return c.UploadOBSPlainContext(ctx, []byte("synthetic"), "123", "file")
 				default:

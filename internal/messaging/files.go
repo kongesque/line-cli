@@ -79,15 +79,20 @@ func encryptFile(data []byte) ([]byte, string, error) {
 		return nil, "", err
 	}
 	defer clear(material)
+	data, err := encryptFileWithMaterial(data, material)
+	return data, base64.StdEncoding.EncodeToString(material), err
+}
+
+func encryptFileWithMaterial(data, material []byte) ([]byte, error) {
 	block, macKey, counter, err := fileKeys(material)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	encrypted := make([]byte, len(data))
 	cipher.NewCTR(block, counter).XORKeyStream(encrypted, data)
 	mac := hmac.New(sha256.New, macKey)
 	mac.Write(encrypted)
-	return append(encrypted, mac.Sum(nil)...), base64.StdEncoding.EncodeToString(material), nil
+	return append(encrypted, mac.Sum(nil)...), nil
 }
 func decryptFile(data []byte, key string) ([]byte, error) {
 	return decryptAttachment(data, key, false)

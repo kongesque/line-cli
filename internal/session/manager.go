@@ -56,6 +56,8 @@ type API interface {
 	UnsendMessageContext(context.Context, int64, string) error
 	UploadOBSWithSID([]byte, string) (string, error)
 	UploadOBSWithSIDContext(context.Context, []byte, string) (string, error)
+	DetermineMediaMessageFlowContext(context.Context, string) (*line.MediaMessageFlowResponse, error)
+	UploadOBSWithOIDAndSIDContext(context.Context, []byte, string, string) error
 	UploadOBSPlain([]byte, string, string) error
 	UploadOBSPlainContext(context.Context, []byte, string, string) error
 	DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error)
