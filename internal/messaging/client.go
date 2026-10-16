@@ -276,7 +276,13 @@ func (c *Client) SendReply(chat, text, replyTo string) (*SendResult, error) {
 }
 
 func (c *Client) SendReplyContext(ctx context.Context, chat, text, replyTo string) (*SendResult, error) {
-	return c.send(ctx, chat, text, replyTo, nil)
+	return c.send(ctx, chat, text, replyTo, nil, nil)
+}
+
+// SendMentionsContext sends explicit mentions with the ordinary single-attempt
+// text/reply flow. It does not derive mentions from literal @name text.
+func (c *Client) SendMentionsContext(ctx context.Context, chat, text, replyTo string, mentions []Mention) (*SendResult, error) {
+	return c.send(ctx, chat, text, replyTo, nil, mentions)
 }
 
 func (c *Client) SendFile(chat string, file Attachment, replyTo string) (*SendResult, error) {
@@ -284,10 +290,10 @@ func (c *Client) SendFile(chat string, file Attachment, replyTo string) (*SendRe
 }
 
 func (c *Client) SendFileContext(ctx context.Context, chat string, file Attachment, replyTo string) (*SendResult, error) {
-	return c.send(ctx, chat, "", replyTo, &file)
+	return c.send(ctx, chat, "", replyTo, &file, nil)
 }
 
-func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment) (result *SendResult, resultErr error) {
+func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment, mentions []Mention) (result *SendResult, resultErr error) {
 	op := &fault.Mutation{Action: "send", Outcome: fault.NotAttempted}
 	stage := "validation"
 	defer func() { resultErr = mutationFailure(op, stage, resultErr) }()
@@ -304,6 +310,15 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	if replyTo != "" {
 		if err := ValidateMessageID(replyTo); err != nil {
 			return nil, err
+		}
+	}
+	mentionMetadata, err := EncodeMentions(text, mentions)
+	if err != nil {
+		return nil, err
+	}
+	for _, mention := range mentions {
+		if mention.All && toType(chat) == 0 {
+			return nil, errors.New("mention-all requires a group or room")
 		}
 	}
 	op.ChatID = chat
@@ -332,6 +347,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	plain := c.state.NoE2EE
 	groupKeyRegistered := false
 	metadata := make(map[string]string)
+	if mentionMetadata != "" {
+		metadata["MENTION"] = mentionMetadata
+	}
 	contentType := 0
 	if file != nil {
 		contentType = 14
@@ -340,7 +358,6 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		metadata["contentType"] = "14"
 	}
 	var chunks []string
-	var err error
 	if !plain && kind == 0 {
 		key, keyErr := c.negotiate(ctx, chat)
 		if errors.Is(keyErr, errNoLetterSealing) {

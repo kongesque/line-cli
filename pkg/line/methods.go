@@ -659,17 +659,20 @@ func (c *Client) GetChatsContext(ctx context.Context, mids []string, withMembers
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int              `json:"code"`
-		Message string           `json:"message"`
-		Data    GetChatsResponse `json:"data"`
+		Code    *int              `json:"code"`
+		Message string            `json:"message"`
+		Data    *GetChatsResponse `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, err
+		return nil, errors.New("invalid getChats response")
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getChats failed: %s", wrapper.Message)
+	if wrapper.Code == nil || *wrapper.Code != 0 {
+		return nil, errors.New("getChats failed")
 	}
-	return &wrapper.Data, nil
+	if wrapper.Data == nil || wrapper.Data.Chats == nil {
+		return nil, errors.New("missing getChats response")
+	}
+	return wrapper.Data, nil
 }
 
 func (c *Client) GetLastOpRevision() (int64, error) {

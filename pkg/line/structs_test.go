@@ -118,3 +118,22 @@ func TestMessageDistinguishesMissingAndEmptyReactions(t *testing.T) {
 		t.Fatalf("empty reactions decoded as %#v, want non-nil empty slice", empty.Reactions)
 	}
 }
+
+func TestMembershipMapPresenceAndMalformedValues(t *testing.T) {
+	for _, tc := range []struct {
+		raw     string
+		present bool
+		invalid bool
+	}{
+		{`{}`, false, false}, {`{"memberMids":null}`, false, false},
+		{`{"memberMids":{}}`, true, false}, {`{"memberMids":[]}`, true, false},
+		{`{"memberMids":"invalid"}`, false, true}, {`{"memberMids":42}`, false, true},
+		{`{"memberMids":[42]}`, false, true},
+	} {
+		var group GroupExtra
+		err := json.Unmarshal([]byte(tc.raw), &group)
+		if (err != nil) != tc.invalid || (group.MemberMids != nil) != tc.present {
+			t.Fatalf("raw=%s err=%v map=%v", tc.raw, err, group.MemberMids)
+		}
+	}
+}
