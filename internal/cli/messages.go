@@ -30,6 +30,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	jsonOutput := fs.Bool("json", false, "write JSON to stdout")
 	limit := 20
 	var pageMode bool
+	var details, resolveNames bool
 	var cursor string
 	var text string
 	var stdin bool
@@ -38,6 +39,8 @@ func (a *App) messageCommand(command string, args []string) error {
 	var attachment *messaging.Attachment
 	showIDs := fs.Bool("show-ids", false, "show message IDs in human output")
 	if command == "messages" {
+		fs.BoolVar(&details, "details", false, "include safe decoded content in a versioned envelope (requires --json)")
+		fs.BoolVar(&resolveNames, "resolve-names", false, "resolve sender names in batches (requires --details --json)")
 		fs.IntVar(&limit, "limit", 20, "maximum messages to fetch (1–100)")
 		fs.BoolVar(&pageMode, "page", false, "return a JSON history page with continuation cursor (requires --json)")
 		fs.StringVar(&cursor, "cursor", "", "continue a history page (requires --page --json)")
@@ -68,6 +71,12 @@ func (a *App) messageCommand(command string, args []string) error {
 		if err := validateSelector(chat); err != nil {
 			return err
 		}
+	}
+	if details && !*jsonOutput {
+		return errors.New("--details requires --json")
+	}
+	if resolveNames && !details {
+		return errors.New("--resolve-names requires --details --json")
 	}
 	if pageMode && !*jsonOutput {
 		return errors.New("--page requires --json")
@@ -248,12 +257,18 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	failed := 0
 	for _, message := range messages {
-		if message.Status == "decryption_failed" {
+		if (!details && message.Status == "decryption_failed") || (details && message.Content.Status == "decryption_failed") {
 			failed++
 		}
 	}
 	if *jsonOutput {
-		if pageMode {
+		if details {
+			var result *detailedHistory
+			result, err = a.detailedMessages(chat, messages, page, resolveNames)
+			if err == nil {
+				err = a.json(result)
+			}
+		} else if pageMode {
 			err = a.json(page)
 		} else {
 			err = a.json(messages)

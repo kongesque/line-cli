@@ -281,6 +281,23 @@ Reading history does not mark messages as read or save their text locally. Some
 older encrypted messages may be unavailable if LINE no longer provides their
 original device keys.
 
+### Detailed content and chat JSON
+
+```sh
+line chats --details --json
+line messages CHAT_ID --details --json --resolve-names
+line messages CHAT_ID --details --page --json --limit 50
+```
+
+`--details` requires `--json` and returns a schema-1 envelope. Message details
+include normalized chat IDs, incoming mentions, locations, recovered encrypted
+filenames, attachment size/duration when available, contacts, sticker IDs, and
+bounded rich text/links. `--resolve-names` optionally looks up sender names in
+batches. Chat details consistently include names, activity, and unread counts;
+unknown values are explicit `null`. Legacy JSON remains unchanged. See the
+[detailed field contract](CONTENT.md) for statuses, unknown values, bounds, and
+partial-result handling. Human output also uses the decoded content summaries.
+
 ### Send messages and files
 
 ```sh

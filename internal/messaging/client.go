@@ -110,6 +110,8 @@ func newClient(manager *session.Manager, factory func() (Crypto, error)) (*Clien
 }
 
 type Message struct {
+	ChatID      string                 `json:"-"`
+	Content     Content                `json:"-"`
 	FileName    string                 `json:"file_name,omitempty"`
 	ID          string                 `json:"id"`
 	From        string                 `json:"from"`
@@ -169,6 +171,13 @@ func (c *Client) DecodeContext(ctx context.Context, chat string, msg *line.Messa
 	item := Message{ID: msg.ID, From: msg.From, To: msg.To, CreatedTime: timestamp, ContentType: msg.ContentType,
 		ReplyTo: msg.RelatedMessageID, Reactions: msg.Reactions,
 		Encrypted: len(msg.Chunks) > 0 || msg.ContentMetadata["e2eeVersion"] != ""}
+	// Storage/encryption markers also prohibit a plaintext content projection when
+	// chunks are absent or damaged, matching attachment download validation.
+	if IsDownloadable(msg.ContentType) && (msg.ContentMetadata["OID"] != "" || msg.ContentMetadata["ENC_KM"] != "" || strings.HasPrefix(msg.ContentMetadata["SID"], "em")) {
+		item.Encrypted = true
+	}
+	item.ChatID = chat
+	// Keep the legacy projection and expose richer decoding separately.
 	if IsDownloadable(msg.ContentType) {
 		item.Status = "attachment"
 		if msg.ContentType == 14 {
@@ -179,13 +188,28 @@ func (c *Client) DecodeContext(ctx context.Context, chat string, msg *line.Messa
 	} else if !item.Encrypted {
 		item.Status, item.Text = "plaintext", msg.Text
 	} else {
-		text, err := c.decrypt(ctx, chat, msg)
+		item.Status = "decrypted"
+	}
+	payload := ""
+	if item.Encrypted && contentKind(msg.ContentType) != "unsupported" {
+		var err error
+		payload, err = c.decryptPayload(ctx, chat, msg)
 		if err != nil {
-			item.Status, item.Error = "decryption_failed", err.Error()
-		} else {
-			item.Status, item.Text = "decrypted", text
+			item.Content = Content{Kind: contentKind(msg.ContentType), Status: "decryption_failed"}
+			if msg.ContentType == 0 {
+				item.Status, item.Error = "decryption_failed", err.Error()
+			}
+			return item
 		}
 	}
+	item.Content = decodeContent(msg, item.Encrypted, payload)
+	if item.Encrypted && msg.ContentType == 0 {
+		item.Text = item.Content.Text
+		if item.Content.Status == "malformed_metadata" && item.Content.Text == "" && item.Content.Location == nil {
+			item.Status, item.Error = "decryption_failed", "decrypted payload is not a supported text message"
+		}
+	}
+
 	return item
 }
 
@@ -227,20 +251,6 @@ func (c *Client) decryptPayload(ctx context.Context, chat string, msg *line.Mess
 		return "", errors.New("letter sealing decryption failed; the required device keys may be unavailable")
 	}
 	return payload, nil
-}
-
-func (c *Client) decrypt(ctx context.Context, chat string, msg *line.Message) (string, error) {
-	payload, err := c.decryptPayload(ctx, chat, msg)
-	if err != nil {
-		return "", err
-	}
-	var body struct {
-		Text *string `json:"text"`
-	}
-	if err := json.Unmarshal([]byte(payload), &body); err != nil || body.Text == nil {
-		return "", errors.New("decrypted payload is not a supported text message")
-	}
-	return *body.Text, nil
 }
 
 type SendResult struct {

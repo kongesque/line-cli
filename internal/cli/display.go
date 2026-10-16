@@ -12,8 +12,31 @@ import (
 )
 
 func messagePreview(m messaging.Message) string {
-	if m.Error != "" {
+	if m.Content.Status == "decryption_failed" || m.Error != "" {
 		return "[Unable to decrypt this message]"
+	}
+	if m.Content.Status == "malformed_metadata" {
+		return "[Malformed message content]"
+	}
+	if m.Content.Location != nil {
+		l := m.Content.Location
+		return fmt.Sprintf("[Location: %s · %s · %.6f, %.6f]", terminalText(l.Title), terminalText(l.Address), l.Latitude, l.Longitude)
+	}
+	if m.Content.Contact != nil {
+		return "[Contact: " + terminalText(m.Content.Contact.DisplayName) + " · " + terminalText(m.Content.Contact.MID) + "]"
+	}
+	if m.Content.Rich != nil && (m.Content.Rich.AltText != "" || len(m.Content.Rich.Text) > 0 || len(m.Content.Rich.Links) > 0) {
+		return terminalText(strings.Join(append(append([]string{m.Content.Rich.AltText}, m.Content.Rich.Text...), m.Content.Rich.Links...), "\n"))
+	}
+	if m.Content.Sticker != nil {
+		return "[Sticker: " + terminalText(m.Content.Sticker.PackageID) + "/" + terminalText(m.Content.Sticker.ID) + "]"
+	}
+	if m.Content.Attachment != nil && m.Content.Attachment.Name != nil {
+		kind := map[string]string{"file": "File", "image": "Image", "video": "Video", "audio": "Audio"}[m.Content.Attachment.Type]
+		return "[" + kind + ": " + terminalText(*m.Content.Attachment.Name) + "]"
+	}
+	if m.ContentType == 14 && m.Content.Attachment != nil {
+		return "[File: (name unavailable)]"
 	}
 	if m.ContentType == 14 {
 		return "[File: " + terminalText(m.FileName) + "]"
@@ -110,7 +133,7 @@ func (a *App) renderMessages(chat string, messages []messaging.Message, ids bool
 			}
 		}
 		body := messagePreview(m)
-		if m.ContentType == 0 && m.Error == "" {
+		if m.ContentType == 0 && m.Error == "" && m.Content.Kind != "location" && m.Content.Status != "malformed_metadata" {
 			body = m.Text
 		}
 		// Preserve line breaks; terminals wrap Unicode using their own cell widths.

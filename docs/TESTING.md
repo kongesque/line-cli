@@ -16,6 +16,14 @@ Linux and Windows support `CGO_ENABLED=0`.
 | Boot, systemd, and migration integration | Linux session tests and systemd probe | Explicitly enabled inside a disposable, booted Linux VM |
 | Live LINE history and watching | `internal/messaging/live_test.go`, `internal/events/live_test.go` | Explicit authorization and opt-in with a saved session |
 
+Content tests cover authenticated payload precedence for text/location/filenames,
+UTF-16 mentions (including emoji, mention-all, overlap and bounds), malformed or
+missing location coordinates, attachment unknowns, contact/sticker allowlists,
+and bounded rich traversal. CLI tests cover detailed envelopes, optional batched
+names, storage/cancellation propagation, partial results, and legacy JSON
+compatibility. Event tests verify the shared decoder with unchanged watch JSON.
+No content test downloads media, registers keys, or sends read receipts.
+
 ### Main contributor suite
 
 On macOS and Linux:

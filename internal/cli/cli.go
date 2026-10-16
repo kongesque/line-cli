@@ -254,6 +254,7 @@ func (a *App) json(value any) error {
 // Chat deliberately excludes LastMessages: this command lists conversations
 // without presenting encrypted message payloads as if they were decoded text.
 type Chat struct {
+	UnreadKnown bool        `json:"-"`
 	ID          string      `json:"id"`
 	Type        int         `json:"type"`
 	UnreadCount json.Number `json:"unread_count"`
@@ -286,7 +287,7 @@ func (a *App) chatBoxes(active, recent bool) ([]Chat, error) {
 				if unread == "" {
 					unread = "0"
 				}
-				chat := Chat{ID: box.ID, Type: box.MidType, UnreadCount: unread}
+				chat := Chat{UnreadKnown: box.UnreadCount != "", ID: box.ID, Type: box.MidType, UnreadCount: unread}
 				if recent {
 					if box.LastDeliveredMessageID != nil {
 						chat.UpdatedAt, _ = box.LastDeliveredMessageID.DeliveredTime.Int64()
