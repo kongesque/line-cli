@@ -18,6 +18,11 @@ type fileCrypto struct {
 	contentType int
 }
 
+func (f *fileCrypto) EncryptGroupMessageRawVersion(chat, from string, version, kind int, payload []byte) ([]string, error) {
+	f.groupVersion = version
+	return f.EncryptGroupMessageRaw(chat, from, kind, payload)
+}
+
 func (f *fileCrypto) EncryptMessageV2Raw(_ string, _ string, _ int, _ string, _ int, _ int, kind int, payload []byte) ([]string, error) {
 	f.payloadSent = payload
 	f.contentType = kind

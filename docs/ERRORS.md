@@ -53,6 +53,22 @@ and sequence are omitted when unavailable. The persisted request sequence is
 within LINE's signed 32-bit range and remains a JSON number. This report is not
 an operation ledger and does not supply a deduplication or replay API.
 
+Request failures may additionally include `error.diagnostic`. Its `kind`
+distinguishes `transport` (HTTP exchange failed), `response_read` (body could
+not be read completely), `gateway` (HTTP/application error),
+`response_envelope` (invalid JSON or missing/invalid success code),
+`message_decode` (message data could not be decoded), and `missing_receipt`
+(send returned no message or no ID). Gateway diagnostics include `http_status`
+and, when available, numeric `gateway_code`. Only the known exception names
+`TalkException` and `TokenAuthException` and their numeric `exception_code` are
+exposed. Server reason strings, body contents, and transport error text are
+never included. Other failures may omit diagnostics.
+
+These details do not change outcome classification or authorize retries. A
+gateway failure or a parsing failure can still follow a delivered message.
+For missing-history investigations, `messages CHAT --diagnostics --json`
+reports returned IDs before decryption without message text or encrypted data.
+
 | Code | Meaning |
 | --- | --- |
 | `invalid_arguments` | Invalid or missing options/input; validation stopped the command. |

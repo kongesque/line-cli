@@ -622,16 +622,29 @@ func (m *Manager) ensureGroupChannel(chatMid string, groupKeyID, unwrappedKeyID,
 }
 
 func (m *Manager) EncryptGroupMessage(chatMid, fromMid string, plaintext string) ([]string, error) {
+	return m.EncryptGroupMessageVersion(chatMid, fromMid, 2, plaintext)
+}
+
+// EncryptGroupMessageVersion uses the group's negotiated Letter Sealing version.
+func (m *Manager) EncryptGroupMessageVersion(chatMid, fromMid string, version int, plaintext string) ([]string, error) {
 	payload, err := json.Marshal(map[string]string{"text": plaintext})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
-	return m.EncryptGroupMessageRaw(chatMid, fromMid, 0, payload)
+	return m.EncryptGroupMessageRawVersion(chatMid, fromMid, version, 0, payload)
 }
 
-// group messages are encrypted differently compared to 1:1 messages.
-// Falls back to V1 if V2 fails (some clients like iOS still use V1).
+// EncryptGroupMessageRaw encrypts a group payload using V2.
 func (m *Manager) EncryptGroupMessageRaw(chatMid, fromMid string, contentType int, payload []byte) ([]string, error) {
+	return m.EncryptGroupMessageRawVersion(chatMid, fromMid, 2, contentType, payload)
+}
+
+// EncryptGroupMessageRawVersion selects the negotiated cipher explicitly. A V2
+// failure must not return V1 chunks that the caller would label as V2.
+func (m *Manager) EncryptGroupMessageRawVersion(chatMid, fromMid string, version, contentType int, payload []byte) ([]string, error) {
+	if version != 1 && version != 2 {
+		return nil, errors.New("unsupported group encryption version")
+	}
 	m.mu.Lock()
 	groupKeyID, ok := m.latestGroupKey[chatMid]
 	var unwrappedKeyID int
@@ -652,13 +665,12 @@ func (m *Manager) EncryptGroupMessageRaw(chatMid, fromMid string, contentType in
 		return nil, err
 	}
 
+	if version == 1 {
+		return m.encryptV1Chunks(chanID, myKeyID, groupKeyID, payload)
+	}
 	ctB64, err := m.runner.ChannelEncryptV2(chanID, chatMid, fromMid, myKeyID, groupKeyID, contentType, seq, string(payload))
 	if err != nil {
-		if isFatalLTSMError(err) {
-			return nil, err
-		}
-		// V2 failed, fall back to V1 (some clients like iOS still use V1)
-		return m.encryptV1Chunks(chanID, myKeyID, groupKeyID, payload)
+		return nil, err
 	}
 	ctBytes, err := base64.StdEncoding.DecodeString(ctB64)
 	if err != nil {

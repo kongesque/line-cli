@@ -407,13 +407,13 @@ func (c *Client) callRPCWithBaseURLContext(ctx context.Context, baseURL, service
 	}
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, requestFailure("transport", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read LINE response: %w", err)
+		return nil, requestFailure("response_read", err)
 	}
 	if err := responseError(resp.StatusCode, respBody); err != nil && (resp.StatusCode != 200 || IsAuthError(err)) {
 		return nil, err

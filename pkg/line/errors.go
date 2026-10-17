@@ -372,8 +372,11 @@ func mutationResponse(body []byte) error {
 	var envelope struct {
 		Code *int `json:"code"`
 	}
-	if json.Unmarshal(body, &envelope) != nil || envelope.Code == nil {
-		return errors.New("LINE returned an invalid mutation response")
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return requestFailure("response_envelope", err)
+	}
+	if envelope.Code == nil {
+		return requestFailure("response_envelope", errors.New("missing response code"))
 	}
 	return responseError(200, body)
 }

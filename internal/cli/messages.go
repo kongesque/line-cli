@@ -31,6 +31,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	limit := 20
 	var pageMode bool
 	var details, resolveNames bool
+	var diagnostics bool
 	var cursor string
 	var text string
 	var stdin bool
@@ -43,6 +44,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	var attachment *messaging.Attachment
 	showIDs := fs.Bool("show-ids", false, "show message IDs in human output")
 	if command == "messages" {
+		fs.BoolVar(&diagnostics, "diagnostics", false, "report recent-history IDs and counts before decryption, without content (requires --json; excludes --details/--page)")
 		fs.BoolVar(&details, "details", false, "include safe decoded content in a versioned envelope (requires --json)")
 		fs.BoolVar(&resolveNames, "resolve-names", false, "resolve sender names in batches (requires --details --json)")
 		fs.IntVar(&limit, "limit", 20, "maximum messages to fetch (1–100)")
@@ -80,6 +82,9 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	if details && !*jsonOutput {
 		return errors.New("--details requires --json")
+	}
+	if diagnostics && (!*jsonOutput || details || pageMode || resolveNames) {
+		return errors.New("--diagnostics requires --json and cannot be combined with --details, --page, or --resolve-names")
 	}
 	if resolveNames && !details {
 		return errors.New("--resolve-names requires --details --json")
@@ -291,6 +296,13 @@ func (a *App) messageCommand(command string, args []string) error {
 		return a.confirmedOutput(op, err)
 	}
 	var messages []messaging.Message
+	if diagnostics {
+		result, err := client.HistoryDiagnosticsContext(a.loginContext(), chat, limit)
+		if err != nil {
+			return err
+		}
+		return a.json(result)
+	}
 	var page *messaging.HistoryPage
 	if pageMode {
 		page, err = client.HistoryPageContext(a.loginContext(), chat, limit, cursor)

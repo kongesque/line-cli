@@ -63,9 +63,9 @@ type Crypto interface {
 	DecryptMessageV2(*line.Message) (string, error)
 	DecryptGroupMessage(*line.Message, string) (string, int, error)
 	EncryptMessageV2(string, string, int, string, int, int, int, string) ([]string, error)
-	EncryptGroupMessage(string, string, string) ([]string, error)
+	EncryptGroupMessageVersion(string, string, int, string) ([]string, error)
 	EncryptMessageV2Raw(string, string, int, string, int, int, int, []byte) ([]string, error)
-	EncryptGroupMessageRaw(string, string, int, []byte) ([]string, error)
+	EncryptGroupMessageRawVersion(string, string, int, int, []byte) ([]string, error)
 	GenerateGroupKey() (int, error)
 	WrapGroupKeyForMember(string, int) (string, error)
 }
@@ -75,7 +75,7 @@ type Client struct {
 	state     *session.State
 	crypto    Crypto
 	keyError  error
-	groupKeys map[string]bool
+	groupKeys map[string]int // chat:key ID -> negotiated version; key ID 0 is the latest send lookup
 }
 
 func New(manager *session.Manager) (*Client, error) {
@@ -90,7 +90,7 @@ func newClient(manager *session.Manager, factory func() (Crypto, error)) (*Clien
 	if s.Invalidated {
 		return nil, errors.New("LINE session was logged out; run line login")
 	}
-	c := &Client{Session: manager, state: s, groupKeys: make(map[string]bool)}
+	c := &Client{Session: manager, state: s, groupKeys: make(map[string]int)}
 	if s.NoE2EE {
 		return c, nil
 	}
@@ -131,14 +131,8 @@ func (c *Client) History(chat string, limit int) ([]Message, error) {
 }
 
 func (c *Client) HistoryContext(ctx context.Context, chat string, limit int) ([]Message, error) {
-	if err := ValidateChatID(chat); err != nil {
-		return nil, err
-	}
-	if limit < 1 || limit > 100 {
-		return nil, errors.New("limit must be between 1 and 100")
-	}
-	var raw []*line.Message
-	if err := c.Session.DoContext(ctx, func(api session.API) (err error) { raw, err = api.GetRecentMessagesV2Context(ctx, chat, limit); return }); err != nil {
+	raw, err := c.recentMessages(ctx, chat, limit)
+	if err != nil {
 		return nil, err
 	}
 	result := make([]Message, 0, len(raw))
@@ -155,6 +149,20 @@ func (c *Client) HistoryContext(ctx context.Context, chat string, limit int) ([]
 		}
 	}
 	return result, nil
+}
+
+func (c *Client) recentMessages(ctx context.Context, chat string, limit int) ([]*line.Message, error) {
+	if err := ValidateChatID(chat); err != nil {
+		return nil, err
+	}
+	if limit < 1 || limit > 100 {
+		return nil, errors.New("limit must be between 1 and 100")
+	}
+	var raw []*line.Message
+	if err := c.Session.DoContext(ctx, func(api session.API) (err error) { raw, err = api.GetRecentMessagesV2Context(ctx, chat, limit); return }); err != nil {
+		return nil, err
+	}
+	return raw, ctx.Err()
 }
 
 // Decode converts a non-nil history or stream message to safe CLI output.
@@ -375,6 +383,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 	}
 	var chunks []string
+	encryptionVersion := 2
 	if !plain && kind == 0 {
 		key, keyErr := c.negotiate(ctx, chat)
 		if errors.Is(keyErr, errNoLetterSealing) {
@@ -409,13 +418,14 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		if errors.Is(err, errNoLetterSealing) {
 			plain, err = true, nil
 		} else if err == nil {
+			encryptionVersion = c.groupKeys[chat+":0"]
 			if file == nil {
-				chunks, err = c.crypto.EncryptGroupMessage(chat, c.state.MID, text)
+				chunks, err = c.crypto.EncryptGroupMessageVersion(chat, c.state.MID, encryptionVersion, text)
 			} else {
 				var payload []byte
 				payload, err = c.uploadAttachment(ctx, file, image, metadata, op)
 				if err == nil {
-					chunks, err = c.crypto.EncryptGroupMessageRaw(chat, c.state.MID, contentType, payload)
+					chunks, err = c.crypto.EncryptGroupMessageRawVersion(chat, c.state.MID, encryptionVersion, contentType, payload)
 				}
 			}
 		}
@@ -453,7 +463,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		msg.Text = text
 	} else {
 		msg.Chunks = chunks
-		msg.ContentMetadata["e2eeVersion"] = "2"
+		msg.ContentMetadata["e2eeVersion"] = strconv.Itoa(encryptionVersion)
 	}
 	var sent *line.Message
 	stage = "send"
@@ -470,7 +480,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	if sent == nil || sent.ID == "" {
 		op.Outcome = fault.Unknown
 		op.Steps[len(op.Steps)-1].Outcome = fault.Unknown
-		return nil, fault.New("remote_failed", "send", "send returned no message ID; delivery may have occurred; inspect history before retrying", nil)
+		return nil, fault.New("remote_failed", "send", "send returned no message ID; delivery may have occurred; inspect history before retrying", line.ErrMissingMessageReceipt)
 	}
 	op.MessageID = sent.ID
 	if plain && file != nil {

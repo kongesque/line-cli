@@ -34,16 +34,22 @@ func decodeHistoryResponse(resp []byte, count int) ([]*Message, error) {
 		Code *int            `json:"code"`
 		Data json.RawMessage `json:"data"`
 	}
-	if json.Unmarshal(resp, &wrapper) != nil || wrapper.Code == nil || *wrapper.Code != 0 {
-		return nil, errors.New("history request failed")
+	if err := json.Unmarshal(resp, &wrapper); err != nil {
+		return nil, requestFailure("response_envelope", err)
+	}
+	if wrapper.Code == nil {
+		return nil, requestFailure("response_envelope", errors.New("missing response code"))
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
 	}
 	// A missing/null payload must not masquerade as the end of history.
 	var messages []*Message
 	if len(wrapper.Data) == 0 || wrapper.Data[0] != '[' || json.Unmarshal(wrapper.Data, &messages) != nil {
-		return nil, errors.New("invalid history response")
+		return nil, requestFailure("message_decode", errors.New("invalid history response"))
 	}
 	if len(messages) > count {
-		return nil, errors.New("history response exceeds requested count")
+		return nil, requestFailure("message_decode", errors.New("history response exceeds requested count"))
 	}
 	return messages, nil
 }

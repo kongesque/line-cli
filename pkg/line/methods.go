@@ -412,7 +412,10 @@ func (c *Client) SendMessageContext(ctx context.Context, reqSeq int64, msg *Mess
 		Data *Message `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, err
+		return nil, requestFailure("message_decode", err)
+	}
+	if wrapper.Data == nil || wrapper.Data.ID == "" {
+		return nil, ErrMissingMessageReceipt
 	}
 	return wrapper.Data, nil
 }

@@ -54,6 +54,19 @@ authentication rejection followed by failed recovery, lost/missing receipts,
 preparation side effects, and plaintext-file upload failures without replay.
 All use synthetic APIs/transports; no live LINE mutation is authorized by them.
 
+Request diagnostic tests distinguish transport, response-read, gateway,
+envelope, message-decoding, and missing-receipt failures; verify redaction and
+wrapped cancellation; and exercise the protocol-to-session-to-CLI error path
+with a persisted sequence and exactly one send. History diagnostic tests retain
+large returned IDs even for undecryptable messages, count null/malformed IDs,
+exclude message content, and reject incompatible flags before session access.
+
+Group encryption tests cover negotiated V1/V2 and the absent-version default
+for text, mentions, replies, and files; refreshed negotiation; unsupported
+versions; and cipher failures without sending or downgrading to plaintext.
+The E2EE manager suite includes a real synthetic-key V1 roundtrip and checks
+that V2 encryption errors cannot fall back to mislabeled V1 chunks.
+
 History tests cover lossless IDs/delivered times, chat-bound cursors, inclusive
 and exclusive anchors, short/empty/malformed/nonadvancing pages, bounded lookup,
 authentication recovery, wrong-chat replies, ownership, and older targets across

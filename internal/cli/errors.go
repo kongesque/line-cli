@@ -174,6 +174,9 @@ func DescribeError(err error, stage string, op *fault.Mutation) *fault.Error {
 	}
 	detail := fault.New(code, stage, message, err)
 	detail.Mutation = op
+	if d := line.RequestDiagnostics(err); d != nil {
+		detail.Diagnostic = &fault.Diagnostic{Kind: d.Kind, HTTPStatus: d.HTTPStatus, GatewayCode: d.GatewayCode, Exception: d.Exception, ExceptionCode: d.ExceptionCode}
+	}
 	if op != nil {
 		switch op.Outcome {
 		case fault.Unknown:

@@ -66,7 +66,7 @@ func (c *Client) peerByID(ctx context.Context, mid string, id int) error {
 // fresh key explicitly as part of preparation for a requested send.
 func (c *Client) groupKey(ctx context.Context, chat string, id int) error {
 	cacheKey := fmt.Sprintf("%s:%d", chat, id)
-	if id > 0 && c.groupKeys[cacheKey] {
+	if _, cached := c.groupKeys[cacheKey]; id > 0 && cached {
 		return nil
 	}
 	var key *line.E2EEGroupSharedKey
@@ -91,6 +91,14 @@ func (c *Client) groupKey(ctx context.Context, chat string, id int) error {
 	if key == nil || key.GroupKeyID <= 0 || key.CreatorKeyID <= 0 || key.ReceiverKeyID <= 0 || key.EncryptedSharedKey == "" || (id > 0 && key.GroupKeyID != id) {
 		return errors.New("LINE returned an incomplete or mismatched group key")
 	}
+	version := key.SpecVersion
+	if version == 0 {
+		// Chrome 3.7.2 defaults absent negotiation versions to Nd (2).
+		version = 2
+	}
+	if id == 0 && version != 1 && version != 2 {
+		return errors.New("unsupported negotiated group encryption version; nothing was sent")
+	}
 	if err := c.peerByID(ctx, key.Creator, key.CreatorKeyID); err != nil {
 		return err
 	}
@@ -100,7 +108,10 @@ func (c *Client) groupKey(ctx context.Context, chat string, id int) error {
 		}
 		return errors.New("could not unwrap the group key")
 	}
-	c.groupKeys[fmt.Sprintf("%s:%d", chat, key.GroupKeyID)] = true
+	c.groupKeys[fmt.Sprintf("%s:%d", chat, key.GroupKeyID)] = version
+	if id == 0 {
+		c.groupKeys[cacheKey] = version
+	}
 	return nil
 }
 
