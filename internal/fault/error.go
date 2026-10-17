@@ -31,12 +31,22 @@ type Mutation struct {
 	Steps           []Step  `json:"steps,omitempty"`
 }
 
+// Diagnostic is the allowlisted request failure detail in the machine channel.
+type Diagnostic struct {
+	Kind          string `json:"kind"`
+	HTTPStatus    int    `json:"http_status,omitempty"`
+	GatewayCode   *int   `json:"gateway_code,omitempty"`
+	Exception     string `json:"exception,omitempty"`
+	ExceptionCode *int   `json:"exception_code,omitempty"`
+}
+
 type Error struct {
-	Code     string    `json:"code"`
-	Stage    string    `json:"stage"`
-	Message  string    `json:"message"`
-	Mutation *Mutation `json:"mutation,omitempty"`
-	cause    error
+	Code       string      `json:"code"`
+	Stage      string      `json:"stage"`
+	Message    string      `json:"message"`
+	Mutation   *Mutation   `json:"mutation,omitempty"`
+	Diagnostic *Diagnostic `json:"diagnostic,omitempty"`
+	cause      error
 }
 
 func New(code, stage, message string, cause error) *Error {

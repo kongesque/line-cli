@@ -39,8 +39,8 @@ func TestGetContactsV2DistinguishesEmptyFromMalformedResponses(t *testing.T) {
 		{"missing map", `{"code":0,"data":{}}`, false},
 		{"null map", `{"code":0,"data":{"contacts":null}}`, false},
 		{"null entry", `{"code":0,"data":{"contacts":{"private-mid":null}}}`, false},
-		{"missing contact", `{"code":0,"data":{"contacts":{"private-mid":{}}}}`, false},
-		{"null contact", `{"code":0,"data":{"contacts":{"private-mid":{"contact":null}}}}`, false},
+		{"missing contact", `{"code":0,"data":{"contacts":{"private-mid":{}}}}`, true},
+		{"null contact", `{"code":0,"data":{"contacts":{"private-mid":{"contact":null}}}}`, true},
 		{"wrong contact type", `{"code":0,"data":{"contacts":{"private-mid":{"contact":"private-profile"}}}}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -55,5 +55,23 @@ func TestGetContactsV2DistinguishesEmptyFromMalformedResponses(t *testing.T) {
 				t.Fatalf("malformed response accepted or exposed: %v", err)
 			}
 		})
+	}
+}
+
+func TestGetContactsV2UnavailableProfilesDoNotDiscardResolvedContacts(t *testing.T) {
+	client := newReactionTestClientWithResponse(t,
+		"/api/talk/thrift/Talk/TalkService/getContactsV2",
+		`{"code":0,"data":{"contacts":{"u-available":{"contact":{"mid":"u-available","displayName":"Alice"}},"u-null":{"contact":null},"u-missing":{}}}}`, nil)
+	response, err := client.GetContactsV2([]string{"u-available", "u-null", "u-missing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Contacts) != 1 || response.Contacts["u-available"].Contact.EffectiveDisplayName() != "Alice" {
+		t.Fatal("an unavailable profile discarded a resolved contact")
+	}
+	for _, mid := range []string{"u-null", "u-missing"} {
+		if _, ok := response.Contacts[mid]; ok {
+			t.Fatal("unavailable profile became a resolved contact")
+		}
 	}
 }

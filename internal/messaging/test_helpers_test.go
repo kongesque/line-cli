@@ -110,6 +110,7 @@ type fakeCrypto struct {
 	registered   []int
 	unwrapped    []int
 	decryptCalls int
+	groupVersion int
 }
 
 func (f *fakeCrypto) LoadMyKeyFromExportedMap(keys map[string]string) error {
@@ -148,6 +149,11 @@ func (f *fakeCrypto) EncryptMessageV2(string, string, int, string, int, int, int
 
 func (f *fakeCrypto) EncryptGroupMessage(string, string, string) ([]string, error) {
 	return encryptedChunks(11, 33), f.encryptErr
+}
+
+func (f *fakeCrypto) EncryptGroupMessageVersion(chat, from string, version int, text string) ([]string, error) {
+	f.groupVersion = version
+	return f.EncryptGroupMessage(chat, from, text)
 }
 
 func (f *fakeCrypto) GenerateGroupKey() (int, error) { return 33, nil }

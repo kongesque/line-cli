@@ -247,7 +247,23 @@ line messages CHAT_ID --json
 By default, `messages` fetches 1–100 recent messages. Human output sorts by
 created time, oldest first; legacy `--json` retains the server's array order.
 `--show-ids` includes the IDs needed for replies, reactions, downloads, and
-unsend. To continue into older available history, use the opt-in page contract:
+unsend. To inspect which IDs LINE returns before decryption, without printing
+message content:
+
+```sh
+line --error-format=json messages "Chat name" --diagnostics --json --limit 50
+```
+
+This returns `schema_version: 1`, `chat_id`, `method: "getRecentMessagesV2"`,
+`requested_count`, `returned_count`, `null_count`, `invalid_id_count`, and
+`message_ids` in server order. IDs remain strings; malformed IDs are counted
+instead of printed. It performs one logical recent-history read (authentication
+recovery may retry), without decryption or key lookups. An absent ID means it
+was not in this response, not that delivery failed or all history was searched.
+`--diagnostics` requires `--json` and cannot combine with `--details`,
+`--resolve-names`, `--page`, or `--cursor`. Normal history output is unchanged.
+
+To continue into older available history, use the opt-in page contract:
 
 ```sh
 line messages CHAT_ID --page --json --limit 50
