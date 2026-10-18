@@ -55,7 +55,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -400,17 +399,13 @@ func (c *Client) qrRequest(ctx context.Context, serviceRoot, method string, arg 
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	resp, err := c.qrHTTPClient(wait).Do(req)
+	resp, err := doLINERequest(c.qrHTTPClient(wait), req)
 	if err != nil {
 		return nil, true, qrIOError(ctx, err)
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, qrMaxBodyBytes+1))
+	body, err := readResponseBody(resp, qrMaxBodyBytes)
 	if err != nil {
 		return nil, true, qrIOError(ctx, err)
-	}
-	if len(body) > qrMaxBodyBytes {
-		return nil, true, errors.New("QR response exceeds size limit")
 	}
 	if resp.StatusCode != http.StatusOK {
 		// Gateway failures may use non-200 outer statuses. Only the validated

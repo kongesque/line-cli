@@ -45,19 +45,19 @@ func TestFileSendEnvelopeAndUploadOrdering(t *testing.T) {
 			f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
 			f.history = []*line.Message{{ID: "123", From: "u-self", To: chat, ToType: toType(chat)}}
 			attachment := Attachment{Name: "notes.pdf", Data: []byte("private attachment bytes")}
-			result, err := c.SendFile(chat, attachment, "123")
+			result, err := c.SendFileWithOptionsContext(context.Background(), chat, attachment, "123", SendOptions{AllowPlaintext: plain})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Encrypted == plain || f.sent.ContentType != 14 || !f.sent.HasContent || f.sent.ContentMetadata["FILE_NAME"] != "notes.pdf" || f.sent.RelatedMessageID != "123" {
+			if result.Encrypted == plain || f.sent.ContentType != 14 || !f.sent.HasContent || f.sent.RelatedMessageID != "123" {
 				t.Fatal("incorrect attachment envelope")
 			}
 			if plain {
-				if strings.Join(api.order, ",") != "send,plain_upload" || !bytes.Equal(api.uploaded, attachment.Data) {
+				if f.sent.ContentMetadata["FILE_NAME"] != "notes.pdf" || strings.Join(api.order, ",") != "send,plain_upload" || !bytes.Equal(api.uploaded, attachment.Data) {
 					t.Fatal("plain upload must follow message creation")
 				}
 			} else {
-				if strings.Join(api.order, ",") != "upload,send" || bytes.Contains(api.uploaded, attachment.Data) || crypt.contentType != 14 {
+				if f.sent.ContentMetadata["ENC_KM"] != "" || f.sent.ContentMetadata["FILE_NAME"] != "" || strings.Join(api.order, ",") != "upload,send" || bytes.Contains(api.uploaded, attachment.Data) || crypt.contentType != 14 {
 					t.Fatal("encrypted upload order/body incorrect")
 				}
 				var payload map[string]string
@@ -83,7 +83,7 @@ func TestFileUploadFailureNeverRetriesOrSendsEmptyEncryptedMessage(t *testing.T)
 		api := &fileAPI{fakeAPI: f, uploadErr: errors.New("private body"), plainErr: errors.New("private body")}
 		c.crypto = &fileCrypto{fakeCrypto: crypto}
 		c.Session.NewClient = func(string) session.API { return api }
-		_, err := c.SendFile("u-peer", Attachment{Name: "test.bin", Data: []byte("test")}, "")
+		_, err := c.SendFileWithOptionsContext(context.Background(), "u-peer", Attachment{Name: "test.bin", Data: []byte("test")}, "", SendOptions{AllowPlaintext: plain})
 		if err == nil || strings.Contains(err.Error(), "private") {
 			t.Fatal("unsafe upload error", err)
 		}

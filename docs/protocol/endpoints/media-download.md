@@ -89,3 +89,47 @@ returned records, and 30 seconds; see [history](history.md). Plaintext downloads
 remain limited to 20 MiB. Full verified bytes are buffered before publication to a
 file or stdout. No live capture was needed to resolve these code paths; live
 interoperability has not been claimed.
+
+## Outgoing generic-file confidentiality
+
+On 2026-10-18, rechecked the same official Chrome 3.7.2 package documented in
+[image send](image-send.md) (SHA-256
+`3722ab02edb0aba49c229399ee8df5b4b5a38c60b76efadadfbae395015eb859`).
+Its shared `gL` packages `ENC_KM` and `FILE_NAME` as `keyMaterial` and `fileName`;
+`EL` removes both outer fields when constructing the encrypted message. `yL`
+restores them only after decryption. These helpers apply to encrypted media,
+not just images. The CLI now follows this envelope for generic files while
+retaining historical incoming metadata conflict checks. No live send was used.
+
+
+## File capability validation after live inspection
+
+The same Chrome 3.7.2 source uses `sP` and `checkAndGetMediaMessageFlow` for
+all media types, including file type 14. `encryptMessage` encrypts media only
+when its type-specific flow is 2. The CLI had applied this check only to images;
+it now checks `flowMap["14"]` before generic-file uploads too. An explicit 1
+requires per-send plaintext consent; missing/unknown/error responses stop sends.
+
+In an authorized test group, LINE advertised file flow 1 even though encrypted
+text worked. An encrypted object upload succeeded (HTTP 201), but the subsequent
+file message returned HTTP 400 / TalkException. No file message appeared in the
+inspected recent history. This exposed the missing capability check; the exact
+server exception code was not retained, so the HTTP rejection alone does not
+prove which field LINE rejected. The corrected default path is verified to
+refuse before upload, registration, message send, or sequence reservation.
+Encrypted-file delivery/download remains unverified on a live flow-2 chat.
+
+A subsequent read-only probe fetched the latest group-key capability before the
+media-flow query, matching Chrome's negotiation order. The tested group returned
+spec version 1, allowed text, excluded file type 14, and still returned file flow
+1. With separate explicit plaintext consent, one synthetic file then completed
+message creation, upload, history lookup, and byte-identical download. Its
+receipt/history reported `encrypted=false`; no group key was registered. This
+establishes plaintext interoperability for that group, not encrypted-file support.
+
+A separately authorized direct-chat test on 2026-10-19 also returned file flow
+1. Default sending stopped before any upload/send or sequence change. With
+explicit plaintext consent, one synthetic `.txt` file completed message creation,
+upload, history lookup, and a byte-identical 28-byte download. Its receipt and
+history reported `encrypted=false`. Direct-chat type alone therefore does not
+establish an encrypted-file capability.

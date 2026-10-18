@@ -2,7 +2,7 @@
 
 Tests live beside the packages they exercise. Ordinary tests use synthetic data,
 fake APIs, and temporary storage. They do not require a LINE login. Requirements
-are Go 1.26+; macOS also needs CGO and Xcode Command Line Tools for Keychain.
+are Go 1.27.2; macOS also needs CGO and Xcode Command Line Tools for Keychain.
 Linux and Windows support `CGO_ENABLED=0`.
 
 ## Test suites
@@ -145,9 +145,24 @@ actions, plus a saved LINE session.
 The current opt-ins are `LINE_CLI_LIVE_READ=1` for `TestLiveHistory` and
 `LINE_CLI_LIVE_WATCH=1` for `TestLiveWatch`. History checks read real conversations;
 watch checks read real events and update the saved watch cursor. Neither test
-sends messages, registers group keys, or marks messages read. Any future live
-mutation test must also have explicit authorization for its recipient, content,
-and actions. Do not print credentials, private message data, encrypted chunks,
+sends messages, registers group keys, or marks messages read. `LINE_CLI_LIVE_SECURITY_READ=1` enables
+`TestLiveSecurityMediaFlow` for the explicit `LINE_CLI_LIVE_SECURITY_CHAT` ID. It
+reads group negotiation capability (without registration), then media capability,
+and for plaintext-only files verifies default
+refusal with a transport guard that prevents mutation requests.
+
+`LINE_CLI_LIVE_SECURITY_SEND=1` enables `TestLiveSecuritySend`. This requires
+separate explicit authorization for the selected chat, text `Security test from
+LINE CLI`, and `line-security-test.txt` containing that text plus a newline,
+including upload, possible group-key registration, history reads, and download.
+It checks encrypted-file capability before sending. Run only that named test
+with `-count=1`; never enable it for ordinary suites. After an uncertain failure,
+inspect history and obtain retry authorization. `LINE_CLI_LIVE_SECURITY_TEXT_ID`
+can reference a confirmed text receipt for an authorized file-only retry.
+The test checks envelopes in memory and emits only status/allowlisted diagnostics.
+
+Any future live mutation test must likewise have explicit authorization for its
+recipient, content, and actions. Do not print credentials, private message data, encrypted chunks,
 or raw server bodies.
 
 ## Shared helpers and fixtures
@@ -198,3 +213,25 @@ The original eight audit probes now have permanent corrected-behavior coverage:
 `internal/cli/history_test.go`/`details_test.go` (CLI JSON order/details), `history_test.go` (reply identity and timestamp cursors),
 `content_test.go` (authenticated filenames, mentions and locations), and protocol
 `history_test.go` (delivered timestamps). No `/tmp` audit overlay is needed.
+
+## Security regression and release checks
+
+Use `GOTOOLCHAIN=go1.27.2` when the host Go version differs. The build guard
+checks the compiler selected by `GO`, and rejects an unreviewed toolchain.
+
+```sh
+./scripts/check-toolchain.sh
+./build.sh
+./scripts/security-check.sh ./bin/line
+go test ./pkg/line -run '^$' -fuzz '^FuzzBoundedResponse$' -fuzztime=15s
+go test ./pkg/line -run '^$' -fuzz '^FuzzSSELine$' -fuzztime=15s
+```
+
+Transport-limit tests include a loopback-only HTTP server to verify gzip and
+chunked transfer decoding; they need permission to bind a local ephemeral port.
+All request payloads and credentials are synthetic. Security tests cover outer
+file envelopes, recipient attachment authentication, pre-upload image refusal,
+plaintext consent (terminal accept/decline/EOF, released prompt locks, changed
+accounts, fresh preparation, script suppression, and no mutation replay), redirect
+rejection, and response/SSE budgets. Cross builds do
+not substitute for native Linux keyring or Windows DPAPI integration tests.

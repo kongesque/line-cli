@@ -10,12 +10,40 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/input"
 	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
 )
 
 var ErrCancelled = errors.New("cancelled")
+
+// Only a refusal with no sequence or remote preparation steps may resume after
+// consent. Never replay a send, upload, or key registration to show a prompt.
+func canConfirmPlaintext(err error) bool {
+	var policy *fault.Error
+	var mutation *messaging.MutationError
+	if !errors.As(err, &policy) || policy.Code != "encryption_required" ||
+		!errors.As(err, &mutation) || mutation.Stage != "preparation" {
+		return false
+	}
+	op := mutation.Mutation
+	return op.Action == "send" && !op.Attempted && op.Outcome == fault.NotAttempted &&
+		op.RequestSequence == nil && len(op.Steps) == 0
+}
+
+func (a *App) confirmPlaintext(item string) error {
+	answer, err := a.ask(fmt.Sprintf("This chat sends %ss without end-to-end encryption. LINE can read the %s.\nSend this %s? [y/N]: ", item, item, item))
+	if err != nil {
+		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return nil
+	default:
+		return ErrCancelled
+	}
+}
 
 type promptAccount struct{ mid, generation string }
 

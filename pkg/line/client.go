@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -53,7 +52,7 @@ type Client struct {
 }
 
 type OBSDownloadOptions struct {
-	// MaxBytes bounds the downloaded object when positive; zero leaves the object size unbounded.
+	// MaxBytes bounds the downloaded object when positive; zero uses 20 MiB plus the authentication tag.
 	MaxBytes int64
 	TID      string
 	OBSPop   string
@@ -209,13 +208,15 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	req.Header.Set("x-hmac", signature)
 
 	pollClient := &http.Client{Timeout: 200 * time.Second}
-	resp, err := pollClient.Do(req)
+	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readResponseBody(resp, maxRPCResponseBytes)
+	if err != nil {
+		return nil, err
+	}
 
 	// JQ response: {"data":{"result":{"verifier":"...","authPhase":"QRCODE_VERIFIED",...}}}
 	var wrapper struct {
@@ -273,13 +274,15 @@ func (c *Client) waitForLoginLF1(verifier string) (*LoginResult, error) {
 	req.Header.Set("x-hmac", signature)
 
 	pollClient := &http.Client{Timeout: 120 * time.Second}
-	resp, err := pollClient.Do(req)
+	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := readResponseBody(resp, maxRPCResponseBytes)
+	if err != nil {
+		return nil, err
+	}
 
 	var wrapper struct {
 		Code    int                `json:"code"`
@@ -405,13 +408,12 @@ func (c *Client) callRPCWithBaseURLContext(ctx context.Context, baseURL, service
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := doLINERequest(c.HTTPClient, req)
 	if err != nil {
 		return nil, requestFailure("transport", err)
 	}
-	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp, maxRPCResponseBytes)
 	if err != nil {
 		return nil, requestFailure("response_read", err)
 	}
@@ -498,13 +500,12 @@ func (c *Client) postWithHMACContext(ctx context.Context, fullURL string, body [
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := doLINERequest(c.HTTPClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp, maxRPCResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read LINE response: %w", err)
 	}
@@ -609,16 +610,18 @@ func (c *Client) UploadOBSPlainContext(ctx context.Context, data []byte, oid str
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return fmt.Errorf("OBS upload request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	_, err = readResponseBody(resp, maxOBSMetadataBytes)
+	if err != nil {
+		return err
+	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return fmt.Errorf("OBS upload failed (%d): %s", resp.StatusCode, string(body))
+		return fmt.Errorf("OBS upload failed (%d)", resp.StatusCode)
 	}
 
 	return nil
@@ -678,16 +681,18 @@ func (c *Client) UploadOBSWithSIDContext(ctx context.Context, data []byte, sid s
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return "", fmt.Errorf("OBS upload request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	_, err = readResponseBody(resp, maxOBSMetadataBytes)
+	if err != nil {
+		return "", err
+	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return "", fmt.Errorf("OBS upload failed (%d): %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("OBS upload failed (%d)", resp.StatusCode)
 	}
 
 	// The OID is typically returned in the x-obs-oid header
@@ -743,16 +748,18 @@ func (c *Client) UploadOBSWithOIDAndSIDContext(ctx context.Context, data []byte,
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return fmt.Errorf("OBS upload request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	_, err = readResponseBody(resp, maxOBSMetadataBytes)
+	if err != nil {
+		return err
+	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return fmt.Errorf("OBS upload failed (%d): %s", resp.StatusCode, string(body))
+		return fmt.Errorf("OBS upload failed (%d)", resp.StatusCode)
 	}
 
 	return nil
@@ -796,12 +803,11 @@ func (c *Client) DownloadOBSPublicResource(ctx context.Context, resourcePath str
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return nil, fmt.Errorf("public OBS resource request failed: %w", err)
 	}
-	body, readErr := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	body, readErr := readResponseBody(resp, maxMediaResponseBytes)
 	if readErr != nil {
 		return nil, fmt.Errorf("failed to read public OBS resource response: %w", readErr)
 	}
@@ -859,12 +865,11 @@ func (c *Client) DownloadAlbumPreview(ctx context.Context, oid, chatID, albumID 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
 	}
-	body, readErr := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	body, readErr := readResponseBody(resp, maxMediaResponseBytes)
 	if readErr != nil {
 		return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)
 	}
@@ -953,12 +958,11 @@ func (c *Client) checkOBSObjectReady(ctx context.Context, obsURL, obsToken, mess
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return fmt.Errorf("OBS object info request failed: %w", err)
 	}
-	body, readErr := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	body, readErr := readResponseBody(resp, maxOBSMetadataBytes)
 	if readErr != nil {
 		return fmt.Errorf("failed to read OBS object info response: %w", readErr)
 	}
@@ -991,20 +995,17 @@ func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messag
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
 	}
-	var reader io.Reader = resp.Body
-	if maxBytes > 0 {
-		reader = io.LimitReader(resp.Body, maxBytes+1)
+	if maxBytes == 0 {
+		maxBytes = maxMediaResponseBytes
 	}
-	body, readErr := io.ReadAll(reader)
-	if maxBytes > 0 && int64(len(body)) > maxBytes {
-		resp.Body.Close()
+	body, readErr := readResponseBody(resp, maxBytes)
+	if errors.Is(readErr, ErrResponseTooLarge) {
 		return nil, ErrOBSSizeLimit
 	}
-	resp.Body.Close()
 	if readErr != nil {
 		return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)
 	}
@@ -1094,18 +1095,21 @@ func (c *Client) GetPageInfo(url string) (*PageInfoResult, error) {
 		req.Header.Set("Cookie", fmt.Sprintf("lct=%s", c.AccessToken))
 	}
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := doLINERequest(c.HTTPClient, req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
+	body, err := readResponseBody(resp, maxRPCResponseBytes)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("pageinfo request failed: %d", resp.StatusCode)
 	}
 
 	var wrapper PageInfoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, err
 	}
 

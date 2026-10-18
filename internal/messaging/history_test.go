@@ -271,7 +271,7 @@ func TestAllActionsFindTargetsBeyondLatest100(t *testing.T) {
 			var err error
 			switch action {
 			case "reply":
-				_, err = c.SendReply("u-peer", "hello", "101")
+				_, err = c.SendMentionsWithOptionsContext(context.Background(), "u-peer", "hello", "101", nil, SendOptions{AllowPlaintext: true})
 			case "react":
 				_, err = c.React("u-peer", "101", "like", false)
 			case "unsend":

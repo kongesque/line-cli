@@ -53,7 +53,7 @@ func TestSendMentionsPreservesEncryptionReplyAndSequence(t *testing.T) {
 			c, f, crypto, store := setup(t, plain)
 			f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, CreatorKeyID: 22, ReceiverKeyID: 11, Creator: "u-peer", EncryptedSharedKey: "wrapped"}
 			f.history = []*line.Message{{ID: "9007199254740993", From: "u-self", To: chat, ToType: toType(chat)}}
-			result, err := c.SendMentionsContext(context.Background(), chat, "😀 @Peer", "9007199254740993", []Mention{{Start: 3, End: 8, MID: mentionPeer}})
+			result, err := c.SendMentionsWithOptionsContext(context.Background(), chat, "😀 @Peer", "9007199254740993", []Mention{{Start: 3, End: 8, MID: mentionPeer}}, SendOptions{AllowPlaintext: true})
 			if err != nil {
 				t.Fatal(err)
 			}

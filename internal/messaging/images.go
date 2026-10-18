@@ -3,9 +3,7 @@ package messaging
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"image"
 	"image/color"
@@ -13,11 +11,9 @@ import (
 	_ "image/png"
 	"math"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/kongesque/line-cli/internal/fault"
-	"github.com/kongesque/line-cli/internal/session"
 )
 
 // MaxImagePixels bounds decoding memory independently of the compressed file size.
@@ -95,51 +91,28 @@ func PrepareImage(ctx context.Context, file Attachment) (*PreparedImage, error) 
 }
 
 func (c *Client) SendImageContext(ctx context.Context, chat string, img PreparedImage, replyTo string) (*SendResult, error) {
+	return c.SendImageWithOptionsContext(ctx, chat, img, replyTo, SendOptions{})
+}
+
+func (c *Client) SendImageWithOptionsContext(ctx context.Context, chat string, img PreparedImage, replyTo string, options SendOptions) (*SendResult, error) {
 	if replyTo != "" {
 		return nil, fault.New("invalid_arguments", "validation", "--image cannot be combined with --reply-to; image reply support is unverified", nil)
 	}
 	if len(img.file.Data) == 0 || len(img.preview) == 0 {
 		return nil, fault.New("invalid_arguments", "validation", "image must be prepared before sending", nil)
 	}
-	return c.send(ctx, chat, "", replyTo, &img.file, nil, &img)
+	return c.send(ctx, chat, "", replyTo, &img.file, nil, &img, options)
 }
 
 func (c *Client) uploadAttachment(ctx context.Context, file *Attachment, img *PreparedImage, metadata map[string]string, op *fault.Mutation) ([]byte, error) {
 	if img == nil {
 		return c.uploadFile(ctx, file, metadata, op)
 	}
-	full, key, err := encryptFile(file.Data)
-	if err != nil {
-		return nil, err
-	}
-	material, err := base64.StdEncoding.DecodeString(key)
-	if err != nil {
-		return nil, err
-	}
-	defer clear(material)
-	preview, err := encryptFileWithMaterial(img.preview, material)
-	if err != nil {
-		return nil, err
-	}
-	var oid string
-	if err := c.attempt(ctx, op, "attachment_upload", false, func(api session.API) (err error) { oid, err = api.UploadOBSWithSIDContext(ctx, full, "emi"); return }); err != nil {
-		return nil, err
-	}
-	if oid == "" {
-		op.Steps[len(op.Steps)-1].Outcome = fault.Unknown
-		return nil, fault.New("remote_failed", "attachment_upload", "image upload returned no object ID; inspect LINE before retrying", nil)
-	}
-	if err := c.attempt(ctx, op, "preview_upload", false, func(api session.API) error {
-		return api.UploadOBSWithOIDAndSIDContext(ctx, preview, oid+"__ud-preview", "emi")
-	}); err != nil {
-		return nil, err
-	}
-	metadata["OID"], metadata["SID"], metadata["FILE_SIZE"] = oid, "emi", strconv.Itoa(len(file.Data))
-	thumb, _ := json.Marshal(map[string]int{"width": img.width, "height": img.height})
-	metadata["MEDIA_THUMB_INFO"] = string(thumb)
-	// Chrome EL moves key material and filename exclusively into authenticated
-	// chunks. Never place them in the outgoing image's outer metadata.
-	return json.Marshal(map[string]string{"keyMaterial": key, "fileName": file.Name})
+	return nil, encryptedImageUnavailable()
+}
+
+func encryptedImageUnavailable() error {
+	return fault.New("encrypted_image_unavailable", "preparation", "Encrypted image sending isn't available yet. Nothing was sent.\nTry --file to send the original image instead.", nil)
 }
 
 // Read EXIF orientation without copying metadata (including GPS) into output.

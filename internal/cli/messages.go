@@ -35,6 +35,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	var cursor string
 	var text string
 	var stdin bool
+	var allowPlaintext bool
 	var replyTo string
 	var filePath, imagePath string
 	var preparedImage *messaging.PreparedImage
@@ -51,6 +52,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		fs.BoolVar(&pageMode, "page", false, "return a JSON history page with continuation cursor (requires --json)")
 		fs.StringVar(&cursor, "cursor", "", "continue a history page (requires --page --json)")
 	} else {
+		fs.BoolVar(&allowPlaintext, "allow-plaintext", false, "allow sending without end-to-end encryption (otherwise ask in a terminal; LINE can read it)")
 		fs.StringVar(&mentionsJSON, "mentions", "", "explicit JSON mention array: [{\"start\":0,\"end\":5,\"mid\":\"USER_MID\"}] (UTF-16 offsets; text/stdin only)")
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
@@ -252,7 +254,11 @@ func (a *App) messageCommand(command string, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	defer func() {
+		if unlock != nil {
+			unlock()
+		}
+	}()
 	chat, err = a.resolveChat(chat)
 	if err != nil {
 		return err
@@ -265,13 +271,43 @@ func (a *App) messageCommand(command string, args []string) error {
 		return err
 	}
 	if command == "send" {
-		var result *messaging.SendResult
-		if preparedImage != nil {
-			result, err = client.SendImageContext(a.loginContext(), chat, *preparedImage, replyTo)
-		} else if attachment != nil {
-			result, err = client.SendFileContext(a.loginContext(), chat, *attachment, replyTo)
-		} else {
-			result, err = client.SendMentionsContext(a.loginContext(), chat, text, replyTo, mentions)
+		options := messaging.SendOptions{AllowPlaintext: allowPlaintext}
+		send := func() (*messaging.SendResult, error) {
+			if preparedImage != nil {
+				return client.SendImageWithOptionsContext(a.loginContext(), chat, *preparedImage, replyTo, options)
+			} else if attachment != nil {
+				return client.SendFileWithOptionsContext(a.loginContext(), chat, *attachment, replyTo, options)
+			}
+			return client.SendMentionsWithOptionsContext(a.loginContext(), chat, text, replyTo, mentions, options)
+		}
+		result, err := send()
+		if guided && !allowPlaintext && canConfirmPlaintext(err) {
+			// Preparation stopped before any remote mutation. Release the lock
+			// for consent, then reload the client and repeat capability checks.
+			if err := a.rememberAccount(); err != nil {
+				return err
+			}
+			unlock()
+			unlock = nil
+			item := "message"
+			if preparedImage != nil {
+				item = "image"
+			} else if attachment != nil {
+				item = "file"
+			}
+			if err := a.confirmPlaintext(item); err != nil {
+				return err
+			}
+			unlock, err = a.lock()
+			if err != nil {
+				return err
+			}
+			client, err = messaging.New(a.Manager)
+			if err != nil {
+				return err
+			}
+			options.AllowPlaintext = true
+			result, err = send()
 		}
 		if err != nil {
 			return err
@@ -280,9 +316,9 @@ func (a *App) messageCommand(command string, args []string) error {
 		if *jsonOutput {
 			return a.confirmedOutput(op, a.json(result))
 		}
-		mode := "encrypted"
+		mode := "end-to-end encrypted"
 		if !result.Encrypted {
-			mode = "not encrypted (Letter Sealing unavailable)"
+			mode = "not end-to-end encrypted"
 		}
 		if *showIDs && result.GroupKeyRegistered {
 			mode += "; new group key registered"

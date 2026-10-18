@@ -8,7 +8,7 @@ This repository contains no Matrix connector or homeserver integration.
 
 ## Build and checks
 
-Requirements: Go 1.26+. macOS needs CGO and Xcode Command Line Tools for Keychain.
+Requirements: Go 1.27.2. macOS needs CGO and Xcode Command Line Tools for Keychain.
 Linux and Windows support `CGO_ENABLED=0`. No libolm or ffmpeg is required.
 
 ```sh
@@ -43,7 +43,10 @@ integration requirements, and CI coverage.
 
 ## Behavior and validation
 
-Preserve explicit capability checks before plaintext fallback. Missing or malformed
+Require encryption by default; plaintext needs per-command `--allow-plaintext`
+or an affirmative interactive confirmation plus explicit account/server capability
+evidence. Scripts, JSON output/errors, and `--stdin` never prompt. Preserve explicit
+capability checks before plaintext fallback. Missing or malformed
 keys and transport failures must not silently downgrade encryption. Only an
 explicit send may register a group key, and it needs complete membership.
 Remote mutations are attempted once with a persisted request sequence; reads can

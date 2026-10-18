@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"hash/crc32"
 	"image"
@@ -98,43 +97,22 @@ func TestImageSendFlows(t *testing.T) {
 		for _, flow := range []int{1, 2} {
 			t.Run(chat+string(rune('0'+flow)), func(t *testing.T) {
 				c, f, crypto, store := setup(t, false)
-				f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
+				// Missing group keys must not cause registration before refusing images.
+				f.groupErr = line.ErrGroupKeyNotFound
 				api := &imageAPI{fakeAPI: f, flow: flow}
-				crypt := &fileCrypto{fakeCrypto: crypto}
-				c.crypto = crypt
+				c.crypto = &fileCrypto{fakeCrypto: crypto}
 				c.Session.NewClient = func(string) session.API { return api }
-				result, err := c.SendImageContext(context.Background(), chat, *img, "")
-				if err != nil {
-					t.Fatal(err)
-				}
-				if result.ID != "server-id" || result.Encrypted != (flow == 2) || result.ChatID != chat || store.state.LastReqSeq != result.RequestSequence || f.sent.ContentType != 1 || !f.sent.HasContent {
-					t.Fatal("incorrect image receipt/envelope")
-				}
-				if flow == 1 {
-					if strings.Join(api.order, ",") != "send,attachment_upload" || !bytes.Equal(api.plain, img.file.Data) || len(f.sent.Chunks) != 0 || len(f.sent.ContentMetadata) != 0 {
-						t.Fatal("incorrect plaintext image flow")
-					}
-				} else {
-					if strings.Join(api.order, ",") != "attachment_upload,preview_upload,send" || crypt.contentType != 1 {
-						t.Fatal("incorrect encrypted image flow")
-					}
-					var payload map[string]string
-					if err := json.Unmarshal(crypt.payloadSent, &payload); err != nil {
-						t.Fatal(err)
-					}
-					for _, pair := range [][2][]byte{{api.full, img.file.Data}, {api.preview, img.preview}} {
-						data, err := decryptFile(pair[0], payload["keyMaterial"])
-						if err != nil || !bytes.Equal(data, pair[1]) {
-							t.Fatal("encrypted image or preview failed authentication")
+				for range 2 {
+					result, err := c.SendImageWithOptionsContext(context.Background(), chat, *img, "", SendOptions{AllowPlaintext: true})
+					if flow == 2 {
+						var safe *fault.Error
+						if !errors.As(err, &safe) || safe.Code != "encrypted_image_unavailable" || result != nil || len(api.order) != 0 || f.sends != 0 || f.registrations != 0 || store.state.LastReqSeq != 0 || len(api.full) != 0 || len(api.preview) != 0 {
+							t.Fatal("encrypted image did not fail closed before side effects")
 						}
+						continue
 					}
-					meta := f.sent.ContentMetadata
-					if payload["fileName"] != "screenshot.jpg" || meta["OID"] != "image-object" || meta["SID"] != "emi" || meta["MEDIA_THUMB_INFO"] != `{"height":4,"width":8}` || meta["ENC_KM"] != "" || meta["FILE_NAME"] != "" {
-						t.Fatal("incorrect image metadata")
-					}
-					encoded, _ := json.Marshal(result)
-					if bytes.Contains(encoded, []byte(payload["keyMaterial"])) {
-						t.Fatal("receipt leaked image key")
+					if err != nil || result.Encrypted || result.ID != "server-id" || f.sent.ContentType != 1 || !bytes.Equal(api.plain, img.file.Data) || len(f.sent.ContentMetadata) != 0 {
+						t.Fatal("incorrect plaintext image flow")
 					}
 				}
 			})
@@ -143,7 +121,7 @@ func TestImageSendFlows(t *testing.T) {
 }
 func TestImageFailuresAndCancellationNeverReplay(t *testing.T) {
 	img := imageFixture(t)
-	for _, flow := range []int{1, 2} {
+	for _, flow := range []int{1} {
 		stages := []string{"send", "attachment_upload"}
 		if flow == 2 {
 			stages = append(stages, "preview_upload")
@@ -160,7 +138,7 @@ func TestImageFailuresAndCancellationNeverReplay(t *testing.T) {
 				}
 				c.crypto = &fileCrypto{fakeCrypto: crypto}
 				c.Session.NewClient = func(string) session.API { return api }
-				result, err := c.SendImageContext(ctx, "u-peer", *img, "")
+				result, err := c.SendImageWithOptionsContext(ctx, "u-peer", *img, "", SendOptions{AllowPlaintext: true})
 				stop()
 				// Cancellation after the final confirmed stage preserves success.
 				if cancel && ((flow == 1 && stage == "attachment_upload") || (flow == 2 && stage == "send")) {
@@ -197,7 +175,7 @@ func TestImageFailuresAndCancellationNeverReplay(t *testing.T) {
 }
 func TestImageCapabilitiesAndValidationFailClosed(t *testing.T) {
 	img := imageFixture(t)
-	for _, mode := range []string{"missing-flow", "invalid-flow", "flow-error", "missing-key", "bad-key", "incomplete-members", "reply", "already-cancelled", "missing-oid", "missing-receipt"} {
+	for _, mode := range []string{"missing-flow", "invalid-flow", "flow-error", "missing-key", "bad-key", "incomplete-members", "reply", "already-cancelled"} {
 		t.Run(mode, func(t *testing.T) {
 			c, f, crypto, store := setup(t, false)
 			api := &imageAPI{fakeAPI: f, flow: 2}
@@ -233,24 +211,11 @@ func TestImageCapabilitiesAndValidationFailClosed(t *testing.T) {
 			if err == nil {
 				t.Fatal("unsafe image send accepted")
 			}
-			if mode == "missing-receipt" {
-				var m *MutationError
-				if !errors.As(err, &m) || m.Mutation.Outcome != fault.Unknown || f.sends != 1 {
-					t.Fatal("missing receipt outcome")
-				}
-				return
-			}
+
 			if f.sends != 0 || f.registrations != 0 || store.state.LastReqSeq != 0 {
 				t.Fatal("mutation after invalid preparation")
 			}
-			if mode == "missing-oid" {
-				var safe *fault.Error
-				var mutation *MutationError
-				if !errors.As(err, &safe) || safe.Code != "remote_failed" || safe.Stage != "attachment_upload" || !errors.As(err, &mutation) || mutation.Mutation.Steps[0].Outcome != fault.Unknown {
-					t.Fatal("missing upload receipt classification", err)
-				}
-			}
-			if mode != "missing-oid" && len(api.order) != 0 {
+			if len(api.order) != 0 {
 				t.Fatal("upload after invalid preparation")
 			}
 		})
