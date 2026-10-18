@@ -231,5 +231,7 @@ Transport-limit tests include a loopback-only HTTP server to verify gzip and
 chunked transfer decoding; they need permission to bind a local ephemeral port.
 All request payloads and credentials are synthetic. Security tests cover outer
 file envelopes, recipient attachment authentication, pre-upload image refusal,
-plaintext consent, redirect rejection, and response/SSE budgets. Cross builds do
+plaintext consent (terminal accept/decline/EOF, released prompt locks, changed
+accounts, fresh preparation, script suppression, and no mutation replay), redirect
+rejection, and response/SSE budgets. Cross builds do
 not substitute for native Linux keyring or Windows DPAPI integration tests.

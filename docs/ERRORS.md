@@ -156,6 +156,9 @@ failure retains the confirmed message receipt just like a generic-file upload.
 Never infer that an upload or send can safely be retried from a transport error.
 
 Send policy errors: `encryption_required` means Letter Sealing is unavailable
-and the command did not permit plaintext. `encrypted_image_unavailable` means
+and the command did not permit plaintext. Interactive terminal sends offer
+per-command confirmation before remote actions; declining returns `cancelled`.
+Scripts, JSON output/errors, and `--stdin` require `--allow-plaintext` and never
+prompt. `encrypted_image_unavailable` means
 native encrypted image sending is disabled until a secure compatible preview
 format is established. Neither error authorizes an automatic resend or downgrade.

@@ -379,15 +379,29 @@ format reuses an encryption stream. They fail before uploads or sends. Generic
 `--file` sends preserve original bytes and remain available with Letter Sealing.
 Image sends use the server's explicit encrypted/plaintext media capability.
 A missing or invalid capability fails locally before mutation. Plaintext-capable
-images require `--allow-plaintext`; message creation and upload each happen once.
+images require interactive confirmation or `--allow-plaintext`; message creation
+and upload each happen once.
 A failed upload after message creation retains that confirmed ID in structured errors;
 unknown outcomes require checking LINE before retrying. See
 [image protocol evidence](protocol/endpoints/image-send.md) for details. Live
 interoperability has not been verified.
 
 Sending requires Letter Sealing by default. If the account or server explicitly
-reports it unavailable, the command returns `encryption_required` before sending.
-Use `--allow-plaintext` on that command to permit content visible to LINE after
+reports it unavailable, a terminal send asks for consent before any remote action:
+
+```text
+This chat sends files without end-to-end encryption. LINE can read the file.
+Send this file? [y/N]:
+```
+
+Enter `y` or `yes` to permit this send; Enter, `n`, or any other answer cancels.
+The confirmation applies only to the current command. The session lock is
+released while waiting; the account and capabilities are checked again afterward.
+Encrypted sends do not ask. The prompt names the message, file, or image.
+
+Scripts, `--json`, `--error-format=json`, and `--stdin` never prompt. They return
+`encryption_required` without sending unless `--allow-plaintext` was supplied.
+Use that flag on a single command to permit content visible to LINE after
 HTTPS termination. This flag applies to text, stdin, mentions, replies, files,
 and plaintext-capable images; it still uses encryption when available. It does
 not override the encrypted-image restriction or authorize fallback on errors.
@@ -395,10 +409,11 @@ not override the encrypted-image restriction or authorize fallback on errors.
 For `--file`, the server's file-specific media capability must also permit
 encryption. A chat can support encrypted text while allowing only plaintext
 files. In that case, the default file send stops before upload or message creation;
-`--allow-plaintext` is required to send the file without Letter Sealing.
+Interactive confirmation or `--allow-plaintext` is required to send the file
+without Letter Sealing.
 Missing, unknown, or unreadable media capabilities never authorize plaintext.
 The CLI names the affected message, file, or image and explains the next step
-without protocol details. For example:
+without protocol details. For example, a script without consent reports:
 
 ```text
 This chat doesn't support end-to-end encryption for this file. Nothing was sent.

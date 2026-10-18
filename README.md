@@ -193,7 +193,9 @@ See [JSON fields and exit codes](docs/CLI.md#json-output-and-exit-codes) and
 
 - **Encryption:** Letter Sealing is used when supported. Missing or malformed keys
   and transport failures never silently downgrade an encrypted send to plaintext.
-  JSON send results report encryption status.
+  When LINE explicitly reports encryption unavailable, terminal sends ask for
+  confirmation; scripts require `--allow-plaintext`. JSON send results report
+  encryption status.
 - **Storage:** macOS Keychain, Linux AES-GCM session files with keys in Secret
   Service, or Windows current-user DPAPI. Headless Linux uses host-key storage.
 - **Session recovery:** access tokens refresh automatically when saved refresh

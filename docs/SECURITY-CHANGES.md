@@ -7,10 +7,22 @@
   the existing image/preview representation reuses an AES-CTR encryption stream.
   Generic encrypted `--file` is available only with an explicit encrypted-file
   media capability. Plaintext-only file capability requires per-send consent.
-- All sends require encryption by default. `--allow-plaintext` permits plaintext
-  only after an explicit account/server capability signal. HTTPS still protects
+- All sends require encryption by default. An affirmative terminal confirmation
+  or per-command `--allow-plaintext` permits plaintext only after an explicit
+  account/server capability signal. Scripts, JSON output/errors, and `--stdin`
+  never prompt. HTTPS still protects
   the connection, but LINE can read this content. The option does not suppress
   key validation, transport errors, or the encrypted-image restriction.
+
+Interactive confirmation occurs only after preparation stops with
+`encryption_required`, before any sequence reservation or remote mutation step.
+The credential lock is released during the prompt. On acceptance, the account
+identity is checked and a fresh messaging client repeats capability validation.
+Declining, incomplete input, and cancellation do not send anything. Sends,
+uploads, and group-key registrations are never replayed to obtain consent.
+Validation on 2026-10-19: synthetic terminal/script consent tests, the complete
+CLI/protocol race suite, go vet, Staticcheck, and the native build/help check
+passed. This UX change required no live sends.
 
 Protocol evidence: official LINE Chrome extension 3.7.2, package SHA-256
 `3722ab02edb0aba49c229399ee8df5b4b5a38c60b76efadadfbae395015eb859`.
