@@ -58,3 +58,21 @@ scans include inlined-symbol analysis. govulncheck v1.9.0 conservatively treats
 all vulnerable module symbols as present in stripped executables. Retaining
 symbols made the rebuilt macOS binary scan pass without advisory exemptions;
 DWARF debug data remains omitted.
+
+Validation on 2026-10-18 at source revision `d8df371`: the complete CLI/protocol
+race suite, runner/LTSM suites, go vet, and Staticcheck v0.8.2 passed. The real
+synthetic recipient decrypted the sealed file key/name, authenticated the
+attachment, and rejected a tampered payload. Bounded-response and SSE-line
+fuzzing passed 15 seconds each (291,209 and 292,307 cases respectively).
+
+All six release targets were rebuilt with Go 1.27.2: Linux and Windows
+amd64/arm64 without CGO, and macOS amd64/arm64 with CGO. Compiler identity was
+checked in each executable; target-specific source and binary scans using
+govulncheck v1.9.0 reported zero reachable or imported-package vulnerabilities.
+The module-only advisory triage above still applies. The native macOS arm64
+CLI also passed its help smoke test. The selected-compiler guard passed
+synthetic checks for accepted/rejected versions and a custom `GO` executable.
+
+Cross-builds do not replace native CI. Linux Secret Service and Windows DPAPI
+integration, and the complete native CI matrix, remain release gates. No live
+LINE interoperability test, upload, send, or group-key registration was run.
