@@ -35,7 +35,7 @@ func TestCLIRequiresPlaintextConsent(t *testing.T) {
 					t.Fatal("send without consent changed state")
 				}
 				encoded, _ := json.Marshal(machineDetail(t, err))
-				if !strings.Contains(string(encoded), `"code":"encryption_required"`) || !strings.Contains(err.Error(), "nothing was sent") {
+				if !strings.Contains(string(encoded), `"code":"encryption_required"`) || !strings.Contains(strings.ToLower(err.Error()), "nothing was sent") {
 					t.Fatal("missing safe consent error")
 				}
 			})

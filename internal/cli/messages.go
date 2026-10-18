@@ -52,7 +52,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		fs.BoolVar(&pageMode, "page", false, "return a JSON history page with continuation cursor (requires --json)")
 		fs.StringVar(&cursor, "cursor", "", "continue a history page (requires --page --json)")
 	} else {
-		fs.BoolVar(&allowPlaintext, "allow-plaintext", false, "permit content visible to LINE only when Letter Sealing is explicitly unavailable")
+		fs.BoolVar(&allowPlaintext, "allow-plaintext", false, "send without end-to-end encryption when needed (LINE can read it)")
 		fs.StringVar(&mentionsJSON, "mentions", "", "explicit JSON mention array: [{\"start\":0,\"end\":5,\"mid\":\"USER_MID\"}] (UTF-16 offsets; text/stdin only)")
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
@@ -283,9 +283,9 @@ func (a *App) messageCommand(command string, args []string) error {
 		if *jsonOutput {
 			return a.confirmedOutput(op, a.json(result))
 		}
-		mode := "encrypted"
+		mode := "end-to-end encrypted"
 		if !result.Encrypted {
-			mode = "not encrypted (Letter Sealing unavailable)"
+			mode = "not end-to-end encrypted"
 		}
 		if *showIDs && result.GroupKeyRegistered {
 			mode += "; new group key registered"

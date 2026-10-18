@@ -397,6 +397,15 @@ encryption. A chat can support encrypted text while allowing only plaintext
 files. In that case, the default file send stops before upload or message creation;
 `--allow-plaintext` is required to send the file without Letter Sealing.
 Missing, unknown, or unreadable media capabilities never authorize plaintext.
+The CLI names the affected message, file, or image and explains the next step
+without protocol details. For example:
+
+```text
+This chat doesn't support end-to-end encryption for this file. Nothing was sent.
+To send it anyway, add --allow-plaintext. LINE can read the file.
+```
+
+Send confirmations use `end-to-end encrypted` or `not end-to-end encrypted`.
 
 The CLI uses Letter Sealing when the conversation supports it. Missing keys,
 incomplete group membership, or a transport failure stop an encrypted send

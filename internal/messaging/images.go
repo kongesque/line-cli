@@ -112,7 +112,7 @@ func (c *Client) uploadAttachment(ctx context.Context, file *Attachment, img *Pr
 }
 
 func encryptedImageUnavailable() error {
-	return fault.New("encrypted_image_unavailable", "preparation", "encrypted image sending is disabled because the full image and preview reuse an encryption stream; nothing was sent", nil)
+	return fault.New("encrypted_image_unavailable", "preparation", "Encrypted image sending isn't available yet. Nothing was sent.\nTry --file to send the original image instead.", nil)
 }
 
 // Read EXIF orientation without copying metadata (including GPS) into output.

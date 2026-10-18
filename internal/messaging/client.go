@@ -275,9 +275,9 @@ type SendOptions struct {
 	AllowPlaintext bool
 }
 
-func (o SendOptions) checkPlaintext(plain bool) error {
+func (o SendOptions) checkPlaintext(plain bool, item string) error {
 	if plain && !o.AllowPlaintext {
-		return fault.New("encryption_required", "preparation", "Letter Sealing is unavailable; nothing was sent; use --allow-plaintext to explicitly permit sending content visible to LINE", nil)
+		return fault.New("encryption_required", "preparation", fmt.Sprintf("This chat doesn't support end-to-end encryption for this %s. Nothing was sent.\nTo send it anyway, add --allow-plaintext. LINE can read the %s.", item, item), nil)
 	}
 	return nil
 }
@@ -376,6 +376,12 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 			}
 		}
 	}
+	item := "message"
+	if image != nil {
+		item = "image"
+	} else if file != nil {
+		item = "file"
+	}
 	plain := c.state.NoE2EE
 	if file != nil && !plain {
 		flowType, mediaName := "14", "file"
@@ -394,7 +400,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := options.checkPlaintext(plain); err != nil {
+	if err := options.checkPlaintext(plain, item); err != nil {
 		return nil, err
 	}
 	if image != nil && !plain {
@@ -424,7 +430,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	if !plain && kind == 0 {
 		key, keyErr := c.negotiate(ctx, chat)
 		if errors.Is(keyErr, errNoLetterSealing) {
-			if err := options.checkPlaintext(true); err != nil {
+			if err := options.checkPlaintext(true, item); err != nil {
 				return nil, err
 			}
 			plain = true
@@ -456,7 +462,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 			}
 		}
 		if errors.Is(err, errNoLetterSealing) {
-			if err := options.checkPlaintext(true); err != nil {
+			if err := options.checkPlaintext(true, item); err != nil {
 				return nil, err
 			}
 			plain, err = true, nil
