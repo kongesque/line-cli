@@ -2,9 +2,10 @@ package cli
 
 import (
 	"encoding/json"
-	"github.com/kongesque/line-cli/internal/session"
 	"strings"
 	"testing"
+
+	"github.com/kongesque/line-cli/internal/session"
 )
 
 func TestCLIRequiresPlaintextConsent(t *testing.T) {

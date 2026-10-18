@@ -369,7 +369,6 @@ video, and audio sent with `--file` appear as ordinary files.
 20 MiB, 40 million decoded pixels, and 16384 pixels on either axis. It applies
 EXIF orientation, removes metadata, flattens transparency onto white, and converts
 to JPEG at quality 60 with at most 1280×1280 total pixels (aspect ratio preserved).
-Encrypted sends also upload a JPEG preview fitting 384×384 at quality 30.
 Use `--file` to preserve original bytes. GIF, animated PNG, BMP, WebP, and native
 audio/video sends are unsupported. Image preparation is local and precedes session
 access. `--image` cannot be combined with text, stdin, file, mentions, or
@@ -379,9 +378,9 @@ Encrypted `--image` sends are disabled because the current full-image/preview
 format reuses an encryption stream. They fail before uploads or sends. Generic
 `--file` sends preserve original bytes and remain available with Letter Sealing.
 Image sends use the server's explicit encrypted/plaintext media capability.
-A missing or invalid capability fails locally before mutation. Full encrypted
-upload, preview upload, and message send each happen once. A failed upload after
-plaintext message creation retains that confirmed message ID in structured errors;
+A missing or invalid capability fails locally before mutation. Plaintext-capable
+images require `--allow-plaintext`; message creation and upload each happen once.
+A failed upload after message creation retains that confirmed ID in structured errors;
 unknown outcomes require checking LINE before retrying. See
 [image protocol evidence](protocol/endpoints/image-send.md) for details. Live
 interoperability has not been verified.

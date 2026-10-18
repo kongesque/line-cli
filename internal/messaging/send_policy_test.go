@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/kongesque/line-cli/internal/fault"
-	"github.com/kongesque/line-cli/internal/session"
-	"github.com/kongesque/line-cli/pkg/line"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/kongesque/line-cli/internal/fault"
+	"github.com/kongesque/line-cli/internal/session"
+	"github.com/kongesque/line-cli/pkg/line"
 )
 
 type claimGroupAPI struct {
