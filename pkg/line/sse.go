@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,7 +19,7 @@ var sseHTTPClient = &http.Client{}
 
 var ErrSSEIdleTimeout = errors.New("SSE idle timeout")
 
-const maxSSEErrorBodyBytes = 4096
+const maxSSEErrorBodyBytes = maxErrorResponseBytes
 
 // LINE advertises a 140s polling timeout. The extra 10s lets a normal
 // server-driven close arrive before the client declares the stream idle.
@@ -59,7 +58,10 @@ func (c *Client) ListenSSE(ctx context.Context, localRev int64, callback func(ev
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxSSEErrorBodyBytes))
+		body, readErr := readBounded(resp.Body, maxSSEErrorBodyBytes)
+		if readErr != nil {
+			return readErr
+		}
 		if bodyText := strings.TrimSpace(string(body)); bodyText != "" {
 			return fmt.Errorf("SSE error: %d: %s", resp.StatusCode, bodyText)
 		}
@@ -84,6 +86,7 @@ func (c *Client) ListenSSE(ctx context.Context, localRev int64, callback func(ev
 
 	var currentEvent string
 	var dataLines []string
+	eventBytes, eventLines := 0, 0
 
 	flush := func() {
 		if len(dataLines) == 0 && currentEvent == "" {
@@ -98,11 +101,11 @@ func (c *Client) ListenSSE(ctx context.Context, localRev int64, callback func(ev
 			callback(eventType, data)
 		}
 		currentEvent = ""
-		dataLines = dataLines[:0]
+		dataLines = nil
 	}
 
 	for {
-		lineBytes, err := reader.ReadBytes('\n')
+		lineBytes, err := readSSELine(reader)
 		if err != nil {
 			if idleTimedOut.Load() {
 				return fmt.Errorf("%w after %s", ErrSSEIdleTimeout, idleTimeout)
@@ -119,7 +122,14 @@ func (c *Client) ListenSSE(ctx context.Context, localRev int64, callback func(ev
 		line := strings.TrimRight(string(lineBytes), "\r\n")
 		if line == "" {
 			flush()
+			eventBytes, eventLines = 0, 0
 			continue
+		}
+
+		eventBytes += len(lineBytes)
+		eventLines++
+		if eventBytes > maxSSEEventBytes || eventLines > maxSSEEventLines {
+			return &ResponseLimitError{Limit: maxSSEEventBytes}
 		}
 
 		parts := strings.SplitN(line, ":", 2)

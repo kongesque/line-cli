@@ -19,3 +19,16 @@ stream for each object using the same key material. No secure independent
 preview representation was established. Source remains copyright LY Corporation.
 Validation uses synthetic data; no live LINE sends or interoperability checks
 were performed for these changes.
+
+Authenticated LINE requests now reject redirects at dispatch, even when a caller
+supplies an HTTP client with a permissive redirect callback. A redirect leaves a
+mutation outcome unknown and never causes a replay.
+
+Network response budgets apply after transport decompression: RPC/login/page
+metadata 16 MiB (QR retains its stricter 1 MiB), OBS metadata/upload replies
+64 KiB, HTTP error bodies 4 KiB, default media 20 MiB plus the authentication tag.
+SSE allows 1 MiB per line, 4 MiB and 4096 lines per event, including comments and
+event names. Oversized events never reach delivery/checkpoint callbacks.
+Synthetic maximum-count history pages fit the RPC budget; live server maximum
+keychain/history sizes have not been measured. Legitimate oversized responses
+fail explicitly and may require a reviewed budget adjustment.
