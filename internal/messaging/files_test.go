@@ -49,15 +49,15 @@ func TestFileSendEnvelopeAndUploadOrdering(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Encrypted == plain || f.sent.ContentType != 14 || !f.sent.HasContent || f.sent.ContentMetadata["FILE_NAME"] != "notes.pdf" || f.sent.RelatedMessageID != "123" {
+			if result.Encrypted == plain || f.sent.ContentType != 14 || !f.sent.HasContent || f.sent.RelatedMessageID != "123" {
 				t.Fatal("incorrect attachment envelope")
 			}
 			if plain {
-				if strings.Join(api.order, ",") != "send,plain_upload" || !bytes.Equal(api.uploaded, attachment.Data) {
+				if f.sent.ContentMetadata["FILE_NAME"] != "notes.pdf" || strings.Join(api.order, ",") != "send,plain_upload" || !bytes.Equal(api.uploaded, attachment.Data) {
 					t.Fatal("plain upload must follow message creation")
 				}
 			} else {
-				if strings.Join(api.order, ",") != "upload,send" || bytes.Contains(api.uploaded, attachment.Data) || crypt.contentType != 14 {
+				if f.sent.ContentMetadata["ENC_KM"] != "" || f.sent.ContentMetadata["FILE_NAME"] != "" || strings.Join(api.order, ",") != "upload,send" || bytes.Contains(api.uploaded, attachment.Data) || crypt.contentType != 14 {
 					t.Fatal("encrypted upload order/body incorrect")
 				}
 				var payload map[string]string

@@ -145,7 +145,10 @@ func (c *Client) uploadFile(ctx context.Context, file *Attachment, metadata map[
 		op.Steps[len(op.Steps)-1].Outcome = fault.Unknown
 		return nil, errors.New("file upload returned no object ID")
 	}
-	metadata["OID"], metadata["SID"], metadata["ENC_KM"] = oid, "emf", key
+	metadata["OID"], metadata["SID"] = oid, "emf"
+	// Chrome gL/EL put secrets only in the authenticated Letter Sealing payload.
+	delete(metadata, "ENC_KM")
+	delete(metadata, "FILE_NAME")
 	return json.Marshal(map[string]string{"keyMaterial": key, "fileName": file.Name})
 }
 

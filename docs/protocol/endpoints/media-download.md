@@ -89,3 +89,14 @@ returned records, and 30 seconds; see [history](history.md). Plaintext downloads
 remain limited to 20 MiB. Full verified bytes are buffered before publication to a
 file or stdout. No live capture was needed to resolve these code paths; live
 interoperability has not been claimed.
+
+## Outgoing generic-file confidentiality
+
+On 2026-10-18, rechecked the same official Chrome 3.7.2 package documented in
+[image send](image-send.md) (SHA-256
+`3722ab02edb0aba49c229399ee8df5b4b5a38c60b76efadadfbae395015eb859`).
+Its shared `gL` packages `ENC_KM` and `FILE_NAME` as `keyMaterial` and `fileName`;
+`EL` removes both outer fields when constructing the encrypted message. `yL`
+restores them only after decryption. These helpers apply to encrypted media,
+not just images. The CLI now follows this envelope for generic files while
+retaining historical incoming metadata conflict checks. No live send was used.
