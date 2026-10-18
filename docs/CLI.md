@@ -375,6 +375,9 @@ audio/video sends are unsupported. Image preparation is local and precedes sessi
 access. `--image` cannot be combined with text, stdin, file, mentions, or
 `--reply-to`: Chrome's image path does not establish reply support.
 
+Encrypted `--image` sends are disabled because the current full-image/preview
+format reuses an encryption stream. They fail before uploads or sends. Generic
+`--file` sends preserve original bytes and remain available with Letter Sealing.
 Image sends use the server's explicit encrypted/plaintext media capability.
 A missing or invalid capability fails locally before mutation. Full encrypted
 upload, preview upload, and message send each happen once. A failed upload after

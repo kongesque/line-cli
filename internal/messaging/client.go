@@ -363,6 +363,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 		plain = flow.FlowMap["1"] == 1
 	}
+	if image != nil && !plain {
+		return nil, encryptedImageUnavailable()
+	}
 	groupKeyRegistered := false
 	metadata := make(map[string]string)
 	if mentionMetadata != "" {

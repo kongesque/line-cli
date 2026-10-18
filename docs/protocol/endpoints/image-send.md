@@ -95,3 +95,14 @@ server rejection or acceptance of image reply fields. The CLI therefore rejects
 `--image --reply-to` before session access instead of claiming unverified support.
 Text replies and existing generic-file behavior are unchanged. Text/stdin/file,
 mentions, and image inputs cannot be combined.
+
+## Security restriction (2026-10-18)
+
+The encrypted native-image send path is disabled before uploads, group-key
+registration, or sequence reservation. Reinspection of the version-matched
+package above confirmed `_L` deterministically derives a counter and `CL`
+restarts AES-CTR with it for each object. The full image and preview therefore
+share a keystream. No independent preview nonce/key or compatible secure
+representation was established. Receiving historical images is unchanged.
+Do not restore encrypted sends until both sender and recipient semantics of a
+secure representation are verified. Plaintext capability handling is separate.
