@@ -98,6 +98,21 @@ A read-only capability check showed file flow 1 (plaintext-only), despite workin
 text encryption. Static Chrome 3.7.2 evidence confirms type-specific media checks
 also apply to files. The CLI now checks file type 14 before uploading. The live
 refusal check passed with `encryption_required`, zero uploads/sends/registrations,
-and an unchanged request sequence. No plaintext file was sent. Successful live
+and an unchanged request sequence. No plaintext file was sent in that phase. Successful live
 encrypted file delivery and authenticated download remain unverified on flow 2;
 the earlier synthetic recipient roundtrip does not establish that live result.
+
+
+Authorized plaintext follow-up (2026-10-19): after separate explicit consent,
+one `line-security-test.txt` was sent with `--allow-plaintext`. The receipt and
+history both reported `encrypted=false`, no group key was registered, the
+filename matched, and the downloaded 28 bytes exactly matched the synthetic
+fixture. This verifies the plaintext path only; it is not an encrypted-file
+interoperability result.
+
+The additional read-only negotiation probe followed Chrome's order: retrieve
+the latest group-key capability, then determine media flow. The selected group
+returned spec version 1, included text in `allowedTypes`, excluded file type 14,
+and continued to report file flow 1. No missing client-side negotiation step
+was established by this check. Do not force encrypted-file sending or change
+group keys to bypass those reported capabilities.

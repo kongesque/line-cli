@@ -147,7 +147,8 @@ The current opt-ins are `LINE_CLI_LIVE_READ=1` for `TestLiveHistory` and
 watch checks read real events and update the saved watch cursor. Neither test
 sends messages, registers group keys, or marks messages read. `LINE_CLI_LIVE_SECURITY_READ=1` enables
 `TestLiveSecurityMediaFlow` for the explicit `LINE_CLI_LIVE_SECURITY_CHAT` ID. It
-reads the media capability and, for plaintext-only files, verifies default
+reads group negotiation capability (without registration), then media capability,
+and for plaintext-only files verifies default
 refusal with a transport guard that prevents mutation requests.
 
 `LINE_CLI_LIVE_SECURITY_SEND=1` enables `TestLiveSecuritySend`. This requires

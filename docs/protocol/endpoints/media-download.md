@@ -118,3 +118,11 @@ server exception code was not retained, so the HTTP rejection alone does not
 prove which field LINE rejected. The corrected default path is verified to
 refuse before upload, registration, message send, or sequence reservation.
 Encrypted-file delivery/download remains unverified on a live flow-2 chat.
+
+A subsequent read-only probe fetched the latest group-key capability before the
+media-flow query, matching Chrome's negotiation order. The tested group returned
+spec version 1, allowed text, excluded file type 14, and still returned file flow
+1. With separate explicit plaintext consent, one synthetic file then completed
+message creation, upload, history lookup, and byte-identical download. Its
+receipt/history reported `encrypted=false`; no group key was registered. This
+establishes plaintext interoperability for that group, not encrypted-file support.

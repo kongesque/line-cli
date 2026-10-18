@@ -248,6 +248,24 @@ func TestLiveSecurityMediaFlow(t *testing.T) {
 	manager := session.NewManager(session.KeychainStore{})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	// Match Chrome's read-only negotiation order before requesting media flow.
+	// Inspect only capability fields; never print group keys or member identities.
+	if toType(chat) != 0 {
+		var key *line.E2EEGroupSharedKey
+		err = manager.DoContext(ctx, func(api session.API) (err error) {
+			key, err = api.GetLastE2EEGroupSharedKeyContext(ctx, chat)
+			return
+		})
+		if err != nil || key == nil {
+			t.Fatal("group capability read failed; no key registration attempted")
+		}
+		textAllowed, fileAllowed := false, false
+		for _, kind := range key.AllowedTypes {
+			textAllowed = textAllowed || kind == 0
+			fileAllowed = fileAllowed || kind == 14
+		}
+		t.Logf("group negotiation: spec_version=%d allowed_types_present=%v text_allowed=%v file_allowed=%v", key.SpecVersion, key.AllowedTypes != nil, textAllowed, fileAllowed)
+	}
 	var flow *line.MediaMessageFlowResponse
 	err = manager.DoContext(ctx, func(api session.API) (err error) { flow, err = api.DetermineMediaMessageFlowContext(ctx, chat); return })
 	if err != nil || flow == nil {
