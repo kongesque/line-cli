@@ -116,3 +116,12 @@ returned spec version 1, included text in `allowedTypes`, excluded file type 14,
 and continued to report file flow 1. No missing client-side negotiation step
 was established by this check. Do not force encrypted-file sending or change
 group keys to bypass those reported capabilities.
+
+Direct-chat follow-up (2026-10-19): a separately authorized test contact also
+advertised file flow 1. The guarded default send refused with zero uploads,
+sends, or registrations and an unchanged request sequence. After explicit
+per-send plaintext consent, one synthetic `line-security-test.txt` was sent
+successfully. Its receipt/history reported `encrypted=false`, the filename
+matched, and the downloaded 28 bytes matched the fixture exactly. This verifies
+generic text-file delivery in that direct chat; direct chats do not necessarily
+advertise encrypted-file support. No additional text message was sent.

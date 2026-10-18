@@ -126,3 +126,10 @@ spec version 1, allowed text, excluded file type 14, and still returned file flo
 message creation, upload, history lookup, and byte-identical download. Its
 receipt/history reported `encrypted=false`; no group key was registered. This
 establishes plaintext interoperability for that group, not encrypted-file support.
+
+A separately authorized direct-chat test on 2026-10-19 also returned file flow
+1. Default sending stopped before any upload/send or sequence change. With
+explicit plaintext consent, one synthetic `.txt` file completed message creation,
+upload, history lookup, and a byte-identical 28-byte download. Its receipt and
+history reported `encrypted=false`. Direct-chat type alone therefore does not
+establish an encrypted-file capability.
