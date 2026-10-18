@@ -5,7 +5,8 @@
   compatible old envelopes with conflict checks.
 - Encrypted native image sending is disabled before uploads or key registration:
   the existing image/preview representation reuses an AES-CTR encryption stream.
-  Generic encrypted `--file` remains available for original bytes.
+  Generic encrypted `--file` is available only with an explicit encrypted-file
+  media capability. Plaintext-only file capability requires per-send consent.
 - All sends require encryption by default. `--allow-plaintext` permits plaintext
   only after an explicit account/server capability signal. HTTPS still protects
   the connection, but LINE can read this content. The option does not suppress
@@ -17,8 +18,8 @@ Shared helpers `gL`/`EL` move media key/name fields into encrypted payloads;
 `yL` restores them after decryption. `_L`/`CL` derive and restart the same CTR
 stream for each object using the same key material. No secure independent
 preview representation was established. Source remains copyright LY Corporation.
-Validation uses synthetic data; no live LINE sends or interoperability checks
-were performed for these changes.
+Initial validation used synthetic data; the authorized live follow-up and its
+limitations are recorded below.
 
 Authenticated LINE requests now reject redirects at dispatch, even when a caller
 supplies an HTTP client with a permissive redirect callback. A redirect leaves a
@@ -74,5 +75,29 @@ CLI also passed its help smoke test. The selected-compiler guard passed
 synthetic checks for accepted/rejected versions and a custom `GO` executable.
 
 Cross-builds do not replace native CI. Linux Secret Service and Windows DPAPI
-integration, and the complete native CI matrix, remain release gates. No live
-LINE interoperability test, upload, send, or group-key registration was run.
+integration, and the complete native CI matrix, remain release gates. The
+initial validation above did not include live LINE actions.
+
+
+Live follow-up (completed 2026-10-19): one explicitly authorized synthetic text
+was sent encrypted and read back successfully in the designated test group.
+The session was readable from macOS Keychain with native protection verified;
+saved Letter Sealing keys loaded and the text send persisted its request sequence.
+This checks the active session, not protection against a compromised OS account
+or availability after reboot.
+
+The file test failed, including one separately authorized file-only retry. On
+that retry the encrypted upload returned HTTP 201 with an object ID; the file
+message returned HTTP 400 / TalkException, and no new file message appeared in
+recent history. The observed outgoing envelope contained neither outer key
+material nor filename, and no plaintext fallback occurred. An uploaded synthetic
+object may remain. No raw traffic, tokens, encrypted chunks, or private message
+contents were saved as capture artifacts.
+
+A read-only capability check showed file flow 1 (plaintext-only), despite working
+text encryption. Static Chrome 3.7.2 evidence confirms type-specific media checks
+also apply to files. The CLI now checks file type 14 before uploading. The live
+refusal check passed with `encryption_required`, zero uploads/sends/registrations,
+and an unchanged request sequence. No plaintext file was sent. Successful live
+encrypted file delivery and authenticated download remain unverified on flow 2;
+the earlier synthetic recipient roundtrip does not establish that live result.

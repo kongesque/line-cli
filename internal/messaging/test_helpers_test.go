@@ -277,3 +277,7 @@ func (f *fileAPI) SendMessageContext(_ context.Context, seq int64, msg *line.Mes
 func (f *fakeAPI) GetPreviousMessagesV2Context(context.Context, string, line.MessageIDWrapper, int) ([]*line.Message, error) {
 	return nil, nil
 }
+
+func (f *fakeAPI) DetermineMediaMessageFlowContext(context.Context, string) (*line.MediaMessageFlowResponse, error) {
+	return &line.MediaMessageFlowResponse{FlowMap: map[string]int{"1": 2, "14": 2}}, nil
+}

@@ -130,3 +130,57 @@ func TestLegacySendMethodsRequireEncryption(t *testing.T) {
 		}
 	}
 }
+
+type fileFlowAPI struct {
+	*fileAPI
+	flow *line.MediaMessageFlowResponse
+	err  error
+}
+
+func (a *fileFlowAPI) DetermineMediaMessageFlowContext(context.Context, string) (*line.MediaMessageFlowResponse, error) {
+	return a.flow, a.err
+}
+
+func TestFileMediaCapabilityBeforeMutation(t *testing.T) {
+	for _, chat := range []string{"u-peer", "c-group", "r-room"} {
+		for _, allow := range []bool{false, true} {
+			for _, tc := range []struct {
+				name  string
+				flow  *line.MediaMessageFlowResponse
+				err   error
+				plain bool
+			}{
+				{name: "plaintext-only", flow: &line.MediaMessageFlowResponse{FlowMap: map[string]int{"1": 2, "14": 1}}, plain: true},
+				{name: "missing-response"},
+				{name: "missing-file-type", flow: &line.MediaMessageFlowResponse{FlowMap: map[string]int{"1": 2}}},
+				{name: "unknown-file-flow", flow: &line.MediaMessageFlowResponse{FlowMap: map[string]int{"14": 3}}},
+				{name: "transport-failure", err: errors.New("synthetic unavailable")},
+			} {
+				t.Run(fmt.Sprintf("%s/%s/%t", chat, tc.name, allow), func(t *testing.T) {
+					c, f, crypt, store := setup(t, false)
+					files := &fileAPI{fakeAPI: f}
+					api := &fileFlowAPI{fileAPI: files, flow: tc.flow, err: tc.err}
+					c.crypto = &fileCrypto{fakeCrypto: crypt}
+					c.Session.NewClient = func(string) session.API { return api }
+					file := Attachment{Name: "synthetic.txt", Data: []byte("synthetic private file")}
+					result, err := c.SendFileWithOptionsContext(context.Background(), chat, file, "", SendOptions{AllowPlaintext: allow})
+					if tc.plain && allow {
+						if err != nil || result == nil || result.Encrypted || f.sends != 1 || strings.Join(files.order, ",") != "send,plain_upload" {
+							t.Fatal("explicit plaintext file policy failed", err)
+						}
+					} else {
+						if err == nil || result != nil || f.sends != 0 || f.registrations != 0 || len(files.order) != 0 || store.state.LastReqSeq != 0 {
+							t.Fatal("file capability failure had mutation side effects")
+						}
+						if tc.plain {
+							var safe *fault.Error
+							if !errors.As(err, &safe) || safe.Code != "encryption_required" {
+								t.Fatal("wrong default file refusal")
+							}
+						}
+					}
+				})
+			}
+		}
+	}
+}

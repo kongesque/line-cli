@@ -377,15 +377,19 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 	}
 	plain := c.state.NoE2EE
-	if image != nil && !plain {
+	if file != nil && !plain {
+		flowType, mediaName := "14", "file"
+		if image != nil {
+			flowType, mediaName = "1", "image"
+		}
 		var flow *line.MediaMessageFlowResponse
 		if err := c.Session.DoContext(ctx, func(api session.API) (err error) { flow, err = api.DetermineMediaMessageFlowContext(ctx, chat); return }); err != nil {
 			return nil, err
 		}
-		if flow == nil || (flow.FlowMap["1"] != 1 && flow.FlowMap["1"] != 2) {
-			return nil, errors.New("LINE returned no supported image upload capability")
+		if flow == nil || (flow.FlowMap[flowType] != 1 && flow.FlowMap[flowType] != 2) {
+			return nil, fmt.Errorf("LINE returned no supported %s upload capability", mediaName)
 		}
-		plain = flow.FlowMap["1"] == 1
+		plain = flow.FlowMap[flowType] == 1
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

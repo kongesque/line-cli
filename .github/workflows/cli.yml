@@ -11,6 +11,8 @@ permissions:
 env:
   LINE_CLI_LIVE_READ: "0"
   LINE_CLI_LIVE_WATCH: "0"
+  LINE_CLI_LIVE_SECURITY_READ: "0"
+  LINE_CLI_LIVE_SECURITY_SEND: "0"
 
 jobs:
   crypto:

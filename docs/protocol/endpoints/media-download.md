@@ -100,3 +100,21 @@ Its shared `gL` packages `ENC_KM` and `FILE_NAME` as `keyMaterial` and `fileName
 restores them only after decryption. These helpers apply to encrypted media,
 not just images. The CLI now follows this envelope for generic files while
 retaining historical incoming metadata conflict checks. No live send was used.
+
+
+## File capability validation after live inspection
+
+The same Chrome 3.7.2 source uses `sP` and `checkAndGetMediaMessageFlow` for
+all media types, including file type 14. `encryptMessage` encrypts media only
+when its type-specific flow is 2. The CLI had applied this check only to images;
+it now checks `flowMap["14"]` before generic-file uploads too. An explicit 1
+requires per-send plaintext consent; missing/unknown/error responses stop sends.
+
+In an authorized test group, LINE advertised file flow 1 even though encrypted
+text worked. An encrypted object upload succeeded (HTTP 201), but the subsequent
+file message returned HTTP 400 / TalkException. No file message appeared in the
+inspected recent history. This exposed the missing capability check; the exact
+server exception code was not retained, so the HTTP rejection alone does not
+prove which field LINE rejected. The corrected default path is verified to
+refuse before upload, registration, message send, or sequence reservation.
+Encrypted-file delivery/download remains unverified on a live flow-2 chat.

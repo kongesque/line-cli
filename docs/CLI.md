@@ -392,6 +392,12 @@ HTTPS termination. This flag applies to text, stdin, mentions, replies, files,
 and plaintext-capable images; it still uses encryption when available. It does
 not override the encrypted-image restriction or authorize fallback on errors.
 
+For `--file`, the server's file-specific media capability must also permit
+encryption. A chat can support encrypted text while allowing only plaintext
+files. In that case, the default file send stops before upload or message creation;
+`--allow-plaintext` is required to send the file without Letter Sealing.
+Missing, unknown, or unreadable media capabilities never authorize plaintext.
+
 The CLI uses Letter Sealing when the conversation supports it. Missing keys,
 incomplete group membership, or a transport failure stop an encrypted send
 instead of silently sending plaintext. An explicit group send can register a
