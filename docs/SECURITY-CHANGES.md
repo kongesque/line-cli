@@ -32,3 +32,29 @@ event names. Oversized events never reach delivery/checkpoint callbacks.
 Synthetic maximum-count history pages fit the RPC budget; live server maximum
 keychain/history sizes have not been measured. Legitimate oversized responses
 fail explicitly and may require a reviewed budget adjustment.
+
+Builds select Go 1.27.2, including CI/release jobs. `build.sh` checks the actual
+compiler selected by `GO`/`GOTOOLCHAIN`; older compilers and unreviewed versions
+fail before building. The minimum module directive is also Go 1.27.2. This
+replaces the earlier Go 1.26+ requirement. To select the reviewed compiler:
+`GOTOOLCHAIN=go1.27.2 ./build.sh`. Future toolchain updates should change the
+module, CI pins, and compiler guard together after advisory review.
+
+Run `./scripts/security-check.sh ./bin/line` for source and binary scans using
+pinned govulncheck v1.9.0. Release jobs scan each target before packaging.
+[GO-2026-6611](https://pkg.go.dev/vuln/GO-2026-6611) affects HTTP/2 clients;
+[Go 1.27.2](https://go.dev/doc/devel/release#go1.27.0) contains its fix. Scanner
+findings require applicability review; there is no standard-library exemption.
+
+Audit triage on 2026-10-18 with govulncheck v1.9.0 and Go 1.27.2: source scan
+reported no reachable or imported-package vulnerabilities. Module-only findings
+were GO-2026-6629 (`x/text/secure/precis`), GO-2026-6355, GO-2026-6354 and
+GO-2026-6303 (`x/crypto/ssh`), and GO-2026-5932 (`x/crypto/openpgp`). The CLI and
+scanned public libraries do not import those packages. These are recorded as
+inapplicable to the current dependency graph, not suppressed scanner failures.
+
+Release executables retain their symbol tables (`-w`, without `-s`) so binary
+scans include inlined-symbol analysis. govulncheck v1.9.0 conservatively treats
+all vulnerable module symbols as present in stripped executables. Retaining
+symbols made the rebuilt macOS binary scan pass without advisory exemptions;
+DWARF debug data remains omitted.

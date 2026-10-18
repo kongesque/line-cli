@@ -240,7 +240,7 @@ error. Omit passwords, tokens, QR login values, and private messages.
 
 ## Build and contribute
 
-Source builds require Git and **Go 1.26+**. macOS also needs Xcode Command Line
+Source builds require Git and **Go 1.27.2**. macOS also needs Xcode Command Line
 Tools and CGO for Keychain support. On macOS or Linux:
 
 ```sh

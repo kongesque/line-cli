@@ -2,7 +2,7 @@
 
 Tests live beside the packages they exercise. Ordinary tests use synthetic data,
 fake APIs, and temporary storage. They do not require a LINE login. Requirements
-are Go 1.26+; macOS also needs CGO and Xcode Command Line Tools for Keychain.
+are Go 1.27.2; macOS also needs CGO and Xcode Command Line Tools for Keychain.
 Linux and Windows support `CGO_ENABLED=0`.
 
 ## Test suites
@@ -198,3 +198,23 @@ The original eight audit probes now have permanent corrected-behavior coverage:
 `internal/cli/history_test.go`/`details_test.go` (CLI JSON order/details), `history_test.go` (reply identity and timestamp cursors),
 `content_test.go` (authenticated filenames, mentions and locations), and protocol
 `history_test.go` (delivered timestamps). No `/tmp` audit overlay is needed.
+
+## Security regression and release checks
+
+Use `GOTOOLCHAIN=go1.27.2` when the host Go version differs. The build guard
+checks the compiler selected by `GO`, and rejects an unreviewed toolchain.
+
+```sh
+./scripts/check-toolchain.sh
+./build.sh
+./scripts/security-check.sh ./bin/line
+go test ./pkg/line -run '^$' -fuzz '^FuzzBoundedResponse$' -fuzztime=15s
+go test ./pkg/line -run '^$' -fuzz '^FuzzSSELine$' -fuzztime=15s
+```
+
+Transport-limit tests include a loopback-only HTTP server to verify gzip and
+chunked transfer decoding; they need permission to bind a local ephemeral port.
+All request payloads and credentials are synthetic. Security tests cover outer
+file envelopes, recipient attachment authentication, pre-upload image refusal,
+plaintext consent, redirect rejection, and response/SSE budgets. Cross builds do
+not substitute for native Linux keyring or Windows DPAPI integration tests.
