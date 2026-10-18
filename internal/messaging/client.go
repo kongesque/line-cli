@@ -269,8 +269,20 @@ type SendResult struct {
 	RequestSequence    int64  `json:"request_sequence"`
 }
 
-// Send sends exactly once after read-only preparation, encrypting unless the
-// account or peer explicitly lacks Letter Sealing support. Caller holds Lock.
+// SendOptions controls the per-send plaintext exception. Its zero value requires
+// Letter Sealing. AllowPlaintext never permits fallback after key/transport errors.
+type SendOptions struct {
+	AllowPlaintext bool
+}
+
+func (o SendOptions) checkPlaintext(plain bool) error {
+	if plain && !o.AllowPlaintext {
+		return fault.New("encryption_required", "preparation", "Letter Sealing is unavailable; nothing was sent; use --allow-plaintext to explicitly permit sending content visible to LINE", nil)
+	}
+	return nil
+}
+
+// Send sends exactly once and requires encryption. Caller holds Lock.
 func (c *Client) Send(chat, text string) (*SendResult, error) {
 	return c.SendContext(context.Background(), chat, text)
 }
@@ -284,13 +296,18 @@ func (c *Client) SendReply(chat, text, replyTo string) (*SendResult, error) {
 }
 
 func (c *Client) SendReplyContext(ctx context.Context, chat, text, replyTo string) (*SendResult, error) {
-	return c.send(ctx, chat, text, replyTo, nil, nil, nil)
+	return c.SendMentionsWithOptionsContext(ctx, chat, text, replyTo, nil, SendOptions{})
 }
 
 // SendMentionsContext sends explicit mentions with the ordinary single-attempt
 // text/reply flow. It does not derive mentions from literal @name text.
 func (c *Client) SendMentionsContext(ctx context.Context, chat, text, replyTo string, mentions []Mention) (*SendResult, error) {
-	return c.send(ctx, chat, text, replyTo, nil, mentions, nil)
+	return c.SendMentionsWithOptionsContext(ctx, chat, text, replyTo, mentions, SendOptions{})
+}
+
+// SendMentionsWithOptionsContext applies an explicit policy to text, mentions, and replies.
+func (c *Client) SendMentionsWithOptionsContext(ctx context.Context, chat, text, replyTo string, mentions []Mention, options SendOptions) (*SendResult, error) {
+	return c.send(ctx, chat, text, replyTo, nil, mentions, nil, options)
 }
 
 func (c *Client) SendFile(chat string, file Attachment, replyTo string) (*SendResult, error) {
@@ -298,10 +315,14 @@ func (c *Client) SendFile(chat string, file Attachment, replyTo string) (*SendRe
 }
 
 func (c *Client) SendFileContext(ctx context.Context, chat string, file Attachment, replyTo string) (*SendResult, error) {
-	return c.send(ctx, chat, "", replyTo, &file, nil, nil)
+	return c.SendFileWithOptionsContext(ctx, chat, file, replyTo, SendOptions{})
 }
 
-func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment, mentions []Mention, image *PreparedImage) (result *SendResult, resultErr error) {
+func (c *Client) SendFileWithOptionsContext(ctx context.Context, chat string, file Attachment, replyTo string, options SendOptions) (*SendResult, error) {
+	return c.send(ctx, chat, "", replyTo, &file, nil, nil, options)
+}
+
+func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Attachment, mentions []Mention, image *PreparedImage, options SendOptions) (result *SendResult, resultErr error) {
 	op := &fault.Mutation{Action: "send", Outcome: fault.NotAttempted}
 	stage := "validation"
 	defer func() { resultErr = mutationFailure(op, stage, resultErr) }()
@@ -328,6 +349,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		if mention.All && toType(chat) == 0 {
 			return nil, errors.New("mention-all requires a group or room")
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	op.ChatID = chat
 	if replyTo != "" {
@@ -363,6 +387,12 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 		plain = flow.FlowMap["1"] == 1
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := options.checkPlaintext(plain); err != nil {
+		return nil, err
+	}
 	if image != nil && !plain {
 		return nil, encryptedImageUnavailable()
 	}
@@ -390,6 +420,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	if !plain && kind == 0 {
 		key, keyErr := c.negotiate(ctx, chat)
 		if errors.Is(keyErr, errNoLetterSealing) {
+			if err := options.checkPlaintext(true); err != nil {
+				return nil, err
+			}
 			plain = true
 		} else if keyErr != nil {
 			return nil, keyErr
@@ -419,6 +452,9 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 			}
 		}
 		if errors.Is(err, errNoLetterSealing) {
+			if err := options.checkPlaintext(true); err != nil {
+				return nil, err
+			}
 			plain, err = true, nil
 		} else if err == nil {
 			encryptionVersion = c.groupKeys[chat+":0"]

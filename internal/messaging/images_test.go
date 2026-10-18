@@ -103,7 +103,7 @@ func TestImageSendFlows(t *testing.T) {
 				c.crypto = &fileCrypto{fakeCrypto: crypto}
 				c.Session.NewClient = func(string) session.API { return api }
 				for range 2 {
-					result, err := c.SendImageContext(context.Background(), chat, *img, "")
+					result, err := c.SendImageWithOptionsContext(context.Background(), chat, *img, "", SendOptions{AllowPlaintext: true})
 					if flow == 2 {
 						var safe *fault.Error
 						if !errors.As(err, &safe) || safe.Code != "encrypted_image_unavailable" || result != nil || len(api.order) != 0 || f.sends != 0 || f.registrations != 0 || store.state.LastReqSeq != 0 || len(api.full) != 0 || len(api.preview) != 0 {
@@ -138,7 +138,7 @@ func TestImageFailuresAndCancellationNeverReplay(t *testing.T) {
 				}
 				c.crypto = &fileCrypto{fakeCrypto: crypto}
 				c.Session.NewClient = func(string) session.API { return api }
-				result, err := c.SendImageContext(ctx, "u-peer", *img, "")
+				result, err := c.SendImageWithOptionsContext(ctx, "u-peer", *img, "", SendOptions{AllowPlaintext: true})
 				stop()
 				// Cancellation after the final confirmed stage preserves success.
 				if cancel && ((flow == 1 && stage == "attachment_upload") || (flow == 2 && stage == "send")) {

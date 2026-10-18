@@ -55,7 +55,10 @@ func TestAlreadyCancelledOperationsMakeNoRemoteCalls(t *testing.T) {
 	cancel()
 	calls := []func() error{
 		func() error { _, e := c.HistoryContext(ctx, "u-peer", 10); return e },
-		func() error { _, e := c.SendContext(ctx, "u-peer", "hello"); return e },
+		func() error {
+			_, e := c.SendMentionsWithOptionsContext(ctx, "u-peer", "hello", "", nil, SendOptions{AllowPlaintext: true})
+			return e
+		},
 		func() error {
 			_, e := c.SendFileContext(ctx, "c-group", Attachment{Name: "test.txt", Data: []byte("test")}, "")
 			return e
@@ -87,7 +90,7 @@ func TestCancellationBetweenPreparationAndMutation(t *testing.T) {
 			if phase == "lookup" {
 				_, err = c.UnsendContext(ctx, "u-peer", "123")
 			} else {
-				_, err = c.SendContext(ctx, "u-peer", "hello")
+				_, err = c.SendMentionsWithOptionsContext(ctx, "u-peer", "hello", "", nil, SendOptions{AllowPlaintext: true})
 			}
 			if !errors.Is(err, context.Canceled) || api.sends != 0 || store.state.LastReqSeq != 0 {
 				t.Fatalf("err=%v sends=%d seq=%d", err, api.sends, store.state.LastReqSeq)
@@ -110,9 +113,9 @@ func TestCancellationAfterDispatchPreservesOutcome(t *testing.T) {
 			var result *SendResult
 			var err error
 			if phase == "plain-file" {
-				result, err = c.SendFileContext(ctx, "u-peer", Attachment{Name: "test.txt"}, "")
+				result, err = c.SendFileWithOptionsContext(ctx, "u-peer", Attachment{Name: "test.txt"}, "", SendOptions{AllowPlaintext: true})
 			} else {
-				result, err = c.SendContext(ctx, "u-peer", "hello")
+				result, err = c.SendMentionsWithOptionsContext(ctx, "u-peer", "hello", "", nil, SendOptions{AllowPlaintext: true})
 			}
 			if api.sends != 1 {
 				t.Fatalf("sends=%d", api.sends)
@@ -168,7 +171,7 @@ func TestCancelledEncryptedUploadRetainsUncertainOutcome(t *testing.T) {
 	defer cancel()
 	f := &cancellationAPI{fakeAPI: api, cancel: cancel}
 	c.Session.NewClient = func(string) session.API { return f }
-	_, err := c.SendFileContext(ctx, "u-peer", Attachment{Name: "test.txt"}, "")
+	_, err := c.SendFileWithOptionsContext(ctx, "u-peer", Attachment{Name: "test.txt"}, "", SendOptions{AllowPlaintext: true})
 	var mutation *MutationError
 	if !errors.Is(err, context.Canceled) || !errors.As(err, &mutation) || !strings.Contains(err.Error(), "uploaded file may remain") || api.sends != 0 {
 		t.Fatalf("err=%v sends=%d", err, api.sends)

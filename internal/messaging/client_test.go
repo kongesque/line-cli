@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -120,7 +121,7 @@ func TestSendOnlyAllowsExplicitPlaintextFallback(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, f, _, _ := setup(t, tc.noE2EE)
 			f.negotiateErr = tc.err
-			result, err := c.Send("u-peer", "hello")
+			result, err := c.SendMentionsWithOptionsContext(context.Background(), "u-peer", "hello", "", nil, SendOptions{AllowPlaintext: true})
 			if f.sends != tc.sends {
 				t.Fatal("unsafe fallback")
 			}
@@ -199,7 +200,7 @@ func TestSendJSONReportsGroupKeyReuseAndNonGroupSends(t *testing.T) {
 	} {
 		c, f, _, _ := setup(t, tc.plain)
 		f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
-		result, err := c.Send(tc.chat, "test")
+		result, err := c.SendMentionsWithOptionsContext(context.Background(), tc.chat, "test", "", nil, SendOptions{AllowPlaintext: tc.plain})
 		if err != nil {
 			t.Fatal(err)
 		}

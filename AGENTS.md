@@ -43,7 +43,9 @@ integration requirements, and CI coverage.
 
 ## Behavior and validation
 
-Preserve explicit capability checks before plaintext fallback. Missing or malformed
+Require encryption by default; plaintext needs per-command `--allow-plaintext`
+consent plus explicit account/server capability evidence. Preserve explicit
+capability checks before plaintext fallback. Missing or malformed
 keys and transport failures must not silently downgrade encryption. Only an
 explicit send may register a group key, and it needs complete membership.
 Remote mutations are attempted once with a persisted request sequence; reads can

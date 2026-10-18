@@ -35,6 +35,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	var cursor string
 	var text string
 	var stdin bool
+	var allowPlaintext bool
 	var replyTo string
 	var filePath, imagePath string
 	var preparedImage *messaging.PreparedImage
@@ -51,6 +52,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		fs.BoolVar(&pageMode, "page", false, "return a JSON history page with continuation cursor (requires --json)")
 		fs.StringVar(&cursor, "cursor", "", "continue a history page (requires --page --json)")
 	} else {
+		fs.BoolVar(&allowPlaintext, "allow-plaintext", false, "permit content visible to LINE only when Letter Sealing is explicitly unavailable")
 		fs.StringVar(&mentionsJSON, "mentions", "", "explicit JSON mention array: [{\"start\":0,\"end\":5,\"mid\":\"USER_MID\"}] (UTF-16 offsets; text/stdin only)")
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
@@ -265,13 +267,14 @@ func (a *App) messageCommand(command string, args []string) error {
 		return err
 	}
 	if command == "send" {
+		options := messaging.SendOptions{AllowPlaintext: allowPlaintext}
 		var result *messaging.SendResult
 		if preparedImage != nil {
-			result, err = client.SendImageContext(a.loginContext(), chat, *preparedImage, replyTo)
+			result, err = client.SendImageWithOptionsContext(a.loginContext(), chat, *preparedImage, replyTo, options)
 		} else if attachment != nil {
-			result, err = client.SendFileContext(a.loginContext(), chat, *attachment, replyTo)
+			result, err = client.SendFileWithOptionsContext(a.loginContext(), chat, *attachment, replyTo, options)
 		} else {
-			result, err = client.SendMentionsContext(a.loginContext(), chat, text, replyTo, mentions)
+			result, err = client.SendMentionsWithOptionsContext(a.loginContext(), chat, text, replyTo, mentions, options)
 		}
 		if err != nil {
 			return err

@@ -64,7 +64,7 @@ func TestReplyPreservesEncryptionAndRelationFields(t *testing.T) {
 	for _, plain := range []bool{true, false} {
 		c, f, _, _ := setup(t, plain)
 		f.history = []*line.Message{{ID: "123", From: "u-peer", To: "u-self"}}
-		result, err := c.SendReply("u-peer", "reply", "123")
+		result, err := c.SendMentionsWithOptionsContext(context.Background(), "u-peer", "reply", "123", nil, SendOptions{AllowPlaintext: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -72,7 +72,7 @@ func TestReplyPreservesEncryptionAndRelationFields(t *testing.T) {
 			t.Fatal("invalid reply envelope")
 		}
 		f.sendErr = errors.New("NOT_FOUND")
-		_, err = c.SendReply("u-peer", "reply", "123")
+		_, err = c.SendMentionsWithOptionsContext(context.Background(), "u-peer", "reply", "123", nil, SendOptions{AllowPlaintext: true})
 		if err == nil || f.sends != 2 || f.sent.RelatedMessageID != "123" {
 			t.Fatal("reply retried without relation")
 		}

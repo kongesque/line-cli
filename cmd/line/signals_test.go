@@ -54,7 +54,7 @@ func TestSignalInputHelper(t *testing.T) {
 		manager := session.NewManager(store)
 		manager.NewClient = func(string) session.API { return &cancelledSendAPI{cancel: func() {}, confirmed: true} }
 		a := &cli.App{Context: s.ctx, Out: os.Stdout, Err: os.Stderr, Manager: manager, Lock: func() (func(), error) { return func() {}, nil }}
-		err = a.Run([]string{"--error-format=json", "send", "id:c-group", "--text", "synthetic", "--json"})
+		err = a.Run([]string{"--error-format=json", "send", "id:c-group", "--allow-plaintext", "--text", "synthetic", "--json"})
 	case "poll":
 		io.WriteString(os.Stderr, "Waiting for scan\n")
 		<-s.ctx.Done()
@@ -179,10 +179,10 @@ func TestCommandExitPreservesCancelledMutationDetails(t *testing.T) {
 		}
 		var want string
 		if confirmed {
-			_, err = client.SendFileContext(ctx, "c-group", messaging.Attachment{Name: "test.txt"}, "")
+			_, err = client.SendFileWithOptionsContext(ctx, "c-group", messaging.Attachment{Name: "test.txt"}, "", messaging.SendOptions{AllowPlaintext: true})
 			want = "message 123 was created"
 		} else {
-			_, err = client.SendContext(ctx, "c-group", "synthetic")
+			_, err = client.SendMentionsWithOptionsContext(ctx, "c-group", "synthetic", "", nil, messaging.SendOptions{AllowPlaintext: true})
 			want = "delivery may have occurred"
 		}
 		var out bytes.Buffer

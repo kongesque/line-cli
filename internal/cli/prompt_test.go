@@ -13,7 +13,7 @@ import (
 
 func TestGuidedSendSelectsNewContactAndSendsOnce(t *testing.T) {
 	a, f, out, diagnostics, _ := guidedApp(t, "/New\n1\n\nHello คุณแฟน\n")
-	if err := a.Run([]string{"send"}); err != nil {
+	if err := a.Run([]string{"send", "--allow-plaintext"}); err != nil {
 		t.Fatal(err)
 	}
 	if f.sends != 1 || f.sent.To != "u-new" || f.sent.Text != "Hello คุณแฟน" {
@@ -29,7 +29,7 @@ func TestGuidedSendSelectsNewContactAndSendsOnce(t *testing.T) {
 
 func TestExplicitNameIncludesContactsWithoutChats(t *testing.T) {
 	a, f, _, _, _ := guidedApp(t, "unused")
-	if err := a.Run([]string{"send", "New contact", "--text", "hello", "--json"}); err != nil {
+	if err := a.Run([]string{"send", "New contact", "--allow-plaintext", "--text", "hello", "--json"}); err != nil {
 		t.Fatal(err)
 	}
 	if f.sends != 1 || f.sent.To != "u-new" {
@@ -37,7 +37,7 @@ func TestExplicitNameIncludesContactsWithoutChats(t *testing.T) {
 	}
 	a, f, _, _, _ = guidedApp(t, "unused")
 	f.names["u-new"] = "Alice"
-	if err := a.Run([]string{"send", "Alice", "--text", "hello"}); err == nil {
+	if err := a.Run([]string{"send", "Alice", "--allow-plaintext", "--text", "hello"}); err == nil {
 		t.Fatal("ambiguous name was accepted")
 	}
 	if f.sends != 0 {
@@ -114,7 +114,7 @@ func TestChooserDuplicateNamesPagingAndSearch(t *testing.T) {
 	a, f, _, diagnostics, _ := guidedApp(t, "/Alice\n2\nHello\n")
 	f.boxes = append(f.boxes, line.MessageBox{ID: "u-other"})
 	f.names["u-other"] = "Alice"
-	if err := a.Run([]string{"send"}); err != nil {
+	if err := a.Run([]string{"send", "--allow-plaintext"}); err != nil {
 		t.Fatal(err)
 	}
 	if f.sent.To != "u-other" || !strings.Contains(diagnostics.String(), "u-alice") || !strings.Contains(diagnostics.String(), "u-other") {

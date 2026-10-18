@@ -91,13 +91,17 @@ func PrepareImage(ctx context.Context, file Attachment) (*PreparedImage, error) 
 }
 
 func (c *Client) SendImageContext(ctx context.Context, chat string, img PreparedImage, replyTo string) (*SendResult, error) {
+	return c.SendImageWithOptionsContext(ctx, chat, img, replyTo, SendOptions{})
+}
+
+func (c *Client) SendImageWithOptionsContext(ctx context.Context, chat string, img PreparedImage, replyTo string, options SendOptions) (*SendResult, error) {
 	if replyTo != "" {
 		return nil, fault.New("invalid_arguments", "validation", "--image cannot be combined with --reply-to; image reply support is unverified", nil)
 	}
 	if len(img.file.Data) == 0 || len(img.preview) == 0 {
 		return nil, fault.New("invalid_arguments", "validation", "image must be prepared before sending", nil)
 	}
-	return c.send(ctx, chat, "", replyTo, &img.file, nil, &img)
+	return c.send(ctx, chat, "", replyTo, &img.file, nil, &img, options)
 }
 
 func (c *Client) uploadAttachment(ctx context.Context, file *Attachment, img *PreparedImage, metadata map[string]string, op *fault.Mutation) ([]byte, error) {

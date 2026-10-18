@@ -154,3 +154,8 @@ preview (`preview_upload`), and `send` separately. An upload may leave an object
 without creating a message. Plain image upload follows message creation, so its
 failure retains the confirmed message receipt just like a generic-file upload.
 Never infer that an upload or send can safely be retried from a transport error.
+
+Send policy errors: `encryption_required` means Letter Sealing is unavailable
+and the command did not permit plaintext. `encrypted_image_unavailable` means
+native encrypted image sending is disabled until a secure compatible preview
+format is established. Neither error authorizes an automatic resend or downgrade.

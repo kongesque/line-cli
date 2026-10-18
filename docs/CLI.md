@@ -386,6 +386,13 @@ unknown outcomes require checking LINE before retrying. See
 [image protocol evidence](protocol/endpoints/image-send.md) for details. Live
 interoperability has not been verified.
 
+Sending requires Letter Sealing by default. If the account or server explicitly
+reports it unavailable, the command returns `encryption_required` before sending.
+Use `--allow-plaintext` on that command to permit content visible to LINE after
+HTTPS termination. This flag applies to text, stdin, mentions, replies, files,
+and plaintext-capable images; it still uses encryption when available. It does
+not override the encrypted-image restriction or authorize fallback on errors.
+
 The CLI uses Letter Sealing when the conversation supports it. Missing keys,
 incomplete group membership, or a transport failure stop an encrypted send
 instead of silently sending plaintext. An explicit group send can register a
