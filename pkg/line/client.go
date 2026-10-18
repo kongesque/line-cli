@@ -209,7 +209,7 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	req.Header.Set("x-hmac", signature)
 
 	pollClient := &http.Client{Timeout: 200 * time.Second}
-	resp, err := pollClient.Do(req)
+	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +273,7 @@ func (c *Client) waitForLoginLF1(verifier string) (*LoginResult, error) {
 	req.Header.Set("x-hmac", signature)
 
 	pollClient := &http.Client{Timeout: 120 * time.Second}
-	resp, err := pollClient.Do(req)
+	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +405,7 @@ func (c *Client) callRPCWithBaseURLContext(ctx context.Context, baseURL, service
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := doLINERequest(c.HTTPClient, req)
 	if err != nil {
 		return nil, requestFailure("transport", err)
 	}
@@ -498,7 +498,7 @@ func (c *Client) postWithHMACContext(ctx context.Context, fullURL string, body [
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := doLINERequest(c.HTTPClient, req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -609,7 +609,7 @@ func (c *Client) UploadOBSPlainContext(ctx context.Context, data []byte, oid str
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return fmt.Errorf("OBS upload request failed: %w", err)
 	}
@@ -678,7 +678,7 @@ func (c *Client) UploadOBSWithSIDContext(ctx context.Context, data []byte, sid s
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return "", fmt.Errorf("OBS upload request failed: %w", err)
 	}
@@ -743,7 +743,7 @@ func (c *Client) UploadOBSWithOIDAndSIDContext(ctx context.Context, data []byte,
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return fmt.Errorf("OBS upload request failed: %w", err)
 	}
@@ -796,7 +796,7 @@ func (c *Client) DownloadOBSPublicResource(ctx context.Context, resourcePath str
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return nil, fmt.Errorf("public OBS resource request failed: %w", err)
 	}
@@ -859,7 +859,7 @@ func (c *Client) DownloadAlbumPreview(ctx context.Context, oid, chatID, albumID 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
 	}
@@ -953,7 +953,7 @@ func (c *Client) checkOBSObjectReady(ctx context.Context, obsURL, obsToken, mess
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return fmt.Errorf("OBS object info request failed: %w", err)
 	}
@@ -991,7 +991,7 @@ func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messag
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	resp, err := c.obsHTTPClient().Do(req)
+	resp, err := doLINERequest(c.obsHTTPClient(), req)
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
 	}
@@ -1094,7 +1094,7 @@ func (c *Client) GetPageInfo(url string) (*PageInfoResult, error) {
 		req.Header.Set("Cookie", fmt.Sprintf("lct=%s", c.AccessToken))
 	}
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := doLINERequest(c.HTTPClient, req)
 	if err != nil {
 		return nil, err
 	}

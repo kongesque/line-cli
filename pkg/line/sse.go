@@ -52,7 +52,7 @@ func (c *Client) ListenSSE(ctx context.Context, localRev int64, callback func(ev
 		req.Header.Set("Cookie", fmt.Sprintf("lct=%s", c.AccessToken))
 	}
 
-	resp, err := sseHTTPClient.Do(req)
+	resp, err := doLINERequest(sseHTTPClient, req)
 	if err != nil {
 		return err
 	}

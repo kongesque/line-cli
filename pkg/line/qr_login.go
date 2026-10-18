@@ -400,7 +400,7 @@ func (c *Client) qrRequest(ctx context.Context, serviceRoot, method string, arg 
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	resp, err := c.qrHTTPClient(wait).Do(req)
+	resp, err := doLINERequest(c.qrHTTPClient(wait), req)
 	if err != nil {
 		return nil, true, qrIOError(ctx, err)
 	}
