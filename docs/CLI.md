@@ -37,16 +37,15 @@ On macOS, you can also use Homebrew:
 brew install kongesque/tap/line-cli
 ```
 
-On Debian or Ubuntu, install credential storage before you log in:
+For Linux desktop login on Debian or Ubuntu, install credential storage:
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
 ```
 
-The Linux keyring must be running and unlocked in the same D-Bus session as
-`line`. See
-[Linux servers and headless storage](#linux-servers-and-headless-storage) if
-you use SSH or a server without an unlocked keyring.
+The desktop keyring must be running and unlocked in the same D-Bus session as
+`line`. Servers and SSH hosts without one use `line login --headless`; see
+[headless setup](#linux-servers-and-headless-storage).
 
 On Windows, run this in PowerShell:
 
@@ -69,115 +68,91 @@ line help
 
 ### Sign in and send your first message
 
+Choose one login command for your environment:
+
+| Environment | Command |
+| --- | --- |
+| macOS, Windows, or Linux with an unlocked desktop keyring | `line login` |
+| Linux server or SSH without a desktop keyring | `line login --headless` |
+
+Scan the QR code with LINE on your phone, approve login, and enter the displayed
+PIN if asked, including leading zeros. Wait for **Session saved securely**.
+QR login is experimental and requires usable Letter Sealing keys. For headless host
+requirements, see [Linux servers](#linux-servers-and-headless-storage).
+
+Then confirm your account and choose a conversation interactively:
+
 ```sh
-line login
 line whoami
 line chats
-line messages "Family group"
-line send "Alice" --text "Hello!"
+line messages
+line send
 ```
 
-`line login` shows a QR code. Scan it with LINE on your phone, approve the
-login, and enter the displayed PIN if asked. Wait for
-**Session saved securely** before running other commands.
-
-QR login is experimental. If you have an email address and password configured
-on your LINE account, you can use:
-
-```sh
-line login --email you@example.com
-```
-
-The CLI asks for your password privately and never saves it. There is no
-password flag or password environment variable.
+`line send` asks you to choose a recipient, enter text, and confirm the message.
+For email/password login, use the options below; passwords are entered privately
+and never saved. There is no password flag or password environment variable.
 
 ### Login options and QR help
 
-| Command or option | Use it when |
+| Command | Purpose |
 | --- | --- |
-| `line login` or `line login --qr` | You want to sign in with a terminal QR code. |
-| `line login --email ADDRESS` | You want the email/password fallback and phone verification. |
-| `line login --qr-url` | You need the one-time QR value for a trusted local QR tool. |
-| `line login --force` | You want to skip the question about replacing a saved session. |
-| `line login --headless` | You are enrolling a supported Linux host without an unlocked keyring. |
+| `line login --qr` | Explicitly select the default QR login. |
+| `line login --email ADDRESS` | Use an email address/password configured on your LINE account, with phone verification. |
+| `line login --headless --email ADDRESS` | Use email login and headless storage on Linux. |
+| `line login --qr-url` | Output the one-time QR value for a trusted local QR tool. |
+| `line login --force` | Skip confirmation before replacing a saved session. |
 
-You cannot combine `--email` with `--qr` or `--qr-url`. Both QR methods require
-an interactive input terminal; redirecting stdout is fine. Progress, the QR
-code, PINs, and warnings go to stderr. The final success message goes to
-stdout.
+`--email` cannot combine with `--qr` or `--qr-url`. Both QR modes require an
+interactive input terminal; stdout can be redirected. Progress, QR codes, PINs,
+and warnings go to stderr; the final success message goes to stdout.
 
-Scan the QR with LINE's scanner. Enter a PIN exactly as displayed, including
-leading zeros. A phone approval alone does not mean the CLI finished checking
-your profile, exporting keys, and saving your session.
-
-If the QR does not fit in your terminal, the CLI tells you the required width
-and suggests `--qr-url`. It will not print a clipped code. `NO_COLOR` disables
-explicit colors. With `--qr-url`, treat the value as a secret: use only a
-trusted local tool, and do not share it, send it to an online QR generator, or
-save it. It remains in terminal scrollback. QR images are not saved. Unset
-`QRCODE_DEBUG` before normal QR login because QR encoder debug mode can write
-data.
-
-A displayed countdown is approximate. Once LINE confirms expiry, the CLI can
-show a new QR code, up to three per login. Network errors and PIN timeouts do
-not trigger a new attempt. Plain terminals and redirected stderr show state
-changes without a live countdown.
-
-QR login cannot currently handle accounts with Letter Sealing disabled. A
-rejected saved QR certificate does not fall back to PIN verification, and an
-unknown certificate error stops login. If you see a certificate verification
-error, try the email fallback. The `Diagnostic: verifyCertificate` suffix, when
-present, contains numeric codes only and no QR, PIN, certificate, token, or
-server response text.
+- **QR too wide:** the CLI reports the required width and suggests `--qr-url`;
+  it never clips the code. `NO_COLOR` disables explicit colors.
+- **QR privacy:** use `--qr-url` only with a trusted local tool. Do not share,
+  upload, or save its value; it remains in scrollback. QR images are not saved.
+  Unset `QRCODE_DEBUG`, which can make the QR encoder write data.
+- **QR expiry:** after LINE confirms expiry, the CLI can show a fresh code, up to
+  three per login. Network errors and PIN timeouts do not trigger retries.
+  The countdown is approximate; plain terminals and redirected stderr show only
+  state changes.
+- **Certificate errors:** rejected saved QR certificates do not fall back to PIN;
+  unknown certificate errors also stop login. Try email login if configured.
+  `Diagnostic: verifyCertificate` contains numeric codes only, with no QR, PIN,
+  certificate, token, or raw server response.
 
 ### Saved sessions and cancellation
 
-Before contacting LINE, login checks local storage and asks before replacing a
-usable saved session. Answer **no** to keep it. `--force` skips that question
-only: it does not skip storage checks, headless storage consent,
-concurrent-session checks, or protocol errors.
+Login checks local storage before contacting LINE and asks before replacing a
+usable saved session. Answer **no** to keep it. `--force` skips only this question;
+it does not bypass storage checks, headless consent, session contention, or
+protocol errors.
 
-Ctrl-C cancels prompts, QR polling, and ordinary command requests. SIGINT exits 130 and SIGTERM exits 143.
-Password echo is restored before exit. Legacy email authentication requests
-still use their existing HTTP timeouts.
+| Commands accepting `--timeout DURATION` | Default deadline |
+| --- | --- |
+| `download` | `2m` |
+| `whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `react`, `unsend` | `0` (no command deadline) |
 
-`whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `react`, and
-`unsend` accept `--timeout DURATION`, for example
-`line send "Alice" --text "Hello" --timeout 30s`. The deadline starts after
-option parsing and covers prompts/stdin, chat-name resolution, message lookup,
-authentication recovery, key preparation, and transfers. The default is `0`
-(no command deadline), except `download`, which defaults to `2m`. `--timeout 0`
-disables the command deadline; individual HTTP request limits still apply.
-A deadline failure exits nonzero (normally 1); signal exits remain 130/143.
+For example: `line send "Alice" --text "Hello" --timeout 30s`. The deadline starts
+after option parsing and covers prompts/stdin, name and message lookup,
+authentication recovery, key preparation, and transfers. `--timeout 0` disables
+it; individual HTTP timeouts still apply. Deadline failures normally exit 1.
 
-Cancellation prevents subsequent remote steps and interrupts active requests.
-Local cryptographic work and filesystem commits finish their current step
-before cancellation is checked. A successful send receipt remains success even
-if cancellation arrives just afterward. An interrupted dispatched mutation may
-already have succeeded: inspect LINE before retrying. The CLI never replays it.
-If a plaintext file message was created before its upload stopped, the error
-retains that message ID. Success output can therefore accompany a signal exit.
+Ctrl-C cancels prompts, QR polling, and ordinary requests. SIGINT exits 130;
+SIGTERM exits 143. Password echo is restored before exit. Legacy email-auth
+requests retain their HTTP timeouts. Local crypto and filesystem commits finish
+their current step before cancellation is checked.
 
-If you cancel before the new session is saved, the old local session stays in
-place. LINE may already have replaced the old Chrome-style session if the final
-login request reached its server. The CLI does not retry that request
-automatically. If saving reports an uncertain outcome, check
-`line auth status --check`; do not restore an older session copy or blindly
-repeat login. A successful save is still reported if a signal arrives
-afterward.
+A dispatched mutation may already have succeeded when interrupted. Inspect LINE
+before repeating it; the CLI never replays it. Confirmed receipts and created
+plaintext-file message IDs are retained even if a later upload or output fails.
+Success output can therefore accompany a signal exit.
 
-For SSH, use an interactive terminal:
-
-```sh
-ssh -t user@host
-line login
-# Or, for the email fallback:
-line login --email you@example.com
-```
-
-SSH does not remove the credential-storage requirement. A supported Linux host
-without an unlocked keyring can use
-[headless storage](#linux-servers-and-headless-storage).
+Cancelling before a new session is saved preserves the old local session, but
+LINE may already have replaced the old Chrome-style session. Login is not
+retried automatically. If saving has an uncertain outcome, run
+`line auth status --check`; do not restore an old copy or blindly repeat login.
+A completed save is still reported if a signal arrives afterward.
 
 ## Daily commands
 
@@ -194,8 +169,8 @@ line unsend
 ```
 
 Choose a chat or message by number or search for a name. Use `n` and `p` to
-move between pages, `q` to cancel, or Ctrl-C to stop. Prompts are disabled with
-`--json` and `--stdin`, so scripts must supply every required argument.
+move between pages, `q` to cancel, or Ctrl-C to stop. `--json`,
+`--error-format=json`, and `--stdin` disable prompts; supply all required arguments.
 
 ### Find chats and people
 
@@ -311,14 +286,12 @@ line messages CHAT_ID --details --json --resolve-names
 line messages CHAT_ID --details --page --json --limit 50
 ```
 
-`--details` requires `--json` and returns a schema-1 envelope. Message details
-include normalized chat IDs, incoming mentions, locations, recovered encrypted
-filenames, attachment size/duration when available, contacts, sticker IDs, and
-bounded rich text/links. `--resolve-names` optionally looks up sender names in
-batches. Chat details consistently include names, activity, and unread counts;
-unknown values are explicit `null`. Legacy JSON remains unchanged. See the
-[detailed field contract](JSON.md#detailed-content) for statuses, unknown values, bounds, and
-partial-result handling. Human output also uses the decoded content summaries.
+`--details` requires `--json` and returns a schema-1 envelope with decoded
+content and explicit unknown values. Add `--resolve-names` to look up sender
+names. Legacy JSON and watch formats remain unchanged. Partial decryption
+failures still emit results and return a nonzero exit code.
+See the [detailed field contract](JSON.md#detailed-content) for fields, statuses,
+and limits.
 
 ### List group members and mention someone
 
@@ -387,17 +360,20 @@ the account and capabilities are checked again afterward.
 Scripts, `--json`, `--error-format=json`, and `--stdin` never prompt. When
 plaintext is required, they fail with `encryption_required` before remote
 actions unless you explicitly permit it.
-If you accept that LINE can read this content, permit plaintext for one command:
+Plaintext still uses HTTPS, but LINE can read the content. To allow it for one
+command:
 
 ```sh
 line send CHAT_ID --file ./report.pdf --allow-plaintext --json
 ```
 
-`--allow-plaintext` still uses encryption when available. File capability is
-checked separately: encrypted text support does not imply encrypted-file
-support. Missing or invalid capabilities, missing keys, incomplete membership,
-and transport errors never authorize a downgrade. An explicit group send can
-register a new group key only when every current member is known.
+`--allow-plaintext` still uses encryption when available.
+[LINE's Letter Sealing guidance](https://help.line.me/line/ios/?contentId=50000087)
+notes version-dependent media/file encryption. The CLI checks file capability
+separately; encrypted text does not guarantee encrypted files. Missing or invalid
+capabilities, missing keys, incomplete membership, and transport errors never
+authorize a downgrade. An explicit group send can register a new group key only
+when every current member is known.
 
 **Native images.** Encrypted `--image` sending is disabled because the current
 full-image/preview format reuses an encryption stream. It stops before uploads,
@@ -572,7 +548,8 @@ written before the error exit. Cancellation uses the usual signal exit codes.
 
 ### JSON output and exit codes
 
-Add `--json` to commands that support it:
+Use full chat IDs and keep message IDs as strings. `--json`, `--error-format=json`,
+and `--stdin` disable prompts; supply all required arguments. For JSON output:
 
 ```sh
 line whoami --json
@@ -709,37 +686,34 @@ For refresh timing, retry rules, and call-path evidence, see the
 
 ### Enroll without an unlocked keyring
 
-On a supported Linux host without an unlocked Secret Service keyring, enroll
-interactively with headless storage:
+Use a regular Unix account with an interactive terminal; for SSH, connect with
+`ssh -t user@host`. Headless storage requires a trusted `/usr/bin/systemd-creds`
+from systemd 256–259 and a working user credential broker. Older and unreviewed
+newer versions are rejected.
 
 ```sh
-line login --headless --email you@example.com
-line auth status
+line login --headless
 line auth status --check --json
 ```
 
-The example uses email login. `line login --headless` selects experimental QR
-login with the same storage protection. You still need an interactive terminal
-for enrollment; `--headless` does not make login unattended.
+The first command uses experimental QR login. For email/password login, replace
+it with `line login --headless --email you@example.com`. Wait for
+**Session saved securely** before checking storage. `--headless` chooses storage;
+initial login still requires terminal interaction and phone approval.
 
-Before contacting LINE, the CLI asks you to accept **Host key; no TPM**
-protection. `--force` does not skip this. Headless storage protects against
-other unprivileged users, but not against root, malware running as your
-account, or someone with a complete copy of the disk. It does not claim TPM
-protection. Cancelling before the new session is saved leaves no new local
-session.
+Before contacting LINE, the CLI asks you to accept **Host key; no TPM**.
+`--force` does not skip consent. This protects against other unprivileged users,
+but not root, malware running as your account, or a complete disk copy. It
+provides no TPM protection. Cancelling before saving leaves no new local session.
 
-After enrollment, use ordinary commands without a storage flag. Logging in
-again keeps the selected backend. `login --headless` does not convert or
-overwrite an existing native session.
+After setup, use ordinary commands without `--headless`. Reauthentication keeps
+the selected backend; `login --headless` does not convert or overwrite an existing
+native session. Keep the same Unix account and config directory for commands,
+SSH, cron, and services.
 
-Headless storage needs a trusted `/usr/bin/systemd-creds` helper and its user
-credential broker. Use the same Unix account and config directory for
-interactive commands, SSH, cron, and services. Systemd versions 256–259 are
-accepted; Debian 13/systemd 257 and Ubuntu 26.04/systemd 259 have disposable-VM
-validation. Other accepted versions still need a successful local check. Older
-and unreviewed newer versions are rejected. UniPi and physical TPM behavior
-have not been verified.
+Debian 13/systemd 257 and Ubuntu 26.04/systemd 259 have disposable-VM validation.
+Other accepted versions still require a successful local check. UniPi and
+physical TPM behavior remain unverified.
 
 ### Move an existing Linux session
 
@@ -787,7 +761,7 @@ NoNewPrivileges=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 MemoryDenyWriteExecute=true
-ExecStart=/usr/local/bin/line watch
+ExecStart=%h/.local/bin/line watch
 Restart=on-failure
 RestartSec=15s
 RestartPreventExitStatus=65 69 74 78
@@ -857,7 +831,7 @@ systemd-run --user --wait --collect \
   --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
   --property=LockPersonality=true \
   --property=MemoryDenyWriteExecute=true \
-  /usr/local/bin/line auth status --check --json
+  "$HOME/.local/bin/line" auth status --check --json
 ```
 
 This check is local and does not contact LINE. Change one sandbox setting at a
@@ -945,13 +919,7 @@ The built-in help has the current option list:
 
 ```sh
 line help
-line login --help
-line contacts --help
-line chats --help
-line messages --help
 line send --help
-line watch --help
-line update --help
 ```
 
 ### Build from source
@@ -984,8 +952,7 @@ and fake APIs; live LINE tests require explicit authorization.
 ### Current limitations
 
 - One saved LINE account per operating-system user.
-- QR login is experimental and cannot handle accounts with Letter Sealing
-  disabled.
+- QR login is experimental and requires usable Letter Sealing keys.
 - History pages contain at most 100 messages; use `--page --json` and its cursor for older available history. Action/reply lookup is bounded to 10 pages and 30 seconds.
 - Generic files require media capability and consent when plaintext-only.
   Encrypted native images are disabled; plaintext JPEG/PNG images require explicit

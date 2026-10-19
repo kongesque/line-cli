@@ -166,16 +166,11 @@ this macOS host; their storage implementation is unchanged.
 
 ## Headless storage engine
 
-This document describes the headless Linux storage format, trust boundary,
-transaction design, and release evidence. For installation and day-to-day use,
-start with the [CLI guide](CLI.md#linux-servers-and-headless-storage).
-
-The engine includes a versioned envelope, systemd adapter, persistent Linux
-resolver, explicit login consent, local status, migration, and recoverable logout.
 Native storage remains the default. `login --headless` enrolls host-only storage;
 reauthentication keeps the existing backend. Use
 `auth migrate --storage=headless` for an explicit native-to-headless migration.
-Never replace session files manually to change backends.
+Never replace session files manually to change backends. Setup and service
+commands are in the [CLI guide](CLI.md#linux-servers-and-headless-storage).
 
 ### Envelope version 1
 

@@ -15,6 +15,12 @@ are in [SESSION.md](SESSION.md); user-facing changes belong in the
 Login and message encryption reuse the LINE protocol and crypto runtime inherited
 from the upstream project.
 
+[LINE Help](https://help.line.me/line/ios/?contentId=50000087) describes Letter Sealing
+as enabled by default with no off switch, while media/file encryption can depend
+on version and specifications. These platform limits do not establish this
+client's media interoperability. Per-command plaintext consent does not change
+LINE account settings; the capability checks below still apply.
+
 ### Login and keys
 
 `internal/session/manager.go` exports the login keychain and saves it with tokens
@@ -29,11 +35,9 @@ are runtime dependencies, even though some functions are invoked indirectly.
 
 `internal/messaging/client.go` and `keys.go` negotiate peer keys, restore historical
 keys, and register group keys only during an explicit send with complete membership.
-Sends require encryption by default. A non-E2EE login or an explicit
-unsupported-capability response permits plaintext only with affirmative terminal
-confirmation or per-command `--allow-plaintext`. Scripts, JSON output/errors, and
-`--stdin` never prompt. Missing keys, network errors, and ambiguous membership
-stop the send. File and image media capabilities are checked separately from text.
+Missing keys, network errors, and ambiguous membership stop the send.
+The [send policy](#send-policy-and-attachment-changes) below defines plaintext
+consent and separate file/image capability checks.
 
 History resolves the sender/receiver key IDs in each encrypted message. It does
 not mark messages read or register group keys. Missing historical device keys can
@@ -43,12 +47,8 @@ Generic file attachments use the `emf` OBS service when encrypted and the `m`
 service for plaintext. `internal/messaging/files.go` derives file keys with HKDF,
 encrypts with AES-CTR, and verifies HMAC-SHA256 before saving a download. The CLI
 treats media sent with `--file` as generic files. Attachment key material and
-filenames stay inside the authenticated Letter Sealing payload. Live encrypted-file
-interoperability remains unverified; plaintext file send/download was verified in
-one authorized group and one direct chat. Encrypted native `--image` sends are
-disabled before remote mutations because full image and preview reuse a CTR stream.
-Plaintext native images require explicit capability and per-send consent, and
-native-image live interoperability remains unverified. See the
+filenames stay inside the authenticated Letter Sealing payload. Current send
+restrictions and live interoperability limits are listed in the
 [security validation record](#security-change-record).
 
 Mutations are never automatically replayed after an uncertain response. The

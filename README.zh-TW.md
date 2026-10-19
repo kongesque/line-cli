@@ -2,14 +2,10 @@
 
 [English](README.md) | 繁體中文（台灣）  | [日本語](README.ja.md) | [ภาษาไทย](README.th.md)
 
-**LINE CLI** 是以 Go 撰寫的輕量指令列工具，讓你能透過終端機使用自己的 LINE 帳號，屬於非官方專案。
-你可以在終端機傳送 LINE 訊息、讀取個人與群組聊天室、分享檔案、下載附件，
-並串流接收即時事件。日常傳訊可使用互動式提示，也能透過 JSON 輸出串接
-shell 指令稿與 AI 代理程式工作流程。
-
-支援 **macOS、Linux 與 Windows**，並在聊天室支援時使用 Letter Sealing
-端對端加密。使用你的個人 LINE 帳號登入即可，不需要機器人帳號或設定
-LINE Messaging API。
+**LINE CLI** 是以 Go 撰寫的非官方工具，讓你能在終端機使用個人 LINE 帳號，
+讀取聊天室、傳送訊息與檔案、下載附件，並接收即時事件。
+支援 **macOS、Linux 與 Windows**，可使用互動式提示或 JSON 輸出，
+不需要機器人帳號或設定 LINE Messaging API。
 
 [![CI](https://github.com/kongesque/line-cli/actions/workflows/cli.yml/badge.svg)](https://github.com/kongesque/line-cli/actions/workflows/cli.yml)
 [![Release](https://img.shields.io/github/v/release/kongesque/line-cli?filter=v*&label=release)](https://github.com/kongesque/line-cli/releases/latest)
@@ -41,18 +37,17 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kongesqu
 
 安裝程式會偵測作業系統與 CPU 架構、驗證發行檔的檢查碼，並將 `line`
 安裝至 `~/.local/bin`。若提示需要套用 `PATH` 設定，請重新開啟終端機。
+若要在目前的 shell 直接使用，請執行 `export PATH="$HOME/.local/bin:$PATH"`。
 
-**Linux 桌面：** 登入前，請確認 Secret Service 金鑰圈已啟動並解鎖，
-且與 `line` 位於同一個 D-Bus 工作階段。Debian／Ubuntu 可安裝以下工具：
+**Linux 桌面：** Debian 或 Ubuntu 請在登入前安裝憑證儲存套件：
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
 ```
 
-**Linux 伺服器或 SSH：** 只安裝套件還不夠。在支援的主機上，
-`line login --headless` 可使用主機金鑰儲存，不需要已解鎖的金鑰圈。
-首次設定仍需互動式操作；此儲存方式無法防止整顆磁碟遭複製，也不提供 TPM 保護。
-詳見[無頭環境設定、移轉與服務部署](docs/CLI.zh-TW.md#linux-servers-and-headless-storage)。
+請從桌面工作階段執行 `line`，並確認 Secret Service 金鑰圈已啟動、解鎖，
+且與 `line` 位於同一個 D-Bus 工作階段。沒有桌面金鑰圈的伺服器或 SSH 環境，
+請使用下方的無頭環境登入方式。
 
 ### Windows：PowerShell
 
@@ -70,7 +65,6 @@ irm https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-re
 
 ```sh
 line version
-line help
 ```
 
 <a id="quick-start-send-your-first-line-message"></a>
@@ -91,28 +85,33 @@ line login
 請等到出現 **Session saved securely**。QR 碼登入目前為實驗性功能，
 且必須啟用 Letter Sealing。
 
-如果你的帳號已設定電子郵件與密碼，也可以使用：
+若 LINE 帳號已設定電子郵件與密碼，可改用下列方式登入，QR 碼登入失敗時也適用：
 
 ```sh
 line login --email you@example.com
 ```
 
-輸入密碼時不會顯示內容，也不會儲存密碼。登入會檢查儲存機制，並在取代可用的
-已儲存工作階段前詢問。
-詳見[登入選項與 QR 碼疑難排解](docs/CLI.zh-TW.md#login-options-and-qr-help)。
+請依提示輸入密碼（輸入內容不會顯示），並在需要時完成手機驗證。密碼不會被儲存。
 
-**在 Linux 伺服器上或透過 SSH 使用時，若金鑰圈無法解鎖，請使用 `--headless` 登入：**
+<details>
+<summary>Linux 伺服器或 SSH：不使用桌面金鑰圈登入</summary>
+
+請使用一般 Unix 使用者帳號與互動式終端機；遠端連線可執行 `ssh -t user@host`。
+無頭環境儲存需要 systemd 256–259 的 `/usr/bin/systemd-creds`，
+以及可運作的使用者憑證代理服務。
 
 ```sh
-line login --headless                        # QR 碼登入
-line login --headless --email you@example.com # 電子郵件與密碼登入
+line login --headless
 ```
 
-這個選項會使用主機金鑰儲存登入工作階段，之後執行指令就不需要解鎖桌面金鑰圈。
-首次登入仍需在終端機互動操作，並在手機上核准。完成設定後，可以直接執行
-`line chats` 或 `line watch` 等一般指令，不必再加上 `--headless`。
-支援的主機環境、儲存保護機制與既有工作階段的移轉方式，詳見
-[無頭環境設定與服務部署](docs/CLI.zh-TW.md#linux-servers-and-headless-storage)。
+若要使用電子郵件與密碼，請改用 `line login --headless --email you@example.com`。
+依提示同意 **Host key; no TPM**：此儲存方式無法防止整顆磁碟遭複製，也不提供 TPM 保護。
+首次設定仍需終端機互動操作與手機核准。
+
+等到出現 **Session saved securely** 後，執行 `line auth status --check`。
+接著使用相同的 Unix 帳號執行下方指令，不必再加上 `--headless`。
+
+</details>
 
 ### 2. 瀏覽聊天室並傳送訊息
 
@@ -126,6 +125,9 @@ line send       # 選擇收件人並輸入訊息
 在互動式終端機中，CLI 會提示你補齊所需資料。按 Ctrl-C 可取消，
 也能像以下範例一樣直接指定聊天室名稱。
 
+傳送成功後會顯示 `Sent to … · end-to-end encrypted`；若你明確同意明文傳送，
+則會顯示未使用端對端加密。
+
 <a id="line-messaging-commands"></a>
 
 ## LINE 訊息操作指令
@@ -133,44 +135,16 @@ line send       # 選擇收件人並輸入訊息
 | 想做什麼 | 指令 |
 | --- | --- |
 | 尋找好友 | `line contacts --search "Alice"` |
-| 以使用者 ID 查詢個人資料 | `line contacts --mid USER_MID` |
-| 尋找聊天室與群組 | `line chats --search "Family"` |
 | 讀取近期訊息 | `line messages "Alice" --limit 20` |
-| 讀取仍可取得的較舊歷史 | `line messages CHAT_ID --page --json --limit 50` |
-| 查看訊息內容詳細資料 | `line messages CHAT_ID --details --json` |
-| 查看群組成員 | `line members "Family" --json` |
 | 傳送文字訊息 | `line send "Alice" --text "Hello!"` |
 | 傳送檔案 | `line send "Alice" --file ./report.pdf` |
 | 下載照片、影片、音訊或檔案 | `line download` |
-| 新增或移除表情回應 | `line react` |
-| 收回自己傳送的訊息 | `line unsend` |
 | 串流接收即時事件 | `line watch` |
-| 檢查本機工作階段儲存機制 | `line auth status --check` |
-| 移除本機已儲存的工作階段 | `line logout` |
 
-檔案加密能力與文字分開檢查。部分聊天室只允許明文檔案；終端機會詢問是否同意，
-指令稿則須指定 `--allow-plaintext`。詳見[傳送與加密](docs/CLI.zh-TW.md#send-messages-and-files)。
-
-請將範例名稱換成自己的聯絡人或聊天室名稱。名稱必須唯一且完全相符
-（不區分大小寫）；含空格的名稱請加上引號。若名稱重複，可使用
-`line chats --search "Alice" --show-ids` 查詢，再指定完整的聊天室 ID。
-
-使用 `line COMMAND --help` 查看選項。下載、表情回應與收回訊息也支援互動式選擇。
-詳見[聊天室選擇指南](docs/CLI.zh-TW.md#find-chats-and-people)。
-
-### 回覆 LINE 訊息與下載附件
-
-使用 `--show-ids` 找出 ID，再替換範例中的 `MESSAGE_ID`：
-
-```sh
-line messages "Alice" --show-ids
-line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
-line react "Alice" --message MESSAGE_ID --reaction love
-line download "Alice" --message MESSAGE_ID --output ./received.pdf
-```
-
-下載時，請選擇附件訊息的 ID，並指定合適的檔名。既有檔案不會被覆寫。
-詳見[更多表情回應、收回訊息與下載選項](docs/CLI.zh-TW.md#download-or-change-a-message)。
+請將 `Alice` 換成唯一且完全相符的聊天室名稱（不區分大小寫），或使用完整的聊天室 ID。
+若名稱重複，執行 `line chats --search "Alice" --show-ids`，再使用顯示的完整 ID。
+使用 `line COMMAND --help` 查看選項；回覆、表情回應與分頁等進階操作請參閱
+[CLI 指南](docs/CLI.zh-TW.md#daily-commands)。
 
 <a id="automate-line-with-json-and-shell-scripts"></a>
 
@@ -187,30 +161,21 @@ line send CHAT_ID --stdin --json < message.txt
 line watch --json > events.ndjson
 ```
 
-從 `line chats --json` 取得 `CHAT_ID`。`--stdin` 可從檔案或管線讀取多行文字。
-`watch` 會輸出每行一筆 JSON 的 NDJSON，並從已儲存的檢查點繼續；
-接收端應依 revision 去除重複事件。請將匯出的訊息與事件視為私人資料。
+從 `line chats --json` 取得 `CHAT_ID`。事件監看輸出為 NDJSON，接收端應依 revision 去除重複事件。
+欄位與錯誤格式請參閱 [JSON 參考](docs/JSON.md)。
 
-會變更遠端資料的操作只會嘗試一次，不會自動重試。如果傳送訊息、上傳、
-表情回應或收回訊息後未收到回應，請先在 LINE 中確認結果，再決定是否重做，
-以免重複操作。
-
-串接細節請參閱 [JSON 欄位與結束代碼](docs/CLI.zh-TW.md#json-output-and-exit-codes)
-及[即時事件串流](docs/CLI.zh-TW.md#watch-new-events)。
+會變更遠端資料的操作只會嘗試一次。若傳送或其他操作後未收到回應，
+請先在 LINE 中確認結果，再決定是否重做。
 
 ## Letter Sealing 加密與工作階段安全性
 
-- **加密：** 支援時會使用 Letter Sealing。金鑰缺少、格式錯誤或傳輸失敗時，
-  原應加密的訊息不會在未告知的情況下改以明文傳送。JSON 傳送結果會顯示加密狀態。
-  LINE 明確回報不支援加密時，終端機會先詢問；指令稿須使用 `--allow-plaintext`。
-- **儲存：** macOS 使用 Keychain；Linux 使用 AES-GCM 加密的工作階段檔案，
-  金鑰存放於 Secret Service；Windows 使用目前使用者的 DPAPI。
-  無頭 Linux 使用主機金鑰儲存。
-- **工作階段復原：** 已儲存的更新憑證有效時，存取權杖會自動更新，重新啟動後也適用。
-  若更新無法恢復存取，或 LINE 使工作階段失效，請重新登入。
+傳送預設要求 Letter Sealing 加密。只有 LINE 明確回報支援明文傳送時，
+才能透過終端機同意或每次指定 `--allow-plaintext` 傳送明文；指令稿不會詢問。
+檔案能力與文字分開檢查（[LINE 的媒體加密限制](https://help.line.me/line/smartphone?contentId=50000087&lang=zh-Hant)）；
+金鑰缺少或傳輸失敗時不會自動降為明文。
 
-[工作階段儲存](docs/CLI.zh-TW.md#where-your-session-is-stored) ·
-[權杖更新與復原](docs/CLI.zh-TW.md#token-refresh)
+詳見[傳送與加密](docs/CLI.zh-TW.md#send-messages-and-files)及
+[工作階段儲存](docs/CLI.zh-TW.md#where-your-session-is-stored)。
 
 ## 使用限制
 
@@ -231,44 +196,23 @@ line update --check   # 檢查最新版本，不進行安裝
 line update           # 支援時更新，否則顯示升級指引
 ```
 
-macOS 與 Linux 的官方獨立執行檔安裝可直接更新。Homebrew 請使用
-`brew upgrade line-cli`；其他安裝方式會收到升級指引。檢查更新不需要登入 LINE，
-且只在你執行指令時進行。詳見[更新說明](docs/CLI.zh-TW.md#updating-line-cli)。
+Homebrew 請使用 `brew upgrade line-cli`。其他安裝方式請參閱
+[更新指南](docs/CLI.zh-TW.md#updating-line-cli)。
 
 ## 文件與協助
 
-| 主題 | 文件 |
-| --- | --- |
-| 安裝及使用 LINE CLI | [CLI 指南](docs/CLI.zh-TW.md) |
-| JSON 與自動化契約 | [JSON 參考](docs/JSON.md) |
-| 權杖更新與工作階段儲存 | [工作階段內部機制](docs/SESSION.md) |
-| 加密邊界與稽核證據 | [安全性模型](docs/SECURITY.md) |
-| 建置、測試及發行 | [開發指南](docs/DEVELOPMENT.md) |
-| 發行變更與升級注意事項 | [變更紀錄](CHANGELOG.md) |
-
-請透過 [GitHub Issues](https://github.com/kongesque/line-cli/issues) 回報錯誤或提出功能需求。CLI 指南以外的參考文件為英文。
-
-回報錯誤時，請附上 `line version`、作業系統、指令及已遮蔽敏感內容的錯誤訊息。
+請閱讀 [CLI 指南](docs/CLI.zh-TW.md)，或瀏覽[文件索引](docs/README.md)（參考文件為英文）。
+透過 [GitHub Issues](https://github.com/kongesque/line-cli/issues) 回報錯誤或提出功能需求。
+回報時請附上 `line version`、作業系統、指令及已遮蔽敏感內容的錯誤訊息。
 請勿提供密碼、權杖、QR 碼登入值或私人訊息。
 
 <a id="build-and-contribute"></a>
 
 ## 建置與參與開發
 
-從原始碼建置需要 Git 與 **Go 1.27.2**。macOS 另需 Xcode Command Line Tools
-及 CGO，以支援 Keychain。在 macOS 或 Linux 上執行：
-
-```sh
-git clone https://github.com/kongesque/line-cli.git
-cd line-cli
-./install.sh
-```
-
-請依安裝程式提示設定 PATH。Windows PowerShell 指令請參閱
-[原始碼建置指南](docs/CLI.zh-TW.md#build-from-source)。Linux 的儲存需求同樣適用於原始碼建置。
-
-建置檢查、測試與發行步驟請參閱[開發指南](docs/DEVELOPMENT.md)。
-套件職責與協定規則請參閱[貢獻者指南](AGENTS.md)。
+原始碼建置需要 **Go 1.27.2**；macOS 另需 Xcode Command Line Tools 與 CGO。
+設定與開發檢查請參閱[原始碼建置](docs/CLI.zh-TW.md#build-from-source)及
+[參與開發指南](CONTRIBUTING.md)（英文）。
 
 ## 授權與來源
 
