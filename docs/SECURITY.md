@@ -1,4 +1,61 @@
-# Security changes (unreleased)
+# Security model and validation
+
+Contributor reference for Letter Sealing boundaries and recorded security work.
+For sending, plaintext consent, and user-visible restrictions, use the
+[send guide](CLI.md#send-messages-and-files). Storage format and refresh details
+are in [SESSION.md](SESSION.md); user-facing changes belong in the
+[changelog](../CHANGELOG.md).
+
+[Letter Sealing](#letter-sealing) · [Change record](#security-change-record) ·
+[Transport limits](#transport-and-response-limits) ·
+[Toolchain](#toolchain-and-vulnerability-scans) · [Live evidence](#authorized-live-follow-up)
+
+## Letter Sealing
+
+Login and message encryption reuse the LINE protocol and crypto runtime inherited
+from the upstream project.
+
+### Login and keys
+
+`internal/session/manager.go` exports the login keychain and saves it with tokens
+in OS-protected storage. `pkg/line/client.go` supports E2EE login and the explicit
+non-E2EE login response. The account password is never persisted.
+
+`pkg/e2ee/manager.go`, `pkg/runner.go`, and `pkg/ltsm` implement device/group key
+operations and the signing runtime. Generated LTSM code and embedded memory data
+are runtime dependencies, even though some functions are invoked indirectly.
+
+### Sending and reading
+
+`internal/messaging/client.go` and `keys.go` negotiate peer keys, restore historical
+keys, and register group keys only during an explicit send with complete membership.
+Sends require encryption by default. A non-E2EE login or an explicit
+unsupported-capability response permits plaintext only with affirmative terminal
+confirmation or per-command `--allow-plaintext`. Scripts, JSON output/errors, and
+`--stdin` never prompt. Missing keys, network errors, and ambiguous membership
+stop the send. File and image media capabilities are checked separately from text.
+
+History resolves the sender/receiver key IDs in each encrypted message. It does
+not mark messages read or register group keys. Missing historical device keys can
+leave an individual message unreadable.
+
+Generic file attachments use the `emf` OBS service when encrypted and the `m`
+service for plaintext. `internal/messaging/files.go` derives file keys with HKDF,
+encrypts with AES-CTR, and verifies HMAC-SHA256 before saving a download. The CLI
+treats media sent with `--file` as generic files. Attachment key material and
+filenames stay inside the authenticated Letter Sealing payload. Live encrypted-file
+interoperability remains unverified; plaintext file send/download was verified in
+one authorized group and one direct chat. Encrypted native `--image` sends are
+disabled before remote mutations because full image and preview reuse a CTR stream.
+Plaintext native images require explicit capability and per-send consent, and
+native-image live interoperability remains unverified. See the
+[security validation record](#security-change-record).
+
+Mutations are never automatically replayed after an uncertain response. The
+`group_key_registered` output field reports a new registration during that send;
+`false` does not mean an encrypted group message lacks a key.
+
+## Security change record
 
 For user-facing upgrade actions, see the [changelog](../CHANGELOG.md#unreleased).
 This record separates implementation changes, synthetic verification, and
@@ -11,7 +68,7 @@ revisions and environments; they do not replace the next release's CI gates.
 | Generic files | Explicit file capability required. Plaintext needs per-send consent. Synthetic encrypted roundtrip passed; live encrypted delivery remains unverified. Plaintext roundtrips succeeded in the authorized group and direct chat. |
 | Native images | Encrypted sending disabled before remote mutations. Plaintext requires explicit capability and consent; native-image live interoperability remains unverified. |
 
-## Send policy and attachment changes
+### Send policy and attachment changes
 
 - Generic encrypted files keep attachment key material and filenames exclusively
   in the authenticated Letter Sealing payload. Historical downloads still accept
@@ -37,7 +94,7 @@ Validation on 2026-10-19: synthetic terminal/script consent tests, the complete
 CLI/protocol race suite, go vet, Staticcheck, and the native build/help check
 passed. This UX change required no live sends.
 
-## Protocol evidence
+### Protocol evidence
 
 Official LINE Chrome extension 3.7.2, package SHA-256
 `3722ab02edb0aba49c229399ee8df5b4b5a38c60b76efadadfbae395015eb859`.
@@ -48,7 +105,7 @@ preview representation was established. Source remains copyright LY Corporation.
 Initial validation used synthetic data; the authorized live follow-up and its
 limitations are recorded below.
 
-## Transport and response limits
+### Transport and response limits
 
 Authenticated LINE requests now reject redirects at dispatch, even when a caller
 supplies an HTTP client with a permissive redirect callback. A redirect leaves a
@@ -63,7 +120,7 @@ Synthetic maximum-count history pages fit the RPC budget; live server maximum
 keychain/history sizes have not been measured. Legitimate oversized responses
 fail explicitly and may require a reviewed budget adjustment.
 
-## Toolchain and vulnerability scans
+### Toolchain and vulnerability scans
 
 Builds select Go 1.27.2, including CI/release jobs. `build.sh` checks the actual
 compiler selected by `GO`/`GOTOOLCHAIN`; older compilers and unreviewed versions
@@ -91,7 +148,7 @@ all vulnerable module symbols as present in stripped executables. Retaining
 symbols made the rebuilt macOS binary scan pass without advisory exemptions;
 DWARF debug data remains omitted.
 
-## Recorded synthetic and build validation
+### Recorded synthetic and build validation
 
 Validation on 2026-10-18 at source revision `d8df371`: the complete CLI/protocol
 race suite, runner/LTSM suites, go vet, and Staticcheck v0.8.2 passed. The real
@@ -111,7 +168,7 @@ Cross-builds do not replace native CI. Linux Secret Service and Windows DPAPI
 integration, and the complete native CI matrix, remain release gates. The
 initial validation above did not include live LINE actions.
 
-## Authorized live follow-up
+### Authorized live follow-up
 
 Live follow-up (completed 2026-10-19): one explicitly authorized synthetic text
 was sent encrypted and read back successfully in the designated test group.

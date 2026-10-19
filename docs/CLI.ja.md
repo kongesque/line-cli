@@ -154,7 +154,6 @@ Ctrl-Cは通常のコマンドの通信も中断し、次のリモート操作�
 確認済みの送信結果は保持します。平文ファイルのメッセージ作成後にアップロードが中断した場合、
 エラーにはメッセージIDが残ります。成功出力とシグナルの終了コードが同時に返る場合があります。
 
-
 新しいセッションを保存する前にキャンセルすると、古いローカルセッションは残ります。
 ただし、最後のログインリクエストがLINEに届いていれば、古いChrome形式のセッションは
 すでに置き換えられている可能性があります。このリクエストは自動で再試行しません。
@@ -287,7 +286,7 @@ line messages CHAT_ID --details --json --resolve-names
 line messages CHAT_ID --details --page --json --limit 50
 ```
 
-`--details` は `--json` と併用し、`schema_version: 1` のオブジェクトを返します。チャット ID、受信したメンション、位置、復号したファイル名、添付のサイズ・再生時間、連絡先、スタンプ ID、上限付きのリッチテキストとリンクを取得できます。`--resolve-names` は送信者名をバッチで取得する任意の指定です。チャットの詳細には名前、最終活動時刻、未読数が含まれ、不明な値は `null` です。既存の JSON と watch 形式は変わりません。復号失敗時も部分結果を出力し、終了コードは非ゼロになります。フィールド・状態・制限は [詳細出力仕様](CONTENT.md) を参照してください。
+`--details` は `--json` と併用し、`schema_version: 1` のオブジェクトを返します。チャット ID、受信したメンション、位置、復号したファイル名、添付のサイズ・再生時間、連絡先、スタンプ ID、上限付きのリッチテキストとリンクを取得できます。`--resolve-names` は送信者名をバッチで取得する任意の指定です。チャットの詳細には名前、最終活動時刻、未読数が含まれ、不明な値は `null` です。既存の JSON と watch 形式は変わりません。復号失敗時も部分結果を出力し、終了コードは非ゼロになります。フィールド・状態・制限は [詳細出力仕様](JSON.md#detailed-content) を参照してください。
 
 <a id="list-group-members-and-mention-someone"></a>
 
@@ -551,7 +550,7 @@ JSONはstdout、診断情報はstderrに出力します。成功とヘルプは�
 
 コマンドの前に `--error-format=json` を指定します（例：`line --error-format=json send CHAT_ID --stdin --json`）。エラーは stderr に単一の JSON オブジェクトとして出力され、stdout の成功結果と部分結果の配列は従来の形式を保ちます。対話プロンプトは無効になります。対象は基本コマンドと `auth status` です。ログイン、ログアウト、移行、watch、update は従来の診断方式を使用します。
 
-エラーにはコード、処理段階、既知のチャット／メッセージ ID、リクエスト番号、各変更処理の結果が含まれます。`unknown` の場合は再試行前に LINE を確認してください。ファイルメッセージ作成後のアップロード失敗や送信後の出力失敗でも、確認済みのメッセージ情報は保持されます。ストレージとシグナルの終了コードは変わりません。詳細は[エラー形式とコード](ERRORS.md)を参照してください。
+エラーにはコード、処理段階、既知のチャット／メッセージ ID、リクエスト番号、各変更処理の結果が含まれます。`unknown` の場合は再試行前に LINE を確認してください。ファイルメッセージ作成後のアップロード失敗や送信後の出力失敗でも、確認済みのメッセージ情報は保持されます。ストレージとシグナルの終了コードは変わりません。詳細は[エラー形式とコード](JSON.md#errors)を参照してください。
 
 <a id="json-lookup-results"></a>
 
@@ -635,7 +634,7 @@ watcherは必要に応じて保存済み認証情報で再接続します。
 トークン変更後に保存が失敗すると、新しいトークンを保存できた保証がないため、以降のリクエストを停止します。
 
 更新タイミング、再試行のルール、呼び出し経路の根拠は、
-[トークンとセッションの監査](../TOKEN_SESSION.md)を参照してください。
+[トークンとセッションの監査](SESSION.md#token-refresh)を参照してください。
 
 <a id="linux-servers-and-headless-storage"></a>
 
@@ -689,7 +688,7 @@ watchのチェックポイントを保持し、LINEへの接続やパスワー�
 途中で止まった場合は同じコマンドを再実行してください。`migration.pending` の削除や
 `session.enc` の手動置き換えはしないでください。後処理が完了するまで、
 `line auth status` は `migration_pending` を報告します。
-復旧手順は[ヘッドレスストレージの内部仕様](../internal/session/HEADLESS.md)を参照してください。
+復旧手順は[ヘッドレスストレージの内部仕様](SESSION.md#headless-storage-engine)を参照してください。
 
 <a id="run-a-watcher-without-a-login-session"></a>
 
@@ -905,19 +904,9 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 .\bin\line.exe help
 ```
 
-コントリビューター向けのチェック：
-
-```sh
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-go build -trimpath -o bin/line ./cmd/line
-```
-
-通常のテストは偽のAPIと認証情報を使います。実接続テストは初期状態では無効で、明示的な許可が必要です。
-キャンセルのテストには合成の子プロセスを使います。macOS／Linuxのパスワード入力テストは、
-利用可能であればPython 3標準ライブラリのPTY機能を使います。
-ネイティブLinux Secret Serviceの統合テストには、明示的に有効化した使い捨てD-Busセッションが必要です。
-Windows DPAPIのテストには一時ファイルを使います。
+開発用チェック、テストデータ、プラットフォーム統合、リリース手順は
+[開発ガイド](DEVELOPMENT.md)を参照してください。通常のテストは合成データと偽のAPIを使います。
+実際のLINEを使うテストには明示的な許可が必要です。
 
 <a id="current-limitations"></a>
 

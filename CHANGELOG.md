@@ -48,13 +48,15 @@ and the documentation at your installed version's tag.
   executables retain symbols needed for binary analysis.
 - Live encrypted-file interoperability remains unverified. The authorized live
   file roundtrips verified plaintext delivery only. See the
-  [security changes and validation record](docs/SECURITY-CHANGES.md).
+  [security changes and validation record](docs/SECURITY.md#security-change-record).
 
 ### Documentation and packaging
 
 - Align English, Thai, Japanese, and Traditional Chinese guides on encryption
   consent, image restrictions, pagination, build requirements, and navigation.
 - Add troubleshooting tables and a maintainer release checklist.
+- Consolidate scattered references into `docs/JSON.md`, `docs/SESSION.md`,
+  `docs/SECURITY.md`, and `docs/DEVELOPMENT.md`; remove their superseded copies.
 - Bundle documentation at its current paths, including translations and linked
   reference pages, instead of referencing the removed root `CLI.md`.
 

@@ -7,7 +7,7 @@ or message creation. Plaintext images require an explicit plaintext capability
 and affirmative terminal confirmation or per-command `--allow-plaintext`.
 The encrypted stages below describe the investigated Chrome protocol, not an
 available CLI send path. Native-image live interoperability remains unverified.
-See the [security changes](../../SECURITY-CHANGES.md) and
+See the [security changes](../../SECURITY.md#security-change-record) and
 [user guide](../../CLI.md#send-messages-and-files).
 
 ## Evidence

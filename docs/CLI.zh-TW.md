@@ -142,7 +142,6 @@ Ctrl-C 也會取消一般指令的進行中請求，並阻止下一個遠端步�
 已確認的傳送結果會保留；一般檔案訊息建立後若上傳中止，錯誤會保留訊息 ID。
 因此成功輸出可能伴隨訊號結束代碼。
 
-
 如果在新工作階段儲存前取消，本機舊工作階段會保留。不過，若最後的登入請求已到達
 LINE 伺服器，原本的 Chrome 類型工作階段可能已被取代。CLI 不會自動重試該請求。
 若儲存結果不確定，請檢查 `line auth status --check`，不要還原舊備份或直接重複登入。
@@ -273,7 +272,7 @@ line messages CHAT_ID --details --json --resolve-names
 line messages CHAT_ID --details --page --json --limit 50
 ```
 
-`--details` 必須搭配 `--json`，回傳 `schema_version: 1` 的物件。訊息包含聊天室 ID、收到的提及、位置、解密後的檔名、附件大小／時長、聯絡人、貼圖 ID，以及有上限的圖文訊息文字和連結。`--resolve-names` 可選擇批次查詢傳送者名稱。聊天室詳細資料包含名稱、活動時間及未讀數；未知值為 `null`。原有 JSON 與 watch 格式不變。解密失敗仍輸出部分結果並以非零代碼結束；欄位、狀態與限制詳見 [詳細輸出規格](CONTENT.md)。
+`--details` 必須搭配 `--json`，回傳 `schema_version: 1` 的物件。訊息包含聊天室 ID、收到的提及、位置、解密後的檔名、附件大小／時長、聯絡人、貼圖 ID，以及有上限的圖文訊息文字和連結。`--resolve-names` 可選擇批次查詢傳送者名稱。聊天室詳細資料包含名稱、活動時間及未讀數；未知值為 `null`。原有 JSON 與 watch 格式不變。解密失敗仍輸出部分結果並以非零代碼結束；欄位、狀態與限制詳見 [詳細輸出規格](JSON.md#detailed-content)。
 
 <a id="list-group-members-and-mention-someone"></a>
 
@@ -523,7 +522,7 @@ SIGINT 為 130，SIGTERM 為 143。空的結果清單以 `[]` 表示。
 
 在指令前加上 `--error-format=json`，例如 `line --error-format=json send CHAT_ID --stdin --json`。錯誤會以單一 JSON 物件輸出至 stderr；stdout 的成功結果及部分結果陣列維持原格式。此模式停用互動提示，適用於核心指令及 `auth status`；登入、登出、遷移、watch 與 update 保留原有診斷方式。
 
-錯誤包含代碼、階段，以及已知的聊天／訊息 ID、請求序號與各變更步驟的結果。`unknown` 表示結果不明，重試前請先在 LINE 確認。檔案訊息已建立但上傳失敗，或傳送成功但輸出失敗時，已確認的訊息資訊仍會保留。儲存與訊號結束代碼不變。完整欄位與代碼請參閱[錯誤格式說明](ERRORS.md)。
+錯誤包含代碼、階段，以及已知的聊天／訊息 ID、請求序號與各變更步驟的結果。`unknown` 表示結果不明，重試前請先在 LINE 確認。檔案訊息已建立但上傳失敗，或傳送成功但輸出失敗時，已確認的訊息資訊仍會保留。儲存與訊號結束代碼不變。完整欄位與代碼請參閱[錯誤格式說明](JSON.md#errors)。
 
 <a id="json-lookup-results"></a>
 
@@ -602,7 +601,7 @@ line logout
 伺服器登出訊號也不一定能判斷是否被另一個用戶端取代。
 若權杖輪替後發生儲存失敗，CLI 會停止後續請求，因為無法確保新權杖已儲存。
 
-更新時機、重試規則與呼叫路徑證據，請見[權杖與工作階段稽核](../TOKEN_SESSION.md)。
+更新時機、重試規則與呼叫路徑證據，請見[權杖與工作階段稽核](SESSION.md#token-refresh)。
 
 <a id="linux-servers-and-headless-storage"></a>
 
@@ -653,7 +652,7 @@ line auth migrate --storage=headless
 
 若移轉中途停止，請再次執行相同指令。不要刪除 `migration.pending` 或手動取代 `session.enc`。
 清理完成前，`line auth status` 會回報 `migration_pending`。
-復原流程請見[無頭環境儲存內部機制](../internal/session/HEADLESS.md)。
+復原流程請見[無頭環境儲存內部機制](SESSION.md#headless-storage-engine)。
 
 <a id="run-a-watcher-without-a-login-session"></a>
 
@@ -861,18 +860,8 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 .\bin\line.exe help
 ```
 
-貢獻者檢查：
-
-```sh
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-go build -trimpath -o bin/line ./cmd/line
-```
-
-一般測試使用模擬 API 與憑證。實際連線測試預設停用，且需要明確授權。
-取消操作測試使用合成的子程序。macOS／Linux 的密碼終端機測試會在可用時使用
-Python 3 標準函式庫的 PTY 功能。原生 Linux Secret Service 整合測試需要明確啟用的
-可拋棄 D-Bus 工作階段；Windows DPAPI 測試使用暫存檔案。
+貢獻者檢查、測試資料、平台整合與發行步驟請參閱[開發指南](DEVELOPMENT.md)。
+一般測試使用合成資料與模擬 API；實際 LINE 測試需要明確授權。
 
 <a id="current-limitations"></a>
 

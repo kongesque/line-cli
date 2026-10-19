@@ -244,12 +244,16 @@ instructions. Checks require no LINE login and run only when requested.
 
 ## Documentation and help
 
-- [Changelog](CHANGELOG.md): release changes and upgrade notes.
-- [Release checklist](docs/RELEASING.md): maintainer packaging and publication steps.
-- [CLI guide](docs/CLI.md): complete usage, troubleshooting, and server setup.
-- [Token and session audit](TOKEN_SESSION.md): refresh and recovery internals.
-- [Testing guide](docs/TESTING.md): test suites, fixtures, and CI coverage.
-- [GitHub Issues](https://github.com/kongesque/line-cli/issues): bugs and feature requests.
+| Topic | Read this |
+| --- | --- |
+| Install and use LINE CLI | [CLI guide](docs/CLI.md) |
+| JSON and automation contracts | [JSON reference](docs/JSON.md) |
+| Token refresh and session storage | [Session internals](docs/SESSION.md) |
+| Encryption boundaries and audit evidence | [Security model](docs/SECURITY.md) |
+| Build, test, and release | [Development guide](docs/DEVELOPMENT.md) |
+| Release changes and upgrade actions | [Changelog](CHANGELOG.md) |
+
+Report bugs and request features through [GitHub Issues](https://github.com/kongesque/line-cli/issues).
 
 For bug reports, include `line version`, your OS, the command, and a redacted
 error. Omit passwords, tokens, QR login values, and private messages.
@@ -269,18 +273,9 @@ Follow any PATH instructions printed by the installer. See the
 [source-build guide](docs/CLI.md#build-from-source) for Windows PowerShell commands.
 Linux storage requirements also apply to source builds.
 
-For local development:
-
-```sh
-./build.sh
-./bin/line help
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-```
-
-See [contributor guidance](AGENTS.md) for the full checks and protocol requirements.
-CI covers all three platforms and native credential storage. Tests use synthetic
-data and fake APIs; live tests require explicit authorization.
+For build checks, tests, and release procedures, see the
+[development guide](docs/DEVELOPMENT.md). Package ownership and protocol rules
+are in [contributor guidance](AGENTS.md).
 
 ## License and provenance
 

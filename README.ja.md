@@ -250,11 +250,16 @@ Homebrewの場合は `brew upgrade line-cli` を使用します。その他の�
 
 ## ドキュメントとサポート
 
-- [変更履歴](CHANGELOG.md)：リリース変更と更新時の注意（英語）。
-- [リリースチェックリスト](docs/RELEASING.md)：メンテナー向け手順（英語）。
-- [CLIガイド](docs/CLI.ja.md)：全コマンドの使い方、トラブルシューティング、サーバー設定。
-- [トークンとセッションの監査](TOKEN_SESSION.md)：更新と復旧の実装詳細。
-- [GitHub Issues](https://github.com/kongesque/line-cli/issues)：不具合報告と機能リクエスト。
+| 目的 | 参照先 |
+| --- | --- |
+| インストールと日常の操作 | [CLIガイド](docs/CLI.ja.md) |
+| JSONと自動化の契約 | [JSONリファレンス](docs/JSON.md) |
+| トークン更新とセッション保存 | [セッション内部仕様](docs/SESSION.md) |
+| 暗号化の境界と検証記録 | [セキュリティモデル](docs/SECURITY.md) |
+| ビルド・テスト・リリース | [開発ガイド](docs/DEVELOPMENT.md) |
+| リリース変更と更新手順 | [変更履歴](CHANGELOG.md) |
+
+不具合や機能要望は [GitHub Issues](https://github.com/kongesque/line-cli/issues) へ。CLIガイド以外のリファレンスは英語です。
 
 不具合の報告には `line version`、OS、実行したコマンド、機密情報を除いたエラーを添えてください。
 パスワード、トークン、QRログインの値、私的なメッセージは含めないでください。
@@ -276,18 +281,8 @@ cd line-cli
 [ソースビルドガイド](docs/CLI.ja.md#build-from-source)を参照してください。
 ソースからビルドする場合も、Linuxのストレージ要件が適用されます。
 
-ローカルで開発する場合：
-
-```sh
-./build.sh
-./bin/line help
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-```
-
-全チェック項目とプロトコルの要件は[コントリビューター向けガイド](AGENTS.md)を参照してください。
-CIは3つのプラットフォームとOS標準の認証情報ストレージを検査します。
-テストには合成データと偽のAPIを使い、実際のLINEを使うテストには明示的な許可が必要です。
+ビルドの検証、テスト、リリース手順は[開発ガイド](docs/DEVELOPMENT.md)を参照してください。
+パッケージの担当範囲とプロトコルのルールは[貢献者向けガイド](AGENTS.md)にあります。
 
 ## ライセンスと由来
 

@@ -317,7 +317,7 @@ filenames, attachment size/duration when available, contacts, sticker IDs, and
 bounded rich text/links. `--resolve-names` optionally looks up sender names in
 batches. Chat details consistently include names, activity, and unread counts;
 unknown values are explicit `null`. Legacy JSON remains unchanged. See the
-[detailed field contract](CONTENT.md) for statuses, unknown values, bounds, and
+[detailed field contract](JSON.md#detailed-content) for statuses, unknown values, bounds, and
 partial-result handling. Human output also uses the decoded content summaries.
 
 ### List group members and mention someone
@@ -620,7 +620,7 @@ from a failed upload. A successful send with failed output remains confirmed.
 Never automatically retry an `unknown` mutation, even for a transient transport
 error. Inspect LINE first. Storage and signal exit codes are unchanged.
 
-See [the error schema, codes, and outcome examples](ERRORS.md).
+See [the error schema, codes, and outcome examples](JSON.md#errors).
 
 ### JSON lookup results
 
@@ -703,7 +703,7 @@ rotation stops further requests, because the CLI cannot guarantee that it saved
 the new token.
 
 For refresh timing, retry rules, and call-path evidence, see the
-[token and session audit](../TOKEN_SESSION.md).
+[token and session audit](SESSION.md#token-refresh).
 
 ## Linux servers and headless storage
 
@@ -757,7 +757,7 @@ without contacting LINE or asking for your password.
 If migration stops partway through, run the same command again. Do not delete
 `migration.pending` or manually replace `session.enc`. `line auth status`
 reports `migration_pending` until cleanup succeeds. The
-[headless storage internals](../internal/session/HEADLESS.md) explain the recovery
+[headless storage internals](SESSION.md#headless-storage-engine) explain the recovery
 process.
 
 ### Run a watcher without a login session
@@ -977,23 +977,9 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 .\bin\line.exe help
 ```
 
-Contributor checks:
-
-```sh
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-go build -trimpath -o bin/line ./cmd/line
-```
-
-Ordinary tests use fake APIs and credentials. Live tests are disabled by
-default and need explicit authorization. Cancellation tests use synthetic
-subprocesses. On macOS/Linux, the password terminal test uses Python 3's
-standard-library PTY support when available. Native Linux Secret Service
-integration needs an explicitly enabled disposable D-Bus session; Windows DPAPI
-tests use temporary files.
-
-See the [testing guide](TESTING.md) for the complete suite commands, shared
-fixtures, slow crypto regressions, and CI coverage.
+For contributor checks, test fixtures, platform integration, and release steps,
+see the [development guide](DEVELOPMENT.md). Ordinary tests use synthetic data
+and fake APIs; live LINE tests require explicit authorization.
 
 ### Current limitations
 

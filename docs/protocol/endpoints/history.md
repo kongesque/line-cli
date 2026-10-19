@@ -137,4 +137,4 @@ interoperability; those paths have synthetic regression coverage.
 
 No private IDs, message bodies, keys, encrypted chunks, raw responses, or
 captures are retained here. See [CLI diagnostics](../../CLI.md) and
-[structured error details](../../ERRORS.md) for the new safe output contract.
+[structured error details](../../JSON.md#errors) for the new safe output contract.

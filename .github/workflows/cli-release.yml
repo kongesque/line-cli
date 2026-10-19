@@ -48,10 +48,8 @@ jobs:
           go build -trimpath -ldflags "-w -X main.version=$GITHUB_REF_NAME -X main.distribution=standalone" -o "dist/line$extension" ./cmd/line
           go version -m "dist/line$extension"
           govulncheck -mode=binary "dist/line$extension"
-          cp LICENSE README*.md banner.png CHANGELOG.md TOKEN_SESSION.md AGENTS.md dist/
-          cp -R docs readme dist/
-          mkdir -p dist/internal/session
-          cp internal/session/HEADLESS.md dist/internal/session/
+          cp LICENSE README*.md banner.png CHANGELOG.md AGENTS.md dist/
+          cp -R docs dist/
           cd dist
           if command -v sha256sum >/dev/null; then
             sha256sum "line$extension" > SHA256SUMS

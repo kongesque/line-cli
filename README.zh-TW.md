@@ -237,11 +237,16 @@ macOS 與 Linux 的官方獨立執行檔安裝可直接更新。Homebrew 請使�
 
 ## 文件與協助
 
-- [變更紀錄](CHANGELOG.md)：發行變更與升級注意事項（英文）。
-- [發行檢查清單](docs/RELEASING.md)：維護者的打包與發布步驟（英文）。
-- [CLI 指南](docs/CLI.zh-TW.md)：完整用法、疑難排解與伺服器設定。
-- [權杖與工作階段稽核](TOKEN_SESSION.md)：更新與復原的實作細節。
-- [GitHub Issues](https://github.com/kongesque/line-cli/issues)：回報錯誤或提出功能需求。
+| 主題 | 文件 |
+| --- | --- |
+| 安裝及使用 LINE CLI | [CLI 指南](docs/CLI.zh-TW.md) |
+| JSON 與自動化契約 | [JSON 參考](docs/JSON.md) |
+| 權杖更新與工作階段儲存 | [工作階段內部機制](docs/SESSION.md) |
+| 加密邊界與稽核證據 | [安全性模型](docs/SECURITY.md) |
+| 建置、測試及發行 | [開發指南](docs/DEVELOPMENT.md) |
+| 發行變更與升級注意事項 | [變更紀錄](CHANGELOG.md) |
+
+請透過 [GitHub Issues](https://github.com/kongesque/line-cli/issues) 回報錯誤或提出功能需求。CLI 指南以外的參考文件為英文。
 
 回報錯誤時，請附上 `line version`、作業系統、指令及已遮蔽敏感內容的錯誤訊息。
 請勿提供密碼、權杖、QR 碼登入值或私人訊息。
@@ -262,17 +267,8 @@ cd line-cli
 請依安裝程式提示設定 PATH。Windows PowerShell 指令請參閱
 [原始碼建置指南](docs/CLI.zh-TW.md#build-from-source)。Linux 的儲存需求同樣適用於原始碼建置。
 
-本機開發：
-
-```sh
-./build.sh
-./bin/line help
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-```
-
-完整檢查與協定要求請參閱[貢獻者指南](AGENTS.md)。CI 涵蓋三種平台與原生認證資料儲存。
-測試使用合成資料與模擬 API；實際 LINE 測試需要明確授權。
+建置檢查、測試與發行步驟請參閱[開發指南](docs/DEVELOPMENT.md)。
+套件職責與協定規則請參閱[貢獻者指南](AGENTS.md)。
 
 ## 授權與來源
 
