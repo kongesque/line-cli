@@ -216,7 +216,11 @@ func TestSendStopsOnInvalidPreparation(t *testing.T) {
 			a.Context = ctx
 			switch change {
 			case "account":
-				a.promptAccount = &promptAccount{mid: store.state.MID, generation: "previous"}
+				// Exercise the account guard after guided selection has captured the
+				// original identity. App.Run clears prompt state at command start.
+				a.In = checkedInput{t: t, locked: locked, Reader: strings.NewReader("1\nsynthetic\n"), onRead: func() {
+					store.state.Generation = "changed"
+				}}
 			case "invalidated":
 				store.state.Invalidated = true
 			case "missing-keys":
@@ -225,7 +229,11 @@ func TestSendStopsOnInvalidPreparation(t *testing.T) {
 			case "cancelled":
 				cancel()
 			}
-			if err := a.Run([]string{"send", "id:u-peer", "--file", consentFile(t)}); err == nil {
+			args := []string{"send", "id:u-peer", "--file", consentFile(t)}
+			if change == "account" {
+				args = []string{"send"}
+			}
+			if err := a.Run(args); err == nil {
 				t.Fatal("changed preparation allowed send")
 			}
 			if api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 || *locked {
