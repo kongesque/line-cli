@@ -2,6 +2,12 @@
 
 English | [繁體中文（台灣）](CLI.zh-TW.md) | [日本語](CLI.ja.md) | [ภาษาไทย](CLI.th.md)
 
+Documentation on `main` follows development. For an installed release, use
+`line version`, `line COMMAND --help`, and the guide at that release tag.
+See the [changelog](../CHANGELOG.md) for upgrade notes.
+
+[Get started](#get-started) · [Daily commands](#daily-commands) · [Update](#updating-line-cli) · [Scripts](#use-from-scripts) · [Account](#account-and-session) · [Linux / headless](#linux-servers-and-headless-storage) · [Troubleshooting](#troubleshooting) · [Reference](#reference)
+
 Use your personal LINE account from a terminal. You can read conversations,
 send messages and files, download attachments, and follow new events. Commands
 can guide you through choices in a terminal or return JSON for scripts.
@@ -31,16 +37,15 @@ On macOS, you can also use Homebrew:
 brew install kongesque/tap/line-cli
 ```
 
-On Debian or Ubuntu, install credential storage before you log in:
+For Linux desktop login on Debian or Ubuntu, install credential storage:
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
 ```
 
-The Linux keyring must be running and unlocked in the same D-Bus session as
-`line`. See
-[Linux servers and headless storage](#linux-servers-and-headless-storage) if
-you use SSH or a server without an unlocked keyring.
+The desktop keyring must be running and unlocked in the same D-Bus session as
+`line`. Servers and SSH hosts without one use `line login --headless`; see
+[headless setup](#linux-servers-and-headless-storage).
 
 On Windows, run this in PowerShell:
 
@@ -63,115 +68,91 @@ line help
 
 ### Sign in and send your first message
 
+Choose one login command for your environment:
+
+| Environment | Command |
+| --- | --- |
+| macOS, Windows, or Linux with an unlocked desktop keyring | `line login` |
+| Linux server or SSH without a desktop keyring | `line login --headless` |
+
+Scan the QR code with LINE on your phone, approve login, and enter the displayed
+PIN if asked, including leading zeros. Wait for **Session saved securely**.
+QR login is experimental and requires usable Letter Sealing keys. For headless host
+requirements, see [Linux servers](#linux-servers-and-headless-storage).
+
+Then confirm your account and choose a conversation interactively:
+
 ```sh
-line login
 line whoami
 line chats
-line messages "Family group"
-line send "Alice" --text "Hello!"
+line messages
+line send
 ```
 
-`line login` shows a QR code. Scan it with LINE on your phone, approve the
-login, and enter the displayed PIN if asked. Wait for
-**Session saved securely** before running other commands.
-
-QR login is experimental. If you have an email address and password configured
-on your LINE account, you can use:
-
-```sh
-line login --email you@example.com
-```
-
-The CLI asks for your password privately and never saves it. There is no
-password flag or password environment variable.
+`line send` asks you to choose a recipient. Enter your message and press Enter to send.
+For email/password login, use the options below; passwords are entered privately
+and never saved. There is no password flag or password environment variable.
 
 ### Login options and QR help
 
-| Command or option | Use it when |
+| Command | Purpose |
 | --- | --- |
-| `line login` or `line login --qr` | You want to sign in with a terminal QR code. |
-| `line login --email ADDRESS` | You want the email/password fallback and phone verification. |
-| `line login --qr-url` | You need the one-time QR value for a trusted local QR tool. |
-| `line login --force` | You want to skip the question about replacing a saved session. |
-| `line login --headless` | You are enrolling a supported Linux host without an unlocked keyring. |
+| `line login --qr` | Explicitly select the default QR login. |
+| `line login --email ADDRESS` | Use an email address/password configured on your LINE account, with phone verification. |
+| `line login --headless --email ADDRESS` | Use email login and headless storage on Linux. |
+| `line login --qr-url` | Output the one-time QR value for a trusted local QR tool. |
+| `line login --force` | Skip confirmation before replacing a saved session. |
 
-You cannot combine `--email` with `--qr` or `--qr-url`. Both QR methods require
-an interactive input terminal; redirecting stdout is fine. Progress, the QR
-code, PINs, and warnings go to stderr. The final success message goes to
-stdout.
+`--email` cannot combine with `--qr` or `--qr-url`. Both QR modes require an
+interactive input terminal; stdout can be redirected. Progress, QR codes, PINs,
+and warnings go to stderr; the final success message goes to stdout.
 
-Scan the QR with LINE's scanner. Enter a PIN exactly as displayed, including
-leading zeros. A phone approval alone does not mean the CLI finished checking
-your profile, exporting keys, and saving your session.
-
-If the QR does not fit in your terminal, the CLI tells you the required width
-and suggests `--qr-url`. It will not print a clipped code. `NO_COLOR` disables
-explicit colors. With `--qr-url`, treat the value as a secret: use only a
-trusted local tool, and do not share it, send it to an online QR generator, or
-save it. It remains in terminal scrollback. QR images are not saved. Unset
-`QRCODE_DEBUG` before normal QR login because QR encoder debug mode can write
-data.
-
-A displayed countdown is approximate. Once LINE confirms expiry, the CLI can
-show a new QR code, up to three per login. Network errors and PIN timeouts do
-not trigger a new attempt. Plain terminals and redirected stderr show state
-changes without a live countdown.
-
-QR login cannot currently handle accounts with Letter Sealing disabled. A
-rejected saved QR certificate does not fall back to PIN verification, and an
-unknown certificate error stops login. If you see a certificate verification
-error, try the email fallback. The `Diagnostic: verifyCertificate` suffix, when
-present, contains numeric codes only and no QR, PIN, certificate, token, or
-server response text.
+- **QR too wide:** the CLI reports the required width and suggests `--qr-url`;
+  it never clips the code. `NO_COLOR` disables explicit colors.
+- **QR privacy:** use `--qr-url` only with a trusted local tool. Do not share,
+  upload, or save its value; it remains in scrollback. QR images are not saved.
+  Unset `QRCODE_DEBUG`, which can make the QR encoder write data.
+- **QR expiry:** after LINE confirms expiry, the CLI can show a fresh code, up to
+  three per login. Network errors and PIN timeouts do not trigger retries.
+  The countdown is approximate; plain terminals and redirected stderr show only
+  state changes.
+- **Certificate errors:** rejected saved QR certificates do not fall back to PIN;
+  unknown certificate errors also stop login. Try email login if configured.
+  `Diagnostic: verifyCertificate` contains numeric codes only, with no QR, PIN,
+  certificate, token, or raw server response.
 
 ### Saved sessions and cancellation
 
-Before contacting LINE, login checks local storage and asks before replacing a
-usable saved session. Answer **no** to keep it. `--force` skips that question
-only: it does not skip storage checks, headless storage consent,
-concurrent-session checks, or protocol errors.
+Login checks local storage before contacting LINE and asks before replacing a
+usable saved session. Answer **no** to keep it. `--force` skips only this question;
+it does not bypass storage checks, headless consent, session contention, or
+protocol errors.
 
-Ctrl-C cancels prompts, QR polling, and ordinary command requests. SIGINT exits 130 and SIGTERM exits 143.
-Password echo is restored before exit. Legacy email authentication requests
-still use their existing HTTP timeouts.
+| Commands accepting `--timeout DURATION` | Default deadline |
+| --- | --- |
+| `download` | `2m` |
+| `whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `react`, `unsend` | `0` (no command deadline) |
 
-`whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `react`, and
-`unsend` accept `--timeout DURATION`, for example
-`line send "Alice" --text "Hello" --timeout 30s`. The deadline starts after
-option parsing and covers prompts/stdin, chat-name resolution, message lookup,
-authentication recovery, key preparation, and transfers. The default is `0`
-(no command deadline), except `download`, which defaults to `2m`. `--timeout 0`
-disables the command deadline; individual HTTP request limits still apply.
-A deadline failure exits nonzero (normally 1); signal exits remain 130/143.
+For example: `line send "Alice" --text "Hello" --timeout 30s`. The deadline starts
+after option parsing and covers prompts/stdin, name and message lookup,
+authentication recovery, key preparation, and transfers. `--timeout 0` disables
+it; individual HTTP timeouts still apply. Deadline failures normally exit 1.
 
-Cancellation prevents subsequent remote steps and interrupts active requests.
-Local cryptographic work and filesystem commits finish their current step
-before cancellation is checked. A successful send receipt remains success even
-if cancellation arrives just afterward. An interrupted dispatched mutation may
-already have succeeded: inspect LINE before retrying. The CLI never replays it.
-If a plaintext file message was created before its upload stopped, the error
-retains that message ID. Success output can therefore accompany a signal exit.
+Ctrl-C cancels prompts, QR polling, and ordinary requests. SIGINT exits 130;
+SIGTERM exits 143. Password echo is restored before exit. Legacy email-auth
+requests retain their HTTP timeouts. Local crypto and filesystem commits finish
+their current step before cancellation is checked.
 
-If you cancel before the new session is saved, the old local session stays in
-place. LINE may already have replaced the old Chrome-style session if the final
-login request reached its server. The CLI does not retry that request
-automatically. If saving reports an uncertain outcome, check
-`line auth status --check`; do not restore an older session copy or blindly
-repeat login. A successful save is still reported if a signal arrives
-afterward.
+A dispatched mutation may already have succeeded when interrupted. Inspect LINE
+before repeating it; the CLI never replays it. Confirmed receipts and created
+non-E2EE file message IDs are retained even if a later upload or output fails.
+Success output can therefore accompany a signal exit.
 
-For SSH, use an interactive terminal:
-
-```sh
-ssh -t user@host
-line login
-# Or, for the email fallback:
-line login --email you@example.com
-```
-
-SSH does not remove the credential-storage requirement. A supported Linux host
-without an unlocked keyring can use
-[headless storage](#linux-servers-and-headless-storage).
+Cancelling before a new session is saved preserves the old local session, but
+LINE may already have replaced the old Chrome-style session. Login is not
+retried automatically. If saving has an uncertain outcome, run
+`line auth status --check`; do not restore an old copy or blindly repeat login.
+A completed save is still reported if a signal arrives afterward.
 
 ## Daily commands
 
@@ -188,8 +169,8 @@ line unsend
 ```
 
 Choose a chat or message by number or search for a name. Use `n` and `p` to
-move between pages, `q` to cancel, or Ctrl-C to stop. Prompts are disabled with
-`--json` and `--stdin`, so scripts must supply every required argument.
+move between pages, `q` to cancel, or Ctrl-C to stop. `--json`,
+`--error-format=json`, and `--stdin` disable prompts; supply all required arguments.
 
 ### Find chats and people
 
@@ -244,58 +225,50 @@ line messages "Alice" --show-ids
 line messages CHAT_ID --json
 ```
 
-By default, `messages` fetches 1–100 recent messages. Human output sorts by
-created time, oldest first; legacy `--json` retains the server's array order.
-`--show-ids` includes the IDs needed for replies, reactions, downloads, and
-unsend. To inspect which IDs LINE returns before decryption, without printing
-message content:
+`messages` reads 20 recent messages by default; `--limit` accepts 1–100.
+Human output shows the oldest first; ordinary `--json` preserves server order.
+`--show-ids` includes IDs for replies, reactions, downloads, and unsend.
+Reading never marks messages as read or saves their text locally. Some older
+encrypted messages may be unreadable if LINE no longer provides their device keys.
+
+To inspect returned IDs before decryption, without message content or key lookups:
 
 ```sh
 line --error-format=json messages "Chat name" --diagnostics --json --limit 50
 ```
 
-This returns `schema_version: 1`, `chat_id`, `method: "getRecentMessagesV2"`,
-`requested_count`, `returned_count`, `null_count`, `invalid_id_count`, and
-`message_ids` in server order. IDs remain strings; malformed IDs are counted
-instead of printed. It performs one logical recent-history read (authentication
-recovery may retry), without decryption or key lookups. An absent ID means it
-was not in this response, not that delivery failed or all history was searched.
 `--diagnostics` requires `--json` and cannot combine with `--details`,
-`--resolve-names`, `--page`, or `--cursor`. Normal history output is unchanged.
+`--resolve-names`, `--page`, or `--cursor`. A missing ID only means it was absent
+from this response. See the [diagnostic fields](JSON.md#history-diagnostics).
 
-To continue into older available history, use the opt-in page contract:
+### History pagination JSON
 
 ```sh
 line messages CHAT_ID --page --json --limit 50
 line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
 ```
 
-`--page` requires `--json`; `--cursor` requires both. Each call reads one page,
-returning a schema-1 object with `schema_version`, `chat_id`, `order`, `messages`,
-`exhausted`, `stop_reason`, and optional `next_cursor`. `messages` contains the
-same safe fields as the legacy array, ordered newest first by numeric message
-ID (`order: "newest_first"`). IDs remain strings. Pass `next_cursor` unchanged
-with the same chat. It contains the exact delivered time and message ID; created
-time is never substituted. Invalid or mismatched cursors fail before history
-retrieval (a chat name must first be resolved).
+`--page` requires `--json`; `--cursor` requires both. Each call returns one page
+with `schema_version: 1`, `chat_id`, `order: "newest_first"`, `messages`,
+`exhausted`, `stop_reason`, and optional `next_cursor`. Message IDs stay strings;
+pages sort by numeric ID, newest first. Pass the cursor unchanged to the same
+chat. It preserves the exact delivered time and message ID, never created time.
+Invalid or mismatched cursors fail before history retrieval; chat names must be
+resolved first.
 
-`stop_reason` is `count_limit` when the requested number was returned,
-`page_limit` for a shorter nonempty page, or `end_of_available_history` when no
-messages remain after removing the inclusive anchor. Only the last case sets
-`exhausted: true` and omits `next_cursor`. A short page is not proof of exhaustion;
-a request for 100 may return 99 because the anchor occupies one slot. A cursor
-may lead to an empty next page. This reads only history still available to this
-client; it does not promise all historical messages or a fixed retention period.
-Missing delivered times or nonadvancing/malformed pages fail explicitly.
+`stop_reason` is `count_limit` when the requested count is returned, `page_limit`
+for a shorter nonempty page, or `end_of_available_history` when no messages remain
+after removing the inclusive anchor. Only the last sets `exhausted: true` and
+omits `next_cursor`. A short page is not the end: requesting 100 may return 99
+because the anchor takes one slot, and a cursor can lead to an empty page.
+Only history still available to this client can be read; neither full history
+nor a fixed retention period is guaranteed.
 
-`--timeout` covers page retrieval and decoding. Timeout/cancellation returns an
-error, never an exhaustion result. Partial decryption failures still emit the
-page object, including its cursor, with a nonzero exit; inspect each message's
-status before continuing. Ordinary `--json` still returns an array.
-
-Reading history does not mark messages as read or save their text locally. Some
-older encrypted messages may be unavailable if LINE no longer provides their
-original device keys.
+Missing delivered times, malformed pages, and pages that do not advance fail
+explicitly. `--timeout` covers retrieval and decoding; timeout or cancellation
+returns an error, never exhaustion. Partial decryption failures still return the
+page and cursor with a nonzero exit; check each message's status before continuing.
+Ordinary `--json` remains an array.
 
 ### Detailed content and chat JSON
 
@@ -305,14 +278,12 @@ line messages CHAT_ID --details --json --resolve-names
 line messages CHAT_ID --details --page --json --limit 50
 ```
 
-`--details` requires `--json` and returns a schema-1 envelope. Message details
-include normalized chat IDs, incoming mentions, locations, recovered encrypted
-filenames, attachment size/duration when available, contacts, sticker IDs, and
-bounded rich text/links. `--resolve-names` optionally looks up sender names in
-batches. Chat details consistently include names, activity, and unread counts;
-unknown values are explicit `null`. Legacy JSON remains unchanged. See the
-[detailed field contract](CONTENT.md) for statuses, unknown values, bounds, and
-partial-result handling. Human output also uses the decoded content summaries.
+`--details` requires `--json` and returns a `schema_version: 1` envelope with decoded
+content and explicit unknown values. Add `--resolve-names` to look up sender
+names. Legacy JSON and watch formats remain unchanged. Partial decryption
+failures still emit results and return a nonzero exit code.
+See the [detailed JSON reference](JSON.md#detailed-content) for fields, statuses,
+and limits.
 
 ### List group members and mention someone
 
@@ -324,9 +295,10 @@ line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"al
 ```
 
 Replace `USER_MID` with a full user MID from `members`. The command returns
-current `members` and `invitees` separately, sorted by MID. Each entry has `mid`,
-nullable effective `name`, `name_status` (`resolved` or `unavailable`), and `self`.
-The schema-1 envelope also has `chat`, `members_complete`, and
+current `members` and `invitees` separately, sorted by MID. It supports `--timeout`
+and the global JSON error format. Each entry has `mid`, the display `name`
+(`null` if unavailable), `name_status` (`resolved` or `unavailable`), and `self`.
+The `schema_version:1` envelope also has `chat`, `members_complete`, and
 `invitees_complete`. A present empty list is complete; an omitted/null list is
 incomplete. Failed profile lookups leave names unavailable without discarding
 the membership snapshot. Self is marked only if returned; no member is invented.
@@ -339,8 +311,8 @@ inclusive and `end` exclusive, measured in UTF-16 code units of the exact text:
 `😀` occupies two units. Each span needs either a full user `mid` or `all:true`.
 Spans cannot overlap or split a surrogate pair. Literal `@name` text does not
 create mentions. Mention-all requires a group or room. Mentions support
-`--text`, `--stdin`, and `--reply-to`; they cannot accompany `--file` or a
-prompted message. Invalid input is rejected before session access. The existing
+`--text`, `--stdin`, and `--reply-to`; they cannot accompany `--file`, `--image`,
+or a prompted message. Invalid input is rejected before session access. The existing
 single-attempt send and encryption rules apply. Mention metadata remains
 outside the encrypted text, matching Chrome.
 
@@ -358,81 +330,63 @@ line send "Alice" --stdin < message.txt
 line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
 line send "Family group" --file ./report.pdf
 line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
-line send "Family group" --image ./screenshot.png --json
 ```
 
-Choose exactly one of `--text`, `--stdin`, `--file`, or `--image`. Text must be nonempty
-and at most 10,000 UTF-16 units. Generic files can be up to 20 MiB. Images,
-video, and audio sent with `--file` appear as ordinary files.
+Choose exactly one of `--text`, `--stdin`, `--file`, or `--image`. Text must be
+nonempty and at most 10,000 UTF-16 code units. Files can be up to 20 MiB.
+Images, video, and audio sent with `--file` appear as ordinary files and retain
+their original bytes.
 
-`--image` sends a native still-image message from actual JPEG or PNG data, up to
-20 MiB, 40 million decoded pixels, and 16384 pixels on either axis. It applies
-EXIF orientation, removes metadata, flattens transparency onto white, and converts
-to JPEG at quality 60 with at most 1280×1280 total pixels (aspect ratio preserved).
-Use `--file` to preserve original bytes. GIF, animated PNG, BMP, WebP, and native
-audio/video sends are unsupported. Image preparation is local and precedes session
-access. `--image` cannot be combined with text, stdin, file, mentions, or
-`--reply-to`: Chrome's image path does not establish reply support.
+**Encryption.** Sends prefer Letter Sealing. When LINE explicitly reports no E2EE
+support, the CLI sends over HTTPS/TLS without confirmation. The transfer is
+encrypted, but LINE can read non-E2EE content. This also applies to scripts,
+`--json`, `--error-format=json`, and `--stdin`; they never prompt.
 
-Encrypted `--image` sends are disabled because the current full-image/preview
-format reuses an encryption stream. They fail before uploads or sends. Generic
-`--file` sends preserve original bytes and remain available with Letter Sealing.
-Image sends use the server's explicit encrypted/plaintext media capability.
-A missing or invalid capability fails locally before mutation. Plaintext-capable
-images require interactive confirmation or `--allow-plaintext`; message creation
-and upload each happen once.
-A failed upload after message creation retains that confirmed ID in structured errors;
-unknown outcomes require checking LINE before retrying. See
-[image protocol evidence](protocol/endpoints/image-send.md) for details. Live
-interoperability has not been verified.
+To send only when Letter Sealing is available:
 
-Sending requires Letter Sealing by default. If the account or server explicitly
-reports it unavailable, a terminal send asks for consent before any remote action:
-
-```text
-This chat sends files without end-to-end encryption. LINE can read the file.
-Send this file? [y/N]:
+```sh
+line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-Enter `y` or `yes` to permit this send; Enter, `n`, or any other answer cancels.
-The confirmation applies only to the current command. The session lock is
-released while waiting; the account and capabilities are checked again afterward.
-Encrypted sends do not ask. The prompt names the message, file, or image.
+Strict mode returns `encryption_required` before remote actions if E2EE is
+unavailable.
+[LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)
+explains TLS, Letter Sealing, and media E2EE in modern official clients; this CLI's
+media interoperability needs separate validation. File encryption support is checked
+separately from text. Missing or invalid capabilities, missing keys, incomplete
+membership, and transport errors never authorize a downgrade. A group key can be
+registered only during an explicit send with a complete list of current members.
 
-Scripts, `--json`, `--error-format=json`, and `--stdin` never prompt. They return
-`encryption_required` without sending unless `--allow-plaintext` was supplied.
-Use that flag on a single command to permit content visible to LINE after
-HTTPS termination. This flag applies to text, stdin, mentions, replies, files,
-and plaintext-capable images; it still uses encryption when available. It does
-not override the encrypted-image restriction or authorize fallback on errors.
+**Native images.** Encrypted `--image` sending is disabled because the current
+full-image/preview format reuses an encryption stream. It stops before uploads,
+group-key registration, or message creation; automatic non-E2EE delivery does not
+bypass that restriction. Use `--file` to send the original image as a generic file,
+subject to the file support checks above.
 
-For `--file`, the server's file-specific media capability must also permit
-encryption. A chat can support encrypted text while allowing only plaintext
-files. In that case, the default file send stops before upload or message creation;
-Interactive confirmation or `--allow-plaintext` is required to send the file
-without Letter Sealing.
-Missing, unknown, or unreadable media capabilities never authorize plaintext.
-The CLI names the affected message, file, or image and explains the next step
-without protocol details. For example, a script without consent reports:
+When LINE explicitly supports non-E2EE images, use the following. HTTPS/TLS
+protects the transfer, but LINE can read the image:
 
-```text
-This chat doesn't support end-to-end encryption for this file. Nothing was sent.
-To send it anyway, add --allow-plaintext. LINE can read the file.
+```sh
+line send CHAT_ID --image ./screenshot.png --json
 ```
 
-Send confirmations use `end-to-end encrypted` or `not end-to-end encrypted`.
+`--image` accepts actual JPEG or still PNG data up to 20 MiB, 40 million decoded
+pixels, and 16384 pixels per side. Before session access it applies EXIF
+orientation, removes metadata, fills transparency with white, and converts to
+JPEG at quality 60, preserving aspect ratio with at most 1280×1280 total pixels.
+GIF, animated PNG, BMP, WebP, native audio/video, and image replies are unsupported.
+Images cannot be combined with text, stdin, files, or mentions. Native-image
+live interoperability remains unverified; see [protocol evidence](protocol/endpoints/image-send.md).
 
-The CLI uses Letter Sealing when the conversation supports it. Missing keys,
-incomplete group membership, or a transport failure stop an encrypted send
-instead of silently sending plaintext. An explicit group send can register a
-new group key only when every current member is known.
-
-Add `--json` to see the message ID, whether it was encrypted, whether a group
-key was registered, and the request sequence.
+`--json` reports message ID, encryption status, group-key registration, and
+request sequence. Human receipts say `end-to-end encrypted` or
+`transport encrypted (no E2EE)`. In send results, `encrypted: false` means no Letter
+Sealing; HTTPS/TLS transport encryption still applies.
 
 > [!CAUTION]
-> The CLI attempts each send and other remote change once. If the response is
-> lost, check LINE before you retry: the action may have succeeded.
+> Each send, upload, or other remote change is attempted once. A non-E2EE file
+> message can be created before its upload fails; structured errors retain its
+> confirmed ID. If the outcome is unknown, inspect LINE before retrying.
 
 ### Download or change a message
 
@@ -449,19 +403,19 @@ line unsend "Alice" --message MY_MESSAGE_ID
 Reactions are `like`, `love`, `laugh`, `surprise`, `sad`, and `angry`. You can
 unsend only your own messages, subject to LINE's server rules.
 
-Downloads, reactions, unsend, and `send --reply-to` share a read-only lookup in
-the selected chat: at most 10 pages of 100 records each and 30 seconds, including
-authentication recovery. A shorter command deadline takes precedence. The lookup
-checks chat identity; unsend also checks ownership. Replies must find their target
-before any upload, group-key registration, or send. A target outside this search
-boundary is rejected locally. This is bounded pagination, not a global ID search.
+Downloads, reactions, unsend, and `send --reply-to` search only the selected chat:
+at most 10 pages of 100 records and 30 seconds, including authentication recovery.
+A shorter command deadline takes precedence. Every target must belong to that
+chat; unsend also checks ownership. Replies must find the target before any
+upload, group-key registration, or send. Targets outside this limit are rejected
+locally; this is not a global ID search.
 
-An empty older page reports `message_not_found` in available history; reaching
-the page budget reports `lookup_incomplete`, and a time budget reports
-`deadline_exceeded`. None proves that the message never existed. Interactive
-message choosers still show the latest 100; supply an explicit older message ID
-to use the extended lookup. Downloads never overwrite an existing destination. They verify encrypted data before
-saving, and remote metadata cannot choose the output path.
+An empty older page returns `message_not_found`; the page limit returns
+`lookup_incomplete`, and the time limit returns `deadline_exceeded`. None proves
+the message never existed. Interactive choosers show only the latest 100;
+specify an older message ID directly to search further. Downloads verify
+encrypted data before saving, never overwrite an existing file, and never let
+remote metadata choose the output path.
 
 `download` supports image, video, audio, and generic file messages up to 20
 MiB, with a two-minute command deadline by default (`--timeout` overrides it). It saves the full media bytes
@@ -577,7 +531,8 @@ written before the error exit. Cancellation uses the usual signal exit codes.
 
 ### JSON output and exit codes
 
-Add `--json` to commands that support it:
+Use full chat IDs and keep message IDs as strings. `--json`, `--error-format=json`,
+and `--stdin` disable prompts; supply all required arguments. For JSON output:
 
 ```sh
 line whoami --json
@@ -612,20 +567,19 @@ chunks or raw server response bodies.
 
 ### Structured errors
 
-Use `line --error-format=json COMMAND ... --json` for one structured error on
-stderr while keeping the existing success and partial-result JSON on stdout.
-The global option must precede the command and disables guided prompts. It
-supports the core commands and `auth status`; login, logout, migration,
-watch, and update retain their existing diagnostics.
+Use `line --error-format=json COMMAND ... --json` to write one structured error
+to stderr while preserving success and partial-result JSON on stdout. Put the
+global option before the command; it disables prompts. It supports the core
+commands and `auth status`. Login, logout, migration, watch, and update reject
+this option before doing work; use their normal diagnostics instead.
 
-Errors include a stable code and stage. Message mutations also retain known IDs,
-the request sequence, whether the action was attempted, its outcome, and any
-preparation/upload steps. A created plaintext-file message is reported separately
-from a failed upload. A successful send with failed output remains confirmed.
-Never automatically retry an `unknown` mutation, even for a transient transport
-error. Inspect LINE first. Storage and signal exit codes are unchanged.
-
-See [the error schema, codes, and outcome examples](ERRORS.md).
+Errors include a stable code and stage. Message actions also report known chat
+and message IDs, the request sequence, whether the action was attempted, its
+outcome, and any preparation/upload steps. A file message can be confirmed even
+if its upload fails; a send remains confirmed if writing the result fails.
+Never automatically retry an `unknown` action, including after a network error:
+check LINE first. Storage and signal exit codes are unchanged.
+See the [error fields, codes, and examples](JSON.md#errors).
 
 ### JSON lookup results
 
@@ -708,43 +662,40 @@ rotation stops further requests, because the CLI cannot guarantee that it saved
 the new token.
 
 For refresh timing, retry rules, and call-path evidence, see the
-[token and session audit](../TOKEN_SESSION.md).
+[token and session audit](SESSION.md#token-refresh).
 
 ## Linux servers and headless storage
 
 ### Enroll without an unlocked keyring
 
-On a supported Linux host without an unlocked Secret Service keyring, enroll
-interactively with headless storage:
+Use a regular Unix account with an interactive terminal; for SSH, connect with
+`ssh -t user@host`. Headless storage requires a trusted `/usr/bin/systemd-creds`
+from systemd 256–259 and a working user credential broker. Older and unreviewed
+newer versions are rejected.
 
 ```sh
-line login --headless --email you@example.com
-line auth status
+line login --headless
 line auth status --check --json
 ```
 
-The example uses email login. `line login --headless` selects experimental QR
-login with the same storage protection. You still need an interactive terminal
-for enrollment; `--headless` does not make login unattended.
+The first command uses experimental QR login. For email/password login, replace
+it with `line login --headless --email you@example.com`. Wait for
+**Session saved securely** before checking storage. `--headless` chooses storage;
+initial login still requires terminal interaction and phone approval.
 
-Before contacting LINE, the CLI asks you to accept **Host key; no TPM**
-protection. `--force` does not skip this. Headless storage protects against
-other unprivileged users, but not against root, malware running as your
-account, or someone with a complete copy of the disk. It does not claim TPM
-protection. Cancelling before the new session is saved leaves no new local
-session.
+Before contacting LINE, the CLI asks you to accept **Host key; no TPM**.
+`--force` does not skip consent. This protects against other unprivileged users,
+but not root, malware running as your account, or a complete disk copy. It
+provides no TPM protection. Cancelling before saving leaves no new local session.
 
-After enrollment, use ordinary commands without a storage flag. Logging in
-again keeps the selected backend. `login --headless` does not convert or
-overwrite an existing native session.
+After setup, use ordinary commands without `--headless`. Reauthentication keeps
+the selected backend; `login --headless` does not convert or overwrite an existing
+native session. Keep the same Unix account and config directory for commands,
+SSH, cron, and services.
 
-Headless storage needs a trusted `/usr/bin/systemd-creds` helper and its user
-credential broker. Use the same Unix account and config directory for
-interactive commands, SSH, cron, and services. Systemd versions 256–259 are
-accepted; Debian 13/systemd 257 and Ubuntu 26.04/systemd 259 have disposable-VM
-validation. Other accepted versions still need a successful local check. Older
-and unreviewed newer versions are rejected. UniPi and physical TPM behavior
-have not been verified.
+Debian 13/systemd 257 and Ubuntu 26.04/systemd 259 have disposable-VM validation.
+Other accepted versions still require a successful local check. UniPi and
+physical TPM behavior remain unverified.
 
 ### Move an existing Linux session
 
@@ -762,7 +713,7 @@ without contacting LINE or asking for your password.
 If migration stops partway through, run the same command again. Do not delete
 `migration.pending` or manually replace `session.enc`. `line auth status`
 reports `migration_pending` until cleanup succeeds. The
-[headless storage internals](../internal/session/HEADLESS.md) explain the recovery
+[headless storage internals](SESSION.md#headless-storage-engine) explain the recovery
 process.
 
 ### Run a watcher without a login session
@@ -792,7 +743,7 @@ NoNewPrivileges=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 MemoryDenyWriteExecute=true
-ExecStart=/usr/local/bin/line watch
+ExecStart=%h/.local/bin/line watch
 Restart=on-failure
 RestartSec=15s
 RestartPreventExitStatus=65 69 74 78
@@ -862,7 +813,7 @@ systemd-run --user --wait --collect \
   --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
   --property=LockPersonality=true \
   --property=MemoryDenyWriteExecute=true \
-  /usr/local/bin/line auth status --check --json
+  "$HOME/.local/bin/line" auth status --check --json
 ```
 
 This check is local and does not contact LINE. Change one sandbox setting at a
@@ -928,6 +879,20 @@ Signals take precedence: SIGINT exits 130 and SIGTERM exits 143. Other CLI or
 network errors exit 1. `auth status --json` can still write its status object
 when storage is unavailable, then return the matching nonzero code.
 
+## Troubleshooting
+
+| Symptom | What to check next |
+| --- | --- |
+| A documented option is unknown | Run `line version` and `line COMMAND --help`; compare with the docs at that release tag. Check for updates with `line update --check`. |
+| `encryption_required` | LINE reports no E2EE support and strict mode blocked the send. Omit `--require-e2ee` to use HTTPS/TLS; LINE can read that content. |
+| `encrypted_image_unavailable` | Encrypted native images are disabled. Try `--file` for the original bytes; file support checks still apply. |
+| Login or an SSH service cannot access storage | Run `line auth status --check --json` as the same user and environment. Follow [headless diagnostics](#diagnose-a-headless-service); do not delete session files to bypass the error. |
+| A send fails or is absent from recent history | Inspect LINE before repeating it. Use [structured errors](#structured-errors) to distinguish a confirmed action from an unknown outcome. Recent history is not proof of non-delivery. |
+| A history page is short or partly unreadable | Continue with its cursor unless `exhausted` is true. Check each message status and the exit code; older keys/history may be unavailable. |
+
+For a bug report, include `line version`, OS, command, and a redacted error.
+Never include tokens, passwords, QR/PIN values, keys, or private messages.
+
 ## Reference
 
 ### Command help
@@ -936,18 +901,12 @@ The built-in help has the current option list:
 
 ```sh
 line help
-line login --help
-line contacts --help
-line chats --help
-line messages --help
 line send --help
-line watch --help
-line update --help
 ```
 
 ### Build from source
 
-You need Git and Go 1.26 or newer. macOS also needs Xcode Command Line Tools
+You need Git and Go 1.27.2. macOS also needs Xcode Command Line Tools
 and CGO for Keychain support.
 
 On macOS or Linux:
@@ -968,31 +927,22 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 .\bin\line.exe help
 ```
 
-Contributor checks:
-
-```sh
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-go build -trimpath -o bin/line ./cmd/line
-```
-
-Ordinary tests use fake APIs and credentials. Live tests are disabled by
-default and need explicit authorization. Cancellation tests use synthetic
-subprocesses. On macOS/Linux, the password terminal test uses Python 3's
-standard-library PTY support when available. Native Linux Secret Service
-integration needs an explicitly enabled disposable D-Bus session; Windows DPAPI
-tests use temporary files.
-
-See the [testing guide](TESTING.md) for the complete suite commands, shared
-fixtures, slow crypto regressions, and CI coverage.
+For contributor checks, test fixtures, platform integration, and release steps,
+see the [development guide](DEVELOPMENT.md). Ordinary tests use synthetic data
+and fake APIs; live LINE tests require explicit authorization.
 
 ### Current limitations
 
+- When LINE reports no E2EE support, sends use HTTPS/TLS; LINE can read the
+  content. `--require-e2ee` blocks these sends. See
+  [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/).
 - One saved LINE account per operating-system user.
-- QR login is experimental and cannot handle accounts with Letter Sealing
-  disabled.
+- QR login is experimental and requires usable Letter Sealing keys.
 - History pages contain at most 100 messages; use `--page --json` and its cursor for older available history. Action/reply lookup is bounded to 10 pages and 30 seconds.
-- Sending supports generic files and native JPEG/PNG still images; native audio/video, animated images, image replies, and sticker sends are unsupported.
+- Generic files require LINE to report media support; non-E2EE delivery uses HTTPS/TLS.
+  Encrypted native images are disabled; non-E2EE JPEG/PNG images require explicit
+  support from LINE. Native audio/video, animated images, image replies, and
+  sticker sends are unsupported.
 - Downloads support images, video, audio, and files up to 20 MiB; external
   media URLs are unsupported.
 - Reading messages does not mark them as read.

@@ -2,6 +2,11 @@
 
 [English](CLI.md) | 繁體中文（台灣） | [日本語](CLI.ja.md) | [ภาษาไทย](CLI.th.md)
 
+`main` 上的指南說明開發分支。已安裝版本請查看 `line version`、`line COMMAND --help`
+及該發行標籤的指南。升級前請參閱[變更紀錄](../CHANGELOG.md)。
+
+[開始使用](#get-started) · [日常指令](#daily-commands) · [更新](#updating-line-cli) · [指令稿](#use-from-scripts) · [帳號](#account-and-session) · [Linux / 無頭環境](#linux-servers-and-headless-storage) · [疑難排解](#troubleshooting) · [參考資訊](#reference)
+
 在終端機使用你的個人 LINE 帳號：讀取聊天內容、傳送訊息與檔案、下載附件，以及接收新事件。
 日常操作可跟著互動式提示選擇；寫指令稿時則可使用 JSON 輸出。
 
@@ -32,15 +37,15 @@ macOS 也可使用 Homebrew：
 brew install kongesque/tap/line-cli
 ```
 
-Debian 或 Ubuntu 使用者請在登入前安裝憑證儲存工具：
+在 Debian 或 Ubuntu 桌面登入前，請先安裝憑證儲存工具：
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
 ```
 
-Linux 金鑰圈必須已啟動並解鎖，且與 `line` 位於同一個 D-Bus 工作階段。
-若透過 SSH 操作，或伺服器沒有已解鎖的金鑰圈，請參閱
-[Linux 伺服器與無頭環境儲存](#linux-servers-and-headless-storage)。
+桌面金鑰圈必須已啟動、解鎖，且與 `line` 位於同一個 D-Bus 工作階段。
+沒有桌面金鑰圈的伺服器或 SSH 環境請用 `line login --headless`；詳見
+[無頭環境設定](#linux-servers-and-headless-storage)。
 
 Windows 請在 PowerShell 執行：
 
@@ -65,95 +70,82 @@ line help
 
 ### 登入並傳送第一則訊息
 
+依使用環境選擇一種登入方式：
+
+| 環境 | 指令 |
+| --- | --- |
+| macOS、Windows，或已解鎖桌面金鑰圈的 Linux | `line login` |
+| 沒有桌面金鑰圈的 Linux 伺服器或 SSH 環境 | `line login --headless` |
+
+使用手機 LINE 內建掃描器掃描 QR 碼、核准登入，並依提示輸入完整 PIN（包括開頭的零）。
+請等到出現 **Session saved securely**。QR 登入仍屬實驗性功能，需要可用的 Letter Sealing 金鑰。
+無頭環境的主機需求請見 [Linux 伺服器設定](#linux-servers-and-headless-storage)。
+
+接著確認帳號，並依提示選擇聊天室：
+
 ```sh
-line login
 line whoami
 line chats
-line messages "Family group"
-line send "Alice" --text "Hello!"
+line messages
+line send
 ```
 
-`line login` 會顯示 QR 碼。使用手機上的 LINE 掃描、核准登入，並依提示輸入
-畫面上的 PIN。請等到出現 **Session saved securely** 再執行其他指令。
-
-QR 碼登入目前為實驗性功能。如果你的 LINE 帳號已設定電子郵件與密碼，也可以使用：
-
-```sh
-line login --email you@example.com
-```
-
-輸入密碼時不會顯示內容，CLI 也不會儲存密碼。沒有密碼選項或密碼環境變數。
+`line send` 會先讓你選擇收件人，輸入訊息並按 Enter 後即傳送。
+若要使用電子郵件與密碼，請選擇下方選項。輸入的密碼不會顯示或儲存，
+也不接受透過指令選項或環境變數提供密碼。
 
 <a id="login-options-and-qr-help"></a>
 
 ### 登入選項與 QR 碼疑難排解
 
-| 指令或選項 | 適用情境 |
+| 指令 | 用途 |
 | --- | --- |
-| `line login` 或 `line login --qr` | 使用終端機上的 QR 碼登入。 |
-| `line login --email ADDRESS` | 改用電子郵件、密碼與手機驗證登入。 |
-| `line login --qr-url` | 將一次性 QR 碼內容交給可信任的本機 QR 工具。 |
-| `line login --force` | 略過是否取代已儲存工作階段的詢問。 |
-| `line login --headless` | 在支援的 Linux 主機上首次設定，且沒有已解鎖的金鑰圈。 |
+| `line login --qr` | 明確選擇預設的 QR 登入。 |
+| `line login --email ADDRESS` | 使用 LINE 帳號已設定的電子郵件、密碼與手機驗證。 |
+| `line login --headless --email ADDRESS` | 在 Linux 使用電子郵件登入與無頭環境儲存。 |
+| `line login --qr-url` | 將一次性 QR 碼內容交給可信任的本機工具。 |
+| `line login --force` | 略過取代已儲存工作階段前的確認。 |
 
-`--email` 不能與 `--qr` 或 `--qr-url` 同時使用。兩種 QR 登入方式都需要可互動輸入的
-終端機，但 stdout 可以重新導向。進度、QR 碼、PIN 與警告寫入 stderr；最後的成功訊息寫入 stdout。
+`--email` 不能搭配 `--qr` 或 `--qr-url`。兩種 QR 方式都需要互動式輸入終端機，
+但 stdout 可重新導向。進度、QR 碼、PIN 與警告寫入 stderr；最後的成功訊息寫入 stdout。
 
-請使用 LINE 內建的掃描器。PIN 必須照畫面完整輸入，包括開頭的零。
-手機核准登入，不代表 CLI 已完成個人資料檢查、金鑰匯出與工作階段儲存。
-
-若終端機太窄，CLI 會告知所需寬度，並建議改用 `--qr-url`，不會顯示被裁切的 QR 碼。
-`NO_COLOR` 可停用明確指定的色彩。`--qr-url` 輸出的內容屬於機密：只交給可信任的本機工具，
-不要分享、送到線上 QR 碼產生器或存檔。內容仍會留在終端機的捲動歷史中。QR 碼圖片不會存檔。
-一般 QR 登入前，請先取消設定 `QRCODE_DEBUG`，因為編碼器的除錯模式可能會寫出資料。
-
-倒數時間僅供參考。LINE 確認 QR 碼過期後，CLI 可以顯示新的 QR 碼，每次登入最多三個。
-網路錯誤或 PIN 驗證逾時不會觸發重試。一般純文字終端機或重新導向的 stderr
-只會顯示狀態變化，不會即時倒數。
-
-QR 登入目前不支援停用 Letter Sealing 的帳號。已儲存的 QR 憑證遭拒時，不會改用 PIN 驗證；
-未知的憑證錯誤也會中止登入。若遇到憑證驗證錯誤，請試用電子郵件登入。
-若訊息帶有 `Diagnostic: verifyCertificate` 後綴，其中只有數字代碼，
-不會包含 QR 碼、PIN、憑證、權杖或伺服器回應文字。
+- **QR 碼太寬：** CLI 會告知所需寬度並建議使用 `--qr-url`，不會裁切 QR 碼。
+  `NO_COLOR` 可停用明確指定的色彩。
+- **QR 碼隱私：** `--qr-url` 只應交給可信任的本機工具；不要分享、上傳或存檔。
+  內容會留在終端機捲動歷史中，QR 圖片則不會存檔。請取消設定可能寫出資料的 `QRCODE_DEBUG`。
+- **QR 碼過期：** LINE 確認過期後可顯示新碼，每次登入最多三個；網路錯誤或 PIN 逾時不會重試。
+  倒數僅供參考；純文字終端機或重新導向的 stderr 只顯示狀態變化。
+- **憑證錯誤：** 已儲存的 QR 憑證遭拒時不會改用 PIN，未知憑證錯誤也會停止登入。
+  若帳號已設定電子郵件，可改用該方式登入。`Diagnostic: verifyCertificate` 只包含數字代碼，
+  不包含 QR 碼、PIN、憑證、權杖或伺服器原始回應。
 
 <a id="saved-sessions-and-cancellation"></a>
 
 ### 已儲存的工作階段與取消操作
 
-登入會先檢查本機儲存，再連線至 LINE。取代可用的已儲存工作階段前會先詢問；回答 **no**
-即可保留。`--force` 只略過這個問題，不會略過儲存檢查、無頭環境儲存同意、
-同時使用工作階段的檢查或通訊協定錯誤。
+登入會先檢查本機儲存，再連線至 LINE。取代可用的已儲存工作階段前會先詢問；回答 **no** 可保留。
+`--force` 只略過這個問題，不會略過儲存檢查、無頭環境儲存同意、工作階段鎖定或協定錯誤。
 
-Ctrl-C 可取消提示與 QR 輪詢。SIGINT 的結束代碼為 130，SIGTERM 為 143。
-結束前會恢復終端機的密碼回顯設定。舊版電子郵件驗證請求仍沿用原有的 HTTP 逾時設定。
+| 支援 `--timeout DURATION` 的指令 | 預設期限 |
+| --- | --- |
+| `download` | `2m` |
+| `whoami`、`contacts`、`chats`、`members`、`messages`、`send`、`react`、`unsend` | `0`（不設指令期限） |
 
-`whoami`、`contacts`、`chats`、`members`、`messages`、`send`、`download`、`react` 與 `unsend`
-支援 `--timeout DURATION`，例如 `line send "Alice" --text "Hello" --timeout 30s`。
-期限從選項解析後開始，涵蓋提示、stdin、聊天室名稱解析、訊息查找、驗證恢復、金鑰準備與傳輸。
-預設為 `0`（不設指令期限），但 `download` 預設為 `2m`；`--timeout 0` 可停用。
-各 HTTP 請求原有的逾時仍有效。超過期限會以非零代碼結束（通常為 1），訊號代碼仍為 130/143。
-Ctrl-C 也會取消一般指令的進行中請求，並阻止下一個遠端步驟；本機加密與檔案提交會先完成目前步驟。
-取消若發生在傳送之後，訊息可能已送達，請先檢查 LINE 再重試；CLI 不會自動重送。
-已確認的傳送結果會保留；一般檔案訊息建立後若上傳中止，錯誤會保留訊息 ID。
+例如：`line send "Alice" --text "Hello" --timeout 30s`。期限從參數解析後開始，
+涵蓋提示、stdin、聊天室與訊息查找、登入狀態復原、金鑰準備及傳輸。
+`--timeout 0` 可停用指令期限；各 HTTP 請求的逾時仍有效。超過期限通常以 1 結束。
+
+Ctrl-C 可取消提示、QR 輪詢與一般請求。SIGINT 的結束代碼為 130，SIGTERM 為 143。
+結束前會恢復密碼回顯設定；舊版電子郵件驗證仍沿用 HTTP 逾時。
+本機加密與檔案寫入會完成目前步驟，再檢查是否取消。
+
+已送出的請求可能在中斷前就已成功，請先在 LINE 確認再重做；CLI 不會自動重送。
+即使後續上傳或輸出失敗，仍會保留已確認的傳送結果與已建立的非 E2EE 檔案訊息 ID，
 因此成功輸出可能伴隨訊號結束代碼。
 
-
-如果在新工作階段儲存前取消，本機舊工作階段會保留。不過，若最後的登入請求已到達
-LINE 伺服器，原本的 Chrome 類型工作階段可能已被取代。CLI 不會自動重試該請求。
-若儲存結果不確定，請檢查 `line auth status --check`，不要還原舊備份或直接重複登入。
-若訊號在儲存成功後才到達，仍會回報儲存成功。
-
-透過 SSH 操作時，請使用互動式終端機：
-
-```sh
-ssh -t user@host
-line login
-# 或改用電子郵件登入：
-line login --email you@example.com
-```
-
-SSH 同樣需要憑證儲存機制。支援的 Linux 主機若沒有已解鎖的金鑰圈，可使用
-[無頭環境儲存](#linux-servers-and-headless-storage)。
+在新工作階段儲存前取消會保留本機舊工作階段，但 LINE 可能已取代原有的 Chrome 類型工作階段。
+CLI 不會自動重試登入。若儲存結果不確定，請執行 `line auth status --check`，
+不要還原舊備份或直接重複登入。若訊號在儲存成功後才到達，仍會回報成功。
 
 <a id="daily-commands"></a>
 
@@ -174,7 +166,7 @@ line unsend
 ```
 
 輸入編號選擇聊天室或訊息，也可以搜尋名稱。`n` 和 `p` 可切換頁面，`q` 可取消，
-Ctrl-C 可中止。`--json` 與 `--stdin` 會停用提示，因此指令稿必須提供所有必要引數。
+Ctrl-C 可中止。`--json`、`--error-format=json` 與 `--stdin` 會停用提示，請提供所有必要參數。
 
 <a id="find-chats-and-people"></a>
 
@@ -228,16 +220,66 @@ line messages "Alice" --show-ids
 line messages CHAT_ID --json
 ```
 
-`messages` 取得最近 1–100 則訊息，並依時間由舊到新顯示。
-`--show-ids` 會顯示回覆、表情回應、下載與收回訊息所需的 ID。
+`messages` 預設取得最近 20 則訊息，`--limit` 可指定 1–100 則。
+一般文字輸出由舊到新排列；一般 `--json` 保留伺服器順序。
+`--show-ids` 會顯示回覆、表情回應、下載與收回所需的 ID。
+讀取不會標為已讀，也不會在本機儲存文字。若 LINE 不再提供原裝置金鑰，部分較舊的加密訊息可能無法讀取。
 
-讀取歷史訊息不會標示已讀，也不會在本機儲存訊息文字。
-若 LINE 不再提供原裝置金鑰，部分較舊的加密訊息可能無法讀取。
+若要在解密前查看回傳的 ID，不顯示訊息內容，也不查詢金鑰：
+
+```sh
+line --error-format=json messages "Chat name" --diagnostics --json --limit 50
+```
+
+`--diagnostics` 必須搭配 `--json`，不能搭配 `--details`、`--resolve-names`、`--page` 或 `--cursor`。
+找不到 ID 只表示它不在這次回應中。詳見[診斷欄位](JSON.md#history-diagnostics)。
+
+<a id="history-pagination-json"></a>
+
+### 歷史分頁 JSON
+
+```sh
+line messages CHAT_ID --page --json --limit 50
+line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
+```
+
+`--page` 必須搭配 `--json`，`--cursor` 必須搭配兩者。每次回傳一頁，包含
+`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
+`exhausted`、`stop_reason` 與可選的 `next_cursor`。ID 保持字串，依數值由新到舊排列。
+請將游標原樣傳回同一聊天室；它保留精確的送達時間與訊息 ID，不會以建立時間代替。
+無效或不屬於該聊天室的游標會在取得歷史前被拒絕；若指定聊天室名稱，則須先查出 ID。
+
+`stop_reason` 為 `count_limit` 時表示已達指定筆數，`page_limit` 表示頁面較短但不為空。
+只有移除重複錨點後沒有訊息時，才回傳 `end_of_available_history`、`exhausted: true`，並省略 `next_cursor`。
+較短的頁面不代表已讀完：要求 100 筆可能因錨點占用一筆而只回傳 99 筆，下一頁也可能為空。
+只能讀取 LINE 仍提供給此用戶端的歷史，不保證完整歷史或固定保存期限。
+
+缺少送達時間、格式錯誤或未向前推進的頁面都會明確失敗。`--timeout` 涵蓋取得與解碼；
+逾時或取消會回傳錯誤，不會當作已讀完。部分解密失敗仍輸出分頁與游標，並以非零代碼結束。
+繼續前請檢查每則訊息的狀態。一般 `--json` 仍回傳陣列。
+
+<a id="detailed-content-and-chat-json"></a>
+
+### 詳細內容 JSON
+
+```sh
+line chats --details --json
+line messages CHAT_ID --details --json --resolve-names
+line messages CHAT_ID --details --page --json --limit 50
+```
+
+`--details` 必須搭配 `--json`，回傳含解碼內容與明確未知值的 `schema_version: 1` 物件。
+加上 `--resolve-names` 可查詢傳送者名稱。原有 JSON 與 watch 格式不變；
+部分解密失敗仍輸出結果，並以非零代碼結束。
+欄位、狀態與限制詳見[詳細輸出規格](JSON.md#detailed-content)。
+
+<a id="list-group-members-and-mention-someone"></a>
 
 ### 查看群組成員並標註
 
 ```sh
 line members "Family group" --json
+line members "Family group" --timeout 30s
 line send "Family group" --text '😀 @Alex' --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]'
 line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"all":true}]'
 ```
@@ -248,7 +290,7 @@ line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"al
 
 JSON 包含 `schema_version:1`、`chat`、`members`、`invitees`、
 `members_complete`、`invitees_complete`。目前成員與受邀者分開列出，依 MID
-排序；每筆包含 `mid`、可為 `null` 的有效名稱 `name`、`name_status`
+排序；每筆包含 `mid`、用於顯示的名稱 `name`（可為 `null`）、`name_status`
 （`resolved` 或 `unavailable`）及 `self`。清單明確為空仍屬完整，省略或
 `null` 表示不完整。個人檔案查詢失敗時保留 MID，不會憑空補入自己。
 完整性只描述這次成員清單回應，不代表名稱齊全或日後成員不會變更。
@@ -260,6 +302,12 @@ JSON 包含 `schema_version:1`、`chat`、`members`、`invitees`、
 不可搭配 `--file`、`--image` 或互動輸入訊息。參數會在存取工作階段前驗證；既有的加密
 檢查與單次傳送規則不變。標註中繼資料與 Chrome 一樣保留在加密文字之外。
 
+指令稿中的位置必須對應未經修改的 stdin 內容：
+
+```sh
+printf '%s' '😀 @Alex' | line send "Family group" --stdin --reply-to MESSAGE_ID --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]' --json
+```
+
 <a id="send-messages-and-files"></a>
 
 ### 傳送訊息與檔案
@@ -270,33 +318,48 @@ line send "Alice" --stdin < message.txt
 line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
 line send "Family group" --file ./report.pdf
 line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
-line send "Family group" --image ./screenshot.png --json
 ```
 
 `--text`、`--stdin`、`--file`、`--image` 必須擇一使用。文字不能為空，長度上限為 10,000 個 UTF-16 單位。
-一般檔案最大為 20 MiB。透過 `--file` 傳送的圖片、影片與音訊都會以一般檔案呈現。
+檔案最大為 20 MiB。透過 `--file` 傳送的圖片、影片與音訊會以一般檔案呈現，並保留原始位元組。
 
-`--image` 會以圖片訊息傳送經實際解碼驗證的 JPEG 或靜態 PNG：上限為 20 MiB、
-4,000 萬像素，且單邊不超過 16384 像素。會套用 EXIF 方向、移除中繼資料、
-將透明區域填白，再依比例轉為品質 60、總像素不超過 1280×1280 的 JPEG。
-加密傳送另上傳 384×384 範圍內、品質 30 的 JPEG 預覽；要保留原始位元組請用 `--file`。
-不支援 GIF、動態 PNG、BMP、WebP 或原生影音傳送。圖片處理在存取工作階段前完成。
-`--image` 不可搭配文字、stdin、file、mentions 或 `--reply-to`，因 Chrome 圖片流程
-尚無已驗證的回覆支援。
+**加密：** 傳送會優先使用 Letter Sealing。只有 LINE 明確回報不支援 E2EE 時，才會直接透過 HTTPS/TLS 傳送，不再詢問。
+傳輸仍有加密，但 LINE 可讀取非 E2EE 內容。指令稿、`--json`、`--error-format=json` 與 `--stdin` 也採用此規則，且不會詢問。
 
-圖片傳送使用伺服器明確回報的加密／明文能力；缺漏、無效或查詢失敗均不會開始傳送。
-完整圖片、預覽和訊息各只嘗試一次。明文訊息建立後上傳失敗，結構化錯誤仍保留
-已確認的訊息 ID；結果不明時請先查看 LINE 再重試。詳見[圖片協定證據](protocol/endpoints/image-send.md)，尚未進行真實帳號互通測試。
+若只接受 Letter Sealing，請使用：
 
-聊天室支援時，CLI 會使用 Letter Sealing。缺少金鑰、群組成員資料不完整，或傳輸失敗時，
-加密傳送會中止，不會默默改傳明文。只有明確執行群組傳送，且掌握所有目前成員時，
-才能註冊新的群組金鑰。
+```sh
+line send CHAT_ID --file ./report.pdf --require-e2ee --json
+```
 
-加上 `--json` 可查看訊息 ID、是否加密、是否註冊群組金鑰，以及請求序號。
+不支援時會在遠端變更前以 `encryption_required` 停止。
+[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)說明 TLS、Letter Sealing 及新版官方用戶端的媒體 E2EE 支援；本 CLI 的媒體互通性仍須另外驗證。
+檔案與文字的加密支援會分開檢查。支援資訊缺漏或無效、缺少金鑰、成員資料不完整及傳輸錯誤，都不會允許停用 E2EE。
+只有明確執行群組傳送，且掌握所有目前成員時，才能註冊新群組金鑰。
+
+**原生圖片：** 完整圖片與預覽會重複使用加密串流，因此目前停用加密的 `--image` 傳送。
+系統會在上傳、註冊群組金鑰或建立訊息前停止，自動採用非 E2EE 傳送也無法繞過此限制。
+可用 `--file` 將原圖當作一般檔案傳送，但仍須通過上述檔案支援檢查。
+
+只有 LINE 明確支援非 E2EE 圖片時才能使用下列指令；傳輸有 HTTPS/TLS 保護，但 LINE 可讀取圖片：
+
+```sh
+line send CHAT_ID --image ./screenshot.png --json
+```
+
+`--image` 接受實際 JPEG 或靜態 PNG 資料，上限為 20 MiB、4,000 萬像素，單邊不超過 16384 像素。
+在存取工作階段前，會套用 EXIF 方向、移除中繼資料、將透明區域填白，再依比例轉為品質 60、
+總像素不超過 1280×1280 的 JPEG。不支援 GIF、動態 PNG、BMP、WebP、原生影音傳送或圖片回覆，
+也不可搭配文字、stdin、file 或 mentions。原生圖片傳送尚未驗證真實環境互通性，
+詳見[協定證據](protocol/endpoints/image-send.md)。
+
+`--json` 顯示訊息 ID、加密狀態、群組金鑰註冊狀態與請求序號。
+一般傳送結果會顯示 `end-to-end encrypted` 或 `transport encrypted (no E2EE)`。
+傳送結果中的 `encrypted: false` 表示未使用 Letter Sealing，仍有 HTTPS/TLS 傳輸加密。
 
 > [!CAUTION]
-> CLI 對每次傳送及其他遠端變更都只嘗試一次。若未收到回應，請先到 LINE 確認再重試：
-> 操作可能已經成功。
+> 每次傳送、上傳或其他遠端變更都只嘗試一次。非 E2EE 檔案訊息可能在上傳失敗前就已建立，
+> 結構化錯誤會保留已確認的 ID。若結果不明，請先到 LINE 確認再重試。
 
 <a id="download-or-change-a-message"></a>
 
@@ -315,8 +378,13 @@ line unsend "Alice" --message MY_MESSAGE_ID
 表情回應可選 `like`、`love`、`laugh`、`surprise`、`sad` 或 `angry`。
 只能收回自己傳送的訊息，且須符合 LINE 伺服器的規則。
 
-下載、反應、收回與 `send --reply-to` 共用指定聊天室的查找流程：最多 10 頁、每頁 100 筆、30 秒；較短的 `--timeout` 優先。回覆會先確認目標屬於該聊天室，再上傳、註冊群組金鑰或傳送。互動選單仍顯示最近 100 則；較舊訊息請直接指定 ID。下載不會覆寫既有檔案；
-儲存前會驗證加密資料，遠端中繼資料也不能決定輸出路徑。
+下載、表情回應、收回與 `send --reply-to` 只會查找指定聊天室，最多 10 頁、每頁 100 筆、30 秒，
+包含登入狀態復原；較短的指令期限優先。所有操作都會確認目標屬於該聊天室，收回時也會確認是否為自己傳送。
+回覆必須先找到目標，才會上傳、註冊群組金鑰或傳送。超出範圍的目標會在本機被拒絕，並非跨聊天室的 ID 搜尋。
+
+較舊頁面為空時會回傳 `message_not_found`，達到頁數上限時為 `lookup_incomplete`，逾時則為 `deadline_exceeded`。
+這些結果都不能證明訊息從未存在。互動選單只顯示最近 100 則；較舊訊息請直接指定 ID 查找。
+下載會在儲存前驗證加密資料，不會覆寫既有檔案，也不會讓遠端中繼資料決定輸出路徑。
 
 `download` 支援最大 20 MiB 的圖片、影片、音訊與一般檔案訊息，預設整個指令的期限為兩分鐘（可用 `--timeout` 調整）。
 儲存的是完整且未轉換的媒體內容，因此變更副檔名不會轉換格式。
@@ -421,7 +489,8 @@ line update --check --json
 
 ### JSON 輸出與結束代碼
 
-支援的指令可加上 `--json`：
+指令稿請使用完整聊天室 ID，並將訊息 ID 保留為字串。`--json`、`--error-format=json`
+與 `--stdin` 都會停用提示，請提供所有必要參數。輸出 JSON 的指令範例：
 
 ```sh
 line whoami --json
@@ -451,6 +520,19 @@ SIGINT 為 130，SIGTERM 為 143。空的結果清單以 `[]` 表示。
 
 即使部分訊息無法解密，`messages --json` 仍會輸出完整陣列，附上每則訊息的狀態，
 然後以 1 結束。不會印出加密資料區塊或原始伺服器回應內容。
+
+<a id="structured-errors"></a>
+
+### 結構化錯誤
+
+使用 `line --error-format=json COMMAND ... --json`，會在 stderr 輸出一筆結構化錯誤，
+stdout 的成功與部分結果 JSON 則維持原格式。全域選項須放在指令前，並會停用互動提示。
+支援核心指令與 `auth status`。登入、登出、移轉、watch 與 update 會在開始操作前拒絕此選項，請使用原本的診斷輸出。
+
+錯誤包含固定的代碼與處理階段。訊息操作也會回報已知的聊天室／訊息 ID、請求序號、是否已嘗試操作、
+結果，以及準備或上傳的各步驟。檔案訊息可能已建立，但上傳失敗；傳送成功後即使輸出失敗，仍會保留已確認的結果。
+不要自動重試 `unknown` 的操作，網路錯誤也一樣；請先在 LINE 確認。儲存與訊號結束代碼不變。
+完整欄位、代碼與範例請參閱[錯誤格式說明](JSON.md#errors)。
 
 <a id="json-lookup-results"></a>
 
@@ -529,7 +611,7 @@ line logout
 伺服器登出訊號也不一定能判斷是否被另一個用戶端取代。
 若權杖輪替後發生儲存失敗，CLI 會停止後續請求，因為無法確保新權杖已儲存。
 
-更新時機、重試規則與呼叫路徑證據，請見[權杖與工作階段稽核](../TOKEN_SESSION.md)。
+更新時機、重試規則與呼叫路徑證據，請見[權杖與工作階段稽核](SESSION.md#token-refresh)。
 
 <a id="linux-servers-and-headless-storage"></a>
 
@@ -539,30 +621,29 @@ line logout
 
 ### 沒有已解鎖金鑰圈時的首次設定
 
-支援的 Linux 主機若沒有已解鎖的 Secret Service 金鑰圈，可透過互動式操作設定無頭環境儲存：
+請使用一般 Unix 帳號與互動式終端機；SSH 連線可用 `ssh -t user@host`。
+主機需要可信任的 `/usr/bin/systemd-creds`（systemd 256–259）與可運作的使用者憑證代理服務。
+較舊或尚未審查的新版不受支援。
 
 ```sh
-line login --headless --email you@example.com
-line auth status
+line login --headless
 line auth status --check --json
 ```
 
-範例使用電子郵件登入。`line login --headless` 則使用實驗性 QR 登入，儲存保護相同。
-首次設定仍需要互動式終端機；`--headless` 不會讓登入變成無人值守。
+第一行使用實驗性 QR 登入。若使用電子郵件與密碼，請改為
+`line login --headless --email you@example.com`。等到出現 **Session saved securely** 再檢查儲存。
+`--headless` 選擇的是儲存方式；首次登入仍需終端機互動與手機核准。
 
-連線至 LINE 前，CLI 會要求你接受 **Host key; no TPM**（主機金鑰、無 TPM）保護。
-`--force` 不會略過此步驟。無頭環境儲存可防止其他無特權使用者存取，
-但無法防範 root、以你的帳號執行的惡意程式，或持有完整磁碟副本的人。此方式不提供 TPM 保護。
-若在新工作階段儲存前取消，不會留下新的本機工作階段。
+連線至 LINE 前，CLI 會要求同意 **Host key; no TPM**（主機金鑰、無 TPM），`--force` 不會略過。
+此方式可阻擋其他無特權使用者，但無法防範 root、以你帳號執行的惡意程式或完整磁碟副本，
+也不提供 TPM 保護。在儲存前取消，不會留下新的本機工作階段。
 
-設定完成後，直接使用一般指令，不需要儲存選項。再次登入會沿用所選後端。
+設定完成後，執行一般指令不必加上 `--headless`。再次登入會沿用所選後端；
 `login --headless` 不會轉換或覆寫既有的原生工作階段。
+指令、SSH、cron 與服務都應使用相同的 Unix 帳號與設定目錄。
 
-無頭環境儲存需要可信任的 `/usr/bin/systemd-creds` 輔助程式及使用者憑證代理服務。
-互動式指令、SSH、cron 與服務都必須使用同一個 Unix 帳號與設定目錄。
-接受 systemd 256–259；Debian 13／systemd 257 與 Ubuntu 26.04／systemd 259
-已在可拋棄虛擬機中驗證。其他接受的版本仍須通過本機檢查。
-較舊或尚未審查的新版會遭拒。UniPi 與實體 TPM 的行為尚未驗證。
+Debian 13／systemd 257 與 Ubuntu 26.04／systemd 259 已在拋棄式 VM 驗證。
+其他支援版本仍須通過本機檢查；UniPi 與實體 TPM 行為尚未驗證。
 
 <a id="move-an-existing-linux-session"></a>
 
@@ -580,7 +661,7 @@ line auth migrate --storage=headless
 
 若移轉中途停止，請再次執行相同指令。不要刪除 `migration.pending` 或手動取代 `session.enc`。
 清理完成前，`line auth status` 會回報 `migration_pending`。
-復原流程請見[無頭環境儲存內部機制](../internal/session/HEADLESS.md)。
+復原流程請見[無頭環境儲存內部機制](SESSION.md#headless-storage-engine)。
 
 <a id="run-a-watcher-without-a-login-session"></a>
 
@@ -608,7 +689,7 @@ NoNewPrivileges=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 MemoryDenyWriteExecute=true
-ExecStart=/usr/local/bin/line watch
+ExecStart=%h/.local/bin/line watch
 Restart=on-failure
 RestartSec=15s
 RestartPreventExitStatus=65 69 74 78
@@ -672,7 +753,7 @@ systemd-run --user --wait --collect \
   --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
   --property=LockPersonality=true \
   --property=MemoryDenyWriteExecute=true \
-  /usr/local/bin/line auth status --check --json
+  "$HOME/.local/bin/line" auth status --check --json
 ```
 
 此檢查只在本機執行，不會連線至 LINE。每次只改一項沙箱設定：
@@ -727,6 +808,22 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 訊號優先：SIGINT 為 130，SIGTERM 為 143。其他 CLI 或網路錯誤為 1。
 儲存無法使用時，`auth status --json` 仍可能先輸出狀態物件，再以對應的非零代碼結束。
 
+<a id="troubleshooting"></a>
+
+## 疑難排解
+
+| 症狀 | 下一步 |
+| --- | --- |
+| 不認得指南中的選項 | 執行 `line version` 與 `line COMMAND --help`，比對該發行標籤的指南。用 `line update --check` 檢查更新。 |
+| `encryption_required` | 不支援 E2EE，已由嚴格模式阻止傳送。移除 `--require-e2ee`即可透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。 |
+| `encrypted_image_unavailable` | 目前停用加密圖片。可用 `--file` 傳送原始位元組，但仍須通過檔案支援檢查。 |
+| SSH 或服務無法存取儲存 | 以相同使用者與環境執行 `line auth status --check --json`，查看[服務診斷](#diagnose-a-headless-service)。不要刪除工作階段檔案來繞過錯誤。 |
+| 傳送失敗或最近歷史中找不到 | 重做前先查看 LINE。用[結構化錯誤](#structured-errors)區分已確認與不明結果；最近歷史中沒有不代表未送達。 |
+| 歷史頁面較短或部分無法解密 | 除非 `exhausted` 為真，否則可繼續使用游標。請檢查各訊息狀態與結束代碼；舊歷史或金鑰可能已無法取得。 |
+
+回報問題時請提供 `line version`、作業系統、指令及已遮蔽敏感資料的錯誤。
+不要提供權杖、密碼、QR/PIN、金鑰或私人訊息。
+
 <a id="reference"></a>
 
 ## 參考資訊
@@ -739,20 +836,14 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 
 ```sh
 line help
-line login --help
-line contacts --help
-line chats --help
-line messages --help
 line send --help
-line watch --help
-line update --help
 ```
 
 <a id="build-from-source"></a>
 
 ### 從原始碼建置
 
-需要 Git 與 Go 1.26 以上版本。macOS 還需要 Xcode Command Line Tools 與 CGO，以支援 Keychain。
+需要 Git 與 Go 1.27.2。macOS 還需要 Xcode Command Line Tools 與 CGO，以支援 Keychain。
 
 macOS 或 Linux：
 
@@ -772,27 +863,19 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 .\bin\line.exe help
 ```
 
-貢獻者檢查：
-
-```sh
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-go build -trimpath -o bin/line ./cmd/line
-```
-
-一般測試使用模擬 API 與憑證。實際連線測試預設停用，且需要明確授權。
-取消操作測試使用合成的子程序。macOS／Linux 的密碼終端機測試會在可用時使用
-Python 3 標準函式庫的 PTY 功能。原生 Linux Secret Service 整合測試需要明確啟用的
-可拋棄 D-Bus 工作階段；Windows DPAPI 測試使用暫存檔案。
+貢獻者檢查、測試資料、平台整合與發行步驟請參閱[開發指南](DEVELOPMENT.md)。
+一般測試使用合成資料與模擬 API；實際 LINE 測試需要明確授權。
 
 <a id="current-limitations"></a>
 
 ### 目前限制
 
+- LINE 回報不支援 E2EE 時，會透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。
+  使用 `--require-e2ee` 可阻止這類傳送。詳見[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)。
 - 每位作業系統使用者只能儲存一個 LINE 帳號。
-- QR 登入為實驗性功能，不支援停用 Letter Sealing 的帳號。
+- QR 登入仍屬實驗性功能，需要可用的 Letter Sealing 金鑰。
 - 每頁最多 100 則；使用 `--page --json` 與游標可讀取仍可取得的較舊歷史。查找操作目標最多 10 頁、30 秒。
-- 支援一般檔案與 JPEG/PNG 靜態圖片；不支援原生影音、動態圖片、圖片回覆或貼圖傳送。
+- 一般檔案須確認 LINE 的支援狀態；非 E2EE 傳送仍經 HTTPS/TLS 加密。加密的原生圖片已停用；非 E2EE JPEG/PNG 圖片須由 LINE 明確回報支援。不支援原生影音、動態圖片、圖片回覆及貼圖傳送。
 - 支援下載最大 20 MiB 的圖片、影片、音訊與檔案，不支援外部媒體網址。
 - 讀取訊息不會標示已讀。
 - 發行版執行檔尚未經過數位簽署或公證。
@@ -800,44 +883,3 @@ Python 3 標準函式庫的 PTY 功能。原生 Linux Secret Service 整合測�
 
 LINE CLI 是衍生自 `beeper/line` 的獨立專案，並非 LINE 官方產品，
 也不需要 Beeper 或 Matrix 家伺服器。
-
-## 結構化錯誤
-
-在指令前加上 `--error-format=json`，例如 `line --error-format=json send CHAT_ID --stdin --json`。錯誤會以單一 JSON 物件輸出至 stderr；stdout 的成功結果及部分結果陣列維持原格式。此模式停用互動提示，適用於核心指令及 `auth status`；登入、登出、遷移、watch 與 update 保留原有診斷方式。
-
-錯誤包含代碼、階段，以及已知的聊天／訊息 ID、請求序號與各變更步驟的結果。`unknown` 表示結果不明，重試前請先在 LINE 確認。檔案訊息已建立但上傳失敗，或傳送成功但輸出失敗時，已確認的訊息資訊仍會保留。儲存與訊號結束代碼不變。完整欄位與代碼請參閱[錯誤格式說明](ERRORS.md)。
-
-
-### 歷史分頁 JSON
-
-```sh
-line messages CHAT_ID --page --json --limit 50
-line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
-```
-
-預設文字依建立時間由舊到新排列；原有 `--json` 陣列保留伺服器順序。
-`--page` 必須搭配 `--json`，`--cursor` 必須搭配兩者。每次讀取一頁，回傳
-`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
-`exhausted`、`stop_reason` 與可選的 `next_cursor`。訊息 ID 保持字串，
-新分頁依數值 ID 由新到舊排列。將游標原樣傳回同一聊天室；游標保存精確的
-送達時間，不會用建立時間代替。
-
-`count_limit` 表示達到筆數上限，`page_limit` 表示取得較短的非空頁；都不代表
-已讀完。移除重複錨點後沒有訊息才回傳 `end_of_available_history`、
-`exhausted: true` 並省略游標。要求 100 筆可能因錨點而只回傳 99 筆。
-伺服器可能不再提供更舊資料，並不保證完整歷史或固定保存期限。
-
-無效游標、錯誤聊天室、缺少送達時間或未向前推進的頁面會明確失敗。
-逾時回傳錯誤，不會當作讀完；部分解密失敗仍輸出含游標的分頁物件並以非零碼結束。
-目標查找的 `message_not_found` 只表示可取得的歷史中沒有目標；
-`lookup_incomplete` 表示已達頁數上限，`deadline_exceeded` 表示已逾時。
-
-### 詳細內容 JSON
-
-```sh
-line chats --details --json
-line messages CHAT_ID --details --json --resolve-names
-line messages CHAT_ID --details --page --json --limit 50
-```
-
-`--details` 必須搭配 `--json`，回傳 `schema_version: 1` 的物件。訊息包含聊天室 ID、收到的提及、位置、解密後的檔名、附件大小／時長、聯絡人、貼圖 ID，以及有上限的圖文訊息文字和連結。`--resolve-names` 可選擇批次查詢傳送者名稱。聊天室詳細資料包含名稱、活動時間及未讀數；未知值為 `null`。原有 JSON 與 watch 格式不變。解密失敗仍輸出部分結果並以非零代碼結束；欄位、狀態與限制詳見 [詳細輸出規格](CONTENT.md)。

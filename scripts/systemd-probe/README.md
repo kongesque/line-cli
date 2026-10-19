@@ -1,9 +1,9 @@
 # Headless-storage Phase 0 probe
 
 This directory preserves the synthetic experiment that informed the production
-headless storage backend. It is an evidence and reproduction tool, not the setup
-path for ordinary users. See the [CLI guide](../../docs/CLI.md#linux-servers-and-headless-storage) for
-current usage and the [engine document](../../internal/session/HEADLESS.md) for
+headless storage backend. Maintainers can use it to reproduce the experiment.
+For setup, see the [CLI guide](../../docs/CLI.md#linux-servers-and-headless-storage).
+The [engine document](../../docs/SESSION.md#headless-storage-engine) describes
 the production design.
 
 The probe remains separate from `cmd/line` and `internal/session`. It does not read
@@ -32,7 +32,7 @@ without separately arranging an appropriate test environment.
 | Reboot with the same enrolled blob | Passed on both candidates from a system unit and real cron; Debian VM cold start also passed |
 | Complete disk copy | Separate Debian VM recovered the original host-only fixture from the copied disk |
 | Physical TPM / virtual TPM | Software TPM policy/decryption checks passed; physical TPM unverified |
-| Production headless support | Host-only CLI enrollment, persistent selection, local status, migration and logout implemented; [release checks](../../internal/session/HEADLESS.md#release-verification) passed in the documented VM scope |
+| Production headless support | Host-only CLI enrollment, persistent selection, local status, migration and logout implemented; [release checks](../../docs/SESSION.md#release-verification) passed in the documented VM scope |
 
 Local validation on 2026-09-13, macOS arm64 / Go 1.27.1: race-enabled probe tests,
 a 10-second parser fuzz run, and `go vet` passed. Linux arm64 and amd64 binaries
@@ -110,7 +110,6 @@ The helper uses `--user`, an explicit credential name and `--newline=no`. For
 259+ it also uses `--no-ask-password` and decrypts with `--refuse-null`. Older
 builds require native confirmation of noninteractive behavior; output formats
 are allowlisted before invoking decryption regardless of helper defaults.
-
 
 ### Persistent synthetic fixtures
 
@@ -192,6 +191,6 @@ separation between unprivileged enrollment and administrator-sealed TPM fixtures
   `--with-key=host+tpm2`. Refuse a mismatching result before enrollment.
 
 The production engine is documented in
-[internal/session/HEADLESS.md](../../internal/session/HEADLESS.md). The CLI now
+[docs/SESSION.md](../../docs/SESSION.md#headless-storage-engine). The CLI now
 supports explicit host-only enrollment, local status and native-to-headless
 migration. This directory contains the separate evidence probe.

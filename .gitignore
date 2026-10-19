@@ -16,8 +16,11 @@
 
 /docs/*
 !/docs/CLI*.md
-!/docs/TESTING.md
-!/docs/ERRORS.md
+!/docs/JSON.md
+!/docs/SESSION.md
+!/docs/SECURITY.md
+!/docs/DEVELOPMENT.md
+!/docs/README.md
 
 /test
 

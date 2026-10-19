@@ -2,14 +2,10 @@
 
 English | [繁體中文（台灣）](README.zh-TW.md) | [日本語](README.ja.md) | [ภาษาไทย](README.th.md)
 
-**LINE CLI** is an unofficial, lightweight CLI written in Go for using your personal LINE account from the terminal.
-Send LINE messages from your terminal, read personal and group chats, share files,
-download attachments, and stream live events. Use interactive prompts for everyday
-messaging or JSON output for shell scripts and AI agent workflows.
-
-Works on **macOS, Linux, and Windows**, with Letter Sealing end-to-end encryption
-when supported by the conversation. Sign in with your personal LINE account;
-no bot account or LINE Messaging API setup is required.
+**LINE CLI** is an unofficial Go CLI for your personal LINE account. Read chats,
+send messages and files, download attachments, and stream events from your terminal.
+Use interactive prompts or JSON output on **macOS, Linux, and Windows**.
+No bot account or LINE Messaging API setup is required.
 
 [![CI](https://github.com/kongesque/line-cli/actions/workflows/cli.yml/badge.svg)](https://github.com/kongesque/line-cli/actions/workflows/cli.yml)
 [![Release](https://img.shields.io/github/v/release/kongesque/line-cli?filter=v*&label=release)](https://github.com/kongesque/line-cli/releases/latest)
@@ -19,6 +15,9 @@ no bot account or LINE Messaging API setup is required.
 [Install](#install-line-cli) · [Quick start](#quick-start-send-your-first-line-message) · [Commands](#line-messaging-commands) · [Automation](#automate-line-with-json-and-shell-scripts) · [Full guide](docs/CLI.md)
 
 ![LINE CLI: personal LINE messages, files, and automation from the terminal](banner.png)
+
+The README on `main` follows development. For a released version, use the
+README at its tag and `line COMMAND --help`. See the [changelog](CHANGELOG.md).
 
 ## Install LINE CLI
 
@@ -37,20 +36,17 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kongesqu
 The installer detects your OS and architecture, verifies the release checksum,
 and installs `line` into `~/.local/bin`. Reopen your terminal if prompted to
 apply its `PATH` setup.
+To use it in the current shell, run `export PATH="$HOME/.local/bin:$PATH"`.
 
-**Linux desktop:** before login, make sure a Secret Service keyring is running
-and unlocked in the same D-Bus session as `line`. On Debian or Ubuntu, install
-the required tools with:
+**Linux desktop:** on Debian or Ubuntu, install credential storage before login:
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
 ```
 
-**Linux server or SSH:** packages alone are insufficient. On supported hosts,
-`line login --headless` offers host-key storage without an unlocked keyring.
-Enrollment remains interactive; this storage does not protect against a complete
-disk copy or provide TPM protection.
-See [headless setup, migration, and services](docs/CLI.md#linux-servers-and-headless-storage).
+Run `line` from a desktop session with the Secret Service keyring running and
+unlocked in the same D-Bus session. On a server or over SSH without a desktop
+keyring, use the headless login below.
 
 ### Windows: PowerShell
 
@@ -69,7 +65,6 @@ Check your installation:
 
 ```sh
 line version
-line help
 ```
 
 ## Quick start: send your first LINE message
@@ -88,30 +83,36 @@ Scan the terminal QR code with LINE's scanner on your phone, approve the login,
 and enter the displayed PIN if asked. Wait for **Session saved securely**.
 QR login is experimental and requires Letter Sealing to be enabled.
 
-If your account has an email address and password configured, you can use:
+If your LINE account has an email address and password configured, you can use
+this instead, including when QR login fails:
 
 ```sh
 line login --email you@example.com
 ```
 
-Your password is entered privately and never saved. Login checks storage and asks
-before replacing a usable saved session.
-[Login options and QR troubleshooting](docs/CLI.md#login-options-and-qr-help).
+Enter your password at the private prompt and complete phone verification if
+asked. Your password is never saved.
 
-**On a Linux server or over SSH, use `--headless` when no unlocked keyring is
-available:**
+<details>
+<summary>Linux server or SSH: log in without a desktop keyring</summary>
+
+Use your regular Unix account and an interactive terminal (`ssh -t user@host`
+when connecting remotely). Headless storage requires `/usr/bin/systemd-creds`
+from systemd 256–259 and a working user credential broker.
 
 ```sh
-line login --headless                        # QR login
-line login --headless --email you@example.com # Email/password login
+line login --headless
 ```
 
-This saves your session using host-key storage so later commands can run without
-an unlocked desktop keyring. Initial login still requires an interactive terminal
-and phone approval. After enrollment, run ordinary commands such as `line chats`
-or `line watch` without `--headless`.
-See [headless setup and service deployment](docs/CLI.md#linux-servers-and-headless-storage)
-for supported hosts, storage protection, and migrating an existing session.
+For email/password login, use `line login --headless --email you@example.com`
+instead. Accept **Host key; no TPM** when prompted: this storage does not protect
+against a complete disk copy or provide TPM protection. Initial enrollment still
+requires terminal interaction and phone approval.
+
+Wait for **Session saved securely**, then run `line auth status --check`.
+Continue with the commands below as the same Unix user, without `--headless`.
+
+</details>
 
 ### 2. Browse your chats and send a message
 
@@ -125,50 +126,31 @@ line send       # Choose a recipient and enter your message
 The CLI prompts for missing details in an interactive terminal. Use Ctrl-C to
 cancel, or pass a chat name directly as shown below.
 
+A successful send prints `Sent to … · end-to-end encrypted` or
+`Sent to … · transport encrypted (no E2EE)`.
+
 ## LINE messaging commands
 
 | What you want to do | Command |
 | --- | --- |
 | Find friends | `line contacts --search "Alice"` |
-| Look up a person by user ID | `line contacts --mid USER_MID` |
-| Find conversations and groups | `line chats --search "Family"` |
 | Read recent messages | `line messages "Alice" --limit 20` |
 | Send a text message | `line send "Alice" --text "Hello!"` |
 | Send a file | `line send "Alice" --file ./report.pdf` |
 | Download photos, video, audio, or files | `line download` |
-| Add or remove a reaction | `line react` |
-| Unsend your own message | `line unsend` |
 | Stream live events | `line watch` |
-| Check local session storage | `line auth status --check` |
-| Remove your saved local session | `line logout` |
 
-Replace example names with your own. Names must be unique exact matches
-(case-insensitive); quote names with spaces. For duplicate names, use
-`line chats --search "Alice" --show-ids` and pass a full chat ID.
-
-Run `line COMMAND --help` for options. Downloads, reactions, and unsend also
-support interactive selection. [Chat selection guide](docs/CLI.md#find-chats-and-people).
-
-### Reply to LINE messages and download attachments
-
-Find IDs with `--show-ids`, then replace `MESSAGE_ID` in the examples:
-
-```sh
-line messages "Alice" --show-ids
-line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
-line react "Alice" --message MESSAGE_ID --reaction love
-line download "Alice" --message MESSAGE_ID --output ./received.pdf
-```
-
-For downloads, choose an attachment's ID and an appropriate filename. Existing
-files are never overwritten.
-[More reactions, unsend, and download options](docs/CLI.md#download-or-change-a-message).
+Replace `Alice` with a full chat ID or a complete chat name that matches only
+one chat (case-insensitive). If names are duplicated, run
+`line chats --search "Alice" --show-ids` and use the full ID shown.
+Run `line COMMAND --help` for options; the
+[CLI guide](docs/CLI.md#daily-commands) covers replies, reactions, and pagination.
 
 ## Automate LINE with JSON and shell scripts
 
 Add `--json` for structured output on stdout; diagnostics go to stderr.
 `--json` and `--stdin` disable prompts, so supply all required arguments.
-Use full chat IDs in scripts, since names can change.
+Use full chat IDs in scripts because names can change.
 
 ```sh
 line chats --search "Family" --json
@@ -177,41 +159,35 @@ line send CHAT_ID --stdin --json < message.txt
 line watch --json > events.ndjson
 ```
 
-Get `CHAT_ID` from `line chats --json`. `--stdin` accepts multiline text from a
-file or pipe. `watch` emits newline-delimited JSON (NDJSON) and resumes from its
-saved checkpoint; consumers should deduplicate by revision. Treat exported
-messages and events as private data.
+Get `CHAT_ID` from `line chats --json`. Watch output is NDJSON; consumers should
+deduplicate by revision. See the [JSON reference](docs/JSON.md) for fields and errors.
 
-Remote changes are attempted once and never retried automatically. If a send,
-upload, reaction, or unsend loses its response, check LINE before repeating it
-to avoid duplicating an action.
-
-See [JSON fields and exit codes](docs/CLI.md#json-output-and-exit-codes) and
-[live event streaming](docs/CLI.md#watch-new-events) for integration details.
+Remote changes are attempted once. If a send or other action loses its response,
+check LINE before repeating it.
 
 ## Letter Sealing encryption and session security
 
-- **Encryption:** Letter Sealing is used when supported. Missing or malformed keys
-  and transport failures never silently downgrade an encrypted send to plaintext.
-  When LINE explicitly reports encryption unavailable, terminal sends ask for
-  confirmation; scripts require `--allow-plaintext`. JSON send results report
-  encryption status.
-- **Storage:** macOS Keychain, Linux AES-GCM session files with keys in Secret
-  Service, or Windows current-user DPAPI. Headless Linux uses host-key storage.
-- **Session recovery:** access tokens refresh automatically when saved refresh
-  credentials work, even after a restart. Sign in again if refresh cannot recover
-  access or LINE invalidates the session.
+Sends use Letter Sealing (end-to-end encryption, E2EE) whenever available. When
+LINE explicitly reports no E2EE support, the CLI sends over HTTPS/TLS without
+asking for confirmation. The transfer is encrypted, but LINE can read the content.
+Use `--require-e2ee` to block non-E2EE sends. File encryption support is checked
+separately from text; missing keys and transport failures never trigger a downgrade.
 
-[Session storage](docs/CLI.md#where-your-session-is-stored) ·
-[Token refresh and recovery](docs/CLI.md#token-refresh)
+See [sending and encryption](docs/CLI.md#send-messages-and-files) and
+[session storage](docs/CLI.md#where-your-session-is-stored).
 
 ## Limitations
 
-- Recent message history only, up to 100 messages per read. Reading does not mark
-  messages as read; some older encrypted messages may be unavailable.
-- File sending and media downloads are limited to 20 MiB. Images, video, and audio
-  sent with `--file` appear as ordinary files; stickers and specialized media
-  sending are not supported. External media URLs cannot be downloaded.
+- When LINE reports no E2EE support, sends use HTTPS/TLS; LINE can read the
+  content. `--require-e2ee` blocks these sends. See
+  [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/).
+- History contains up to 100 messages per page. Use `--page --json` and its cursor
+  for older available history; full history is not guaranteed. Reading does not
+  mark messages as read; some older encrypted messages may be unavailable.
+- File sending and media downloads are limited to 20 MiB. `--file` preserves
+  original bytes and appears as an ordinary file. Encrypted native image sending
+  is disabled; non-E2EE images require explicit LINE capability. Native
+  audio/video and sticker sends, and external media URL downloads, are unsupported.
 - LINE CLI uses LINE's Chrome-style protocol. Server changes can affect
   compatibility, and some protocol paths need broader live validation.
 
@@ -225,48 +201,21 @@ line update --check   # Check the latest release without installing
 line update           # Update where supported, or show upgrade instructions
 ```
 
-Official standalone installations on macOS and Linux can update in place.
-Homebrew uses `brew upgrade line-cli`; other installations receive upgrade
-instructions. Checks require no LINE login and run only when requested.
-[Update details](docs/CLI.md#updating-line-cli).
+Homebrew users should run `brew upgrade line-cli`. See the
+[update guide](docs/CLI.md#updating-line-cli) for supported installation methods.
 
 ## Documentation and help
 
-- [CLI guide](docs/CLI.md): complete usage, troubleshooting, and server setup.
-- [Token and session audit](TOKEN_SESSION.md): refresh and recovery internals.
-- [Testing guide](docs/TESTING.md): test suites, fixtures, and CI coverage.
-- [GitHub Issues](https://github.com/kongesque/line-cli/issues): bugs and feature requests.
-
-For bug reports, include `line version`, your OS, the command, and a redacted
-error. Omit passwords, tokens, QR login values, and private messages.
+Read the [CLI guide](docs/CLI.md) or browse the [documentation index](docs/README.md).
+Report bugs and request features through [GitHub Issues](https://github.com/kongesque/line-cli/issues).
+Include `line version`, your OS, the command, and a redacted error.
+Omit passwords, tokens, QR login values, and private messages.
 
 ## Build and contribute
 
-Source builds require Git and **Go 1.27.2**. macOS also needs Xcode Command Line
-Tools and CGO for Keychain support. On macOS or Linux:
-
-```sh
-git clone https://github.com/kongesque/line-cli.git
-cd line-cli
-./install.sh
-```
-
-Follow any PATH instructions printed by the installer. See the
-[source-build guide](docs/CLI.md#build-from-source) for Windows PowerShell commands.
-Linux storage requirements also apply to source builds.
-
-For local development:
-
-```sh
-./build.sh
-./bin/line help
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-```
-
-See [contributor guidance](AGENTS.md) for the full checks and protocol requirements.
-CI covers all three platforms and native credential storage. Tests use synthetic
-data and fake APIs; live tests require explicit authorization.
+Source builds require **Go 1.27.2**; macOS also needs Xcode Command Line Tools
+and CGO. See [build from source](docs/CLI.md#build-from-source) and
+[contributing](CONTRIBUTING.md) for setup and development checks.
 
 ## License and provenance
 

@@ -2,6 +2,11 @@
 
 [English](CLI.md) | [繁體中文（台灣）](CLI.zh-TW.md) | 日本語 | [ภาษาไทย](CLI.th.md)
 
+`main` のガイドは開発ブランチの説明です。インストール済みリリースについては `line version`、
+`line COMMAND --help` と該当タグのガイドを確認してください。[変更履歴](../CHANGELOG.md)も参照してください。
+
+[はじめに](#get-started) · [日常のコマンド](#daily-commands) · [更新](#updating-line-cli) · [スクリプト](#use-from-scripts) · [アカウント](#account-and-session) · [Linux / ヘッドレス](#linux-servers-and-headless-storage) · [問題の解決](#troubleshooting) · [リファレンス](#reference)
+
 ターミナルから個人のLINEアカウントを使えます。トークの閲覧、メッセージやファイルの送信、
 添付ファイルのダウンロード、新しいイベントの受信に対応しています。
 ターミナルでは対話式の案内に従って操作でき、スクリプトではJSON出力を利用できます。
@@ -34,15 +39,15 @@ macOSではHomebrewも利用できます。
 brew install kongesque/tap/line-cli
 ```
 
-DebianまたはUbuntuでは、ログイン前に認証情報の保存に必要なツールをインストールしてください。
+DebianやUbuntuのデスクトップでは、ログイン前に認証情報の保存用ツールを導入します。
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
 ```
 
-Linuxのキーリングは、`line` と同じD-Busセッション内で起動し、ロックが解除されている必要があります。
-SSH経由で使う場合や、ロック解除済みキーリングのないサーバーでは、
-[Linuxサーバーとヘッドレスストレージ](#linux-servers-and-headless-storage)を参照してください。
+デスクトップのキーリングは、`line` と同じD-Busセッションで動作し、ロックが解除されている必要があります。
+キーリングのないサーバーやSSH環境では `line login --headless` を使います。
+[ヘッドレス環境の設定](#linux-servers-and-headless-storage)を参照してください。
 
 WindowsではPowerShellで実行します。
 
@@ -67,106 +72,84 @@ line help
 
 ### ログインして最初のメッセージを送信
 
+環境に合うログイン方法を1つ選びます。
+
+| 環境 | コマンド |
+| --- | --- |
+| macOS、Windows、またはキーリングをロック解除したLinuxデスクトップ | `line login` |
+| デスクトップのキーリングがないLinuxサーバーやSSH環境 | `line login --headless` |
+
+スマートフォンのLINEのスキャナーでQRコードを読み取り、ログインを承認します。
+PINを求められたら、先頭のゼロも含めて入力し、**Session saved securely** と表示されるまで待ちます。
+QRログインは実験的な機能で、利用可能なLetter Sealingキーが必要です。
+ヘッドレス環境の要件は[Linuxサーバーの設定](#linux-servers-and-headless-storage)を参照してください。
+
+次にアカウントを確認し、対話式の案内に従ってトークを選びます。
+
 ```sh
-line login
 line whoami
 line chats
-line messages "Family group"
-line send "Alice" --text "Hello!"
+line messages
+line send
 ```
 
-`line login` でQRコードが表示されます。スマートフォンのLINEで読み取り、ログインを承認して、
-求められた場合は表示されたPINを入力してください。
-**Session saved securely** と表示されるまで、ほかのコマンドは実行しないでください。
-
-QRログインは実験的な機能です。LINEアカウントにメールアドレスとパスワードを設定している場合は、
-次の方法も使えます。
-
-```sh
-line login --email you@example.com
-```
-
-パスワードの入力内容は表示されず、保存もされません。パスワード用のオプションや環境変数はありません。
+`line send` では送信先を選び、本文を入力してEnterキーを押すと送信します。
+メールアドレスとパスワードを使う場合は、下記の方法を選んでください。パスワードは画面に表示せず、保存もしません。
+パスワードをオプションや環境変数で渡すことはできません。
 
 <a id="login-options-and-qr-help"></a>
 
 ### ログインのオプションとQRコードのトラブルシューティング
 
-| コマンド・オプション | 用途 |
+| コマンド | 用途 |
 | --- | --- |
-| `line login` または `line login --qr` | ターミナルのQRコードでログインします。 |
-| `line login --email ADDRESS` | メールアドレス・パスワードとスマートフォンの認証でログインします。 |
-| `line login --qr-url` | 信頼できるローカルのQRツールに、一度限りのQRデータを渡します。 |
-| `line login --force` | 保存済みセッションを置き換えるかどうかの確認を省略します。 |
-| `line login --headless` | ロック解除済みキーリングのない、対応Linuxホストで初期登録します。 |
+| `line login --qr` | デフォルトのQRログインを明示的に選択します。 |
+| `line login --email ADDRESS` | LINEアカウントに設定済みのメールアドレス・パスワードとスマートフォンの認証を使います。 |
+| `line login --headless --email ADDRESS` | Linuxのヘッドレスストレージでメールログインします。 |
+| `line login --qr-url` | 一度限りのQRデータを信頼できるローカルツールに渡します。 |
+| `line login --force` | 保存済みセッションを置き換える前の確認を省略します。 |
 
-`--email` と `--qr`／`--qr-url` は併用できません。どちらのQR方式も対話入力できる
-ターミナルが必要ですが、stdoutのリダイレクトは可能です。進行状況、QRコード、PIN、警告は
-stderrに出力し、最後の成功メッセージはstdoutに出力します。
+`--email` と `--qr`／`--qr-url` は併用できません。どちらのQR方式も対話入力できるターミナルが必要です。
+stdoutはリダイレクトできます。進行状況、QRコード、PIN、警告はstderr、最後の成功メッセージはstdoutに出力します。
 
-QRコードはLINEのスキャナーで読み取ってください。PINは先頭のゼロも含め、表示どおりに入力します。
-スマートフォンで承認しただけでは、CLIのプロフィール確認、鍵のエクスポート、セッション保存は完了していません。
-
-ターミナルの幅が足りない場合は、必要な幅と `--qr-url` の案内が表示されます。
-一部が欠けたQRコードは表示しません。`NO_COLOR` を設定すると、明示的な色指定を無効にできます。
-`--qr-url` の値は秘密情報として扱い、信頼できるローカルツールだけで使用してください。
-共有したり、オンラインのQR生成サービスに送ったり、保存したりしないでください。
-値はターミナルのスクロール履歴には残ります。QR画像は保存されません。
-通常のQRログイン前に `QRCODE_DEBUG` を解除してください。QRエンコーダーのデバッグモードでは
-データが書き出されることがあります。
-
-表示される残り時間は目安です。LINEが有効期限切れを確認すると、新しいQRコードを表示できます。
-1回のログインで最大3個までです。ネットワークエラーやPINのタイムアウトでは再試行しません。
-簡易ターミナルやリダイレクトしたstderrでは、カウントダウンの代わりに状態の変化を表示します。
-
-QRログインは現在、Letter Sealingを無効にしたアカウントには対応していません。
-保存済みQR証明書が拒否されてもPIN認証には切り替わらず、未知の証明書エラーでもログインを停止します。
-証明書の検証エラーが出た場合は、メールアドレスでのログインを試してください。
-`Diagnostic: verifyCertificate` という補足がある場合、含まれるのは数値コードだけです。
-QRデータ、PIN、証明書、トークン、サーバーの応答本文は含みません。
+- **QRコードが収まらない：** 必要な幅と `--qr-url` の案内を表示し、コードは切り取りません。
+  `NO_COLOR` は明示的な色指定を無効にします。
+- **QRデータの扱い：** `--qr-url` は信頼できるローカルツールだけで使い、共有・アップロード・保存しないでください。
+  値はスクロール履歴に残りますが、QR画像は保存しません。データを書き出す可能性がある `QRCODE_DEBUG` は解除してください。
+- **有効期限：** LINEが期限切れを確認すると新しいコードを表示し、1回のログインで最大3個まで使えます。
+  通信エラーやPINのタイムアウトでは再試行しません。残り時間は目安で、簡易ターミナルやリダイレクトしたstderrには状態だけを表示します。
+- **証明書エラー：** 保存済みQR証明書が拒否されてもPIN認証には切り替えません。不明な証明書エラーでもログインを停止します。
+  設定済みならメールログインを試してください。`Diagnostic: verifyCertificate` は数値コードのみで、
+  QR、PIN、証明書、トークン、サーバーの応答本文は含みません。
 
 <a id="saved-sessions-and-cancellation"></a>
 
 ### 保存済みセッションとキャンセル
 
-ログインはLINEに接続する前にローカルストレージを確認し、利用可能な保存済みセッションを
-置き換える前に確認します。**no** と答えると保持できます。`--force` が省略するのはこの確認だけです。
-ストレージの確認、ヘッドレスストレージへの同意、セッションの同時利用確認、プロトコルエラーは省略しません。
+ログインはLINEへの接続前にローカルストレージを確認し、利用可能な保存済みセッションを置き換える前に確認します。
+**no** と答えると保持します。`--force` が省略するのはこの確認だけです。
+ストレージ検査、ヘッドレスストレージへの同意、セッションロック、プロトコルの検査は省略しません。
 
-Ctrl-Cで入力やQRのポーリングをキャンセルできます。SIGINTの終了コードは130、SIGTERMは143です。
-終了前にパスワード入力のエコー設定を元に戻します。従来のメール認証リクエストには、
-既存のHTTPタイムアウトが引き続き適用されます。
+| `--timeout DURATION` に対応するコマンド | デフォルトの制限時間 |
+| --- | --- |
+| `download` | `2m` |
+| `whoami`、`contacts`、`chats`、`members`、`messages`、`send`、`react`、`unsend` | `0`（コマンド全体の制限なし） |
 
-`whoami`、`contacts`、`chats`、`members`、`messages`、`send`、`download`、`react`、`unsend` は
-`--timeout DURATION` に対応します。例: `line send "Alice" --text "Hello" --timeout 30s`。
-期限はオプション解析後に始まり、入力・stdin、チャット名の解決、メッセージ検索、認証の回復、
-鍵の準備、転送を含みます。既定は `0`（コマンドの期限なし）ですが、`download` は `2m` です。
-`--timeout 0` で無効にできます。個々のHTTPリクエストの制限は引き続き適用されます。
-期限切れは非ゼロ（通常1）で終了し、シグナルの終了コード130/143は変わりません。
-Ctrl-Cは通常のコマンドの通信も中断し、次のリモート操作を防ぎます。ローカルの暗号処理や
-ファイルの確定処理は現在の処理を終えてからキャンセルを確認します。
-送信後のキャンセルでは配信済みの可能性があるため、再試行前にLINEを確認してください。自動再送はしません。
-確認済みの送信結果は保持します。平文ファイルのメッセージ作成後にアップロードが中断した場合、
-エラーにはメッセージIDが残ります。成功出力とシグナルの終了コードが同時に返る場合があります。
+例：`line send "Alice" --text "Hello" --timeout 30s`。オプション解析後から計測し、入力待ち、stdin、
+トークやメッセージの検索、認証の復旧、キーの準備、転送を含みます。
+`--timeout 0` で無効にしても、個別のHTTPタイムアウトは有効です。期限切れは通常、終了コード1になります。
 
+Ctrl-Cで入力待ち、QRのポーリング、通常のリクエストを中止します。SIGINTは130、SIGTERMは143で終了します。
+終了前にパスワード入力のエコー設定を戻します。従来のメール認証はHTTPタイムアウトに従います。
+ローカルの暗号処理とファイル書き込みは、現在の処理を終えてからキャンセルを確認します。
 
-新しいセッションを保存する前にキャンセルすると、古いローカルセッションは残ります。
-ただし、最後のログインリクエストがLINEに届いていれば、古いChrome形式のセッションは
-すでに置き換えられている可能性があります。このリクエストは自動で再試行しません。
-保存結果が不確かな場合は `line auth status --check` で確認し、古いコピーの復元や、
-確認せずにログインを繰り返すことは避けてください。保存成功後にシグナルを受けた場合は、成功を報告します。
+送信済みのリクエストは、中断時点で成功している場合があります。繰り返す前にLINEで確認してください。自動再送はしません。
+後続のアップロードや出力が失敗しても、確認済みの送信結果と作成済みの非E2EEのファイルメッセージIDは保持します。
+成功結果とシグナルによる終了コードが同時に返る場合があります。
 
-SSHでは対話式ターミナルを使ってください。
-
-```sh
-ssh -t user@host
-line login
-# メールアドレスでログインする場合：
-line login --email you@example.com
-```
-
-SSHでも認証情報の保存先は必要です。対応Linuxホストにロック解除済みキーリングがない場合は、
-[ヘッドレスストレージ](#linux-servers-and-headless-storage)を利用できます。
+新しいセッションの保存前に中止すると、古いローカルセッションは残りますが、LINE側のChrome形式のセッションは置き換わっている場合があります。
+ログインを自動再試行することはありません。保存結果が不確かな場合は `line auth status --check` で確認し、
+古いコピーの復元や確認せずに再ログインすることは避けてください。保存完了後にシグナルが届いても、成功を報告します。
 
 <a id="daily-commands"></a>
 
@@ -187,7 +170,7 @@ line unsend
 ```
 
 番号でトークやメッセージを選ぶか、名前を検索します。`n` と `p` でページを移動し、
-`q` またはCtrl-Cでキャンセルできます。`--json` と `--stdin` では入力の案内が無効になるため、
+`q` またはCtrl-Cでキャンセルできます。`--json`、`--error-format=json`、`--stdin` は対話入力を無効にするため、
 スクリプトでは必要な引数をすべて指定してください。
 
 <a id="find-chats-and-people"></a>
@@ -242,16 +225,67 @@ line messages "Alice" --show-ids
 line messages CHAT_ID --json
 ```
 
-`messages` は直近の1〜100件を取得し、古い順に表示します。
-`--show-ids` で、返信、リアクション、ダウンロード、送信取消に必要なIDを表示できます。
+`messages` は既定で直近20件を取得します。`--limit` は1〜100件を指定できます。
+通常の表示は古い順、通常の `--json` はサーバーの順序です。
+`--show-ids` で返信、リアクション、ダウンロード、送信取消に必要なIDを表示します。
+閲覧しても既読にはならず、本文をローカルに保存することもありません。
+元の端末の鍵をLINEから取得できない場合、古い暗号化メッセージの一部は読めません。
 
-履歴を読んでも既読にはならず、本文をローカルに保存することもありません。
-元の端末の鍵をLINEから取得できなくなった場合、古い暗号化メッセージの一部は読めないことがあります。
+本文を表示せず、復号や鍵の取得も行わずに、返されたIDを調べるには：
+
+```sh
+line --error-format=json messages "Chat name" --diagnostics --json --limit 50
+```
+
+`--diagnostics` には `--json` が必要で、`--details`、`--resolve-names`、`--page`、`--cursor` とは併用できません。
+IDがないことは、この応答に含まれていないことだけを意味します。[診断フィールド](JSON.md#history-diagnostics)を参照してください。
+
+<a id="history-pagination-json"></a>
+
+### 履歴のページ分割JSON
+
+```sh
+line messages CHAT_ID --page --json --limit 50
+line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
+```
+
+`--page` には `--json` が必要で、`--cursor` には両方が必要です。1回につき1ページを取得し、
+`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
+`exhausted`、`stop_reason`、任意の `next_cursor` を返します。IDは文字列のまま、数値として新しい順に並びます。
+カーソルは同じトークへそのまま渡してください。正確な配信時刻とメッセージIDを保持し、作成時刻で代用しません。
+不正なカーソルや別トークのカーソルは履歴取得前に拒否します。トーク名を指定した場合は、先にIDへ解決します。
+
+`stop_reason` は指定件数に達すると `count_limit`、短い非空ページでは `page_limit` です。
+重複アンカーを除いて空の場合だけ `end_of_available_history`、`exhausted: true` を返し、`next_cursor` を省略します。
+短いページでも末尾とは限りません。100件の指定でもアンカーのため99件になることがあり、次のページが空になる場合もあります。
+取得できるのは、このクライアントにまだ提供される履歴だけです。完全な履歴や固定の保存期間は保証しません。
+
+配信時刻の欠落、不正なページ、先に進まないページはエラーになります。`--timeout` は取得とデコードを含みます。
+タイムアウトやキャンセルを履歴の末尾として扱うことはありません。一部の復号に失敗してもページとカーソルを出力し、非ゼロで終了します。
+続行前に各メッセージの状態を確認してください。通常の `--json` は引き続き配列を返します。
+
+<a id="detailed-content-and-chat-json"></a>
+
+### 詳細コンテンツ JSON
+
+```sh
+line chats --details --json
+line messages CHAT_ID --details --json --resolve-names
+line messages CHAT_ID --details --page --json --limit 50
+```
+
+`--details` は `--json` と併用し、デコードした内容と不明な値を明示する `schema_version: 1` のオブジェクトを返します。
+`--resolve-names` を追加すると送信者名を取得します。既存のJSONとwatch形式は変わりません。
+一部の復号に失敗しても結果を出力し、非ゼロで終了します。
+フィールド、状態、制限は[詳細出力仕様](JSON.md#detailed-content)を参照してください。
+
+<a id="list-group-members-and-mention-someone"></a>
 
 ### グループメンバーの確認とメンション
 
 ```sh
 line members "Family group" --json
+line members "Family group" --timeout 30s
 line send "Family group" --text '😀 @Alex' --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]'
 line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"all":true}]'
 ```
@@ -263,7 +297,7 @@ JSON エラー形式に対応します。個別トークと旧形式の複数人
 
 JSON は `schema_version:1`、`chat`、`members`、`invitees`、
 `members_complete`、`invitees_complete` を含みます。現在のメンバーと招待中の
-ユーザーを別々に MID 順で返します。各項目は `mid`、実効表示名 `name`
+ユーザーを別々に MID 順で返します。各項目は `mid`、表示に使用する名前 `name`
 （不明なら `null`）、`name_status`（`resolved` または `unavailable`）、`self`
 を持ちます。明示的な空リストは完全、省略または `null` は不完全です。
 プロフィール取得に失敗しても MID は保持し、自分自身を勝手に追加しません。
@@ -278,6 +312,12 @@ JSON は `schema_version:1`、`chat`、`members`、`invitees`、
 入力はセッションへのアクセス前に検証します。暗号化と一度だけ送信する規則は
 維持され、メンション情報は Chrome と同様に暗号化本文の外に置かれます。
 
+スクリプトでは、stdinの本文を変更せず、その内容に合う位置を指定してください。
+
+```sh
+printf '%s' '😀 @Alex' | line send "Family group" --stdin --reply-to MESSAGE_ID --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]' --json
+```
+
 <a id="send-messages-and-files"></a>
 
 ### メッセージやファイルを送信する
@@ -288,36 +328,50 @@ line send "Alice" --stdin < message.txt
 line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
 line send "Family group" --file ./report.pdf
 line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
-line send "Family group" --image ./screenshot.png --json
 ```
 
 `--text`、`--stdin`、`--file`、`--image` のいずれか1つを指定します。テキストは空にできず、
-上限はUTF-16で10,000コード単位です。一般ファイルは20 MiBまで送信できます。
-`--file` で送る画像・動画・音声は、通常のファイルとして表示されます。
+上限はUTF-16で10,000コード単位です。ファイルは20 MiBまでです。`--file` で送る画像・動画・音声は
+通常のファイルとして表示され、元のバイト列を保持します。
 
-`--image` は実際のデータを検証した JPEG または静止 PNG を画像メッセージとして
-送ります。上限は20 MiB、4,000万画素、各辺16384画素です。EXIFの向きを適用し、
-メタデータを除去し、透明部分を白にして、縦横比を保ったまま総画素数1280×1280以下、
-品質60のJPEGへ変換します。暗号化送信では384×384以内、品質30のJPEGプレビューも
-アップロードします。元のバイト列を保つ場合は `--file` を使ってください。
-GIF、アニメーションPNG、BMP、WebP、動画・音声の専用送信には対応しません。
-画像処理はセッションへのアクセス前に行います。`--image` は本文、stdin、file、
-mentions、`--reply-to` と併用できません。Chromeの画像送信では返信対応が未確認です。
+**暗号化：** 送信はLetter Sealingを優先します。LINEがE2EE非対応と明示した場合は、確認なしでHTTPS/TLSによる送信を行います。
+転送中のデータは暗号化されますが、LINEは非E2EEの内容を読めます。スクリプト、`--json`、`--error-format=json`、`--stdin` でも確認しません。
 
-サーバーが明示する暗号化／平文の画像送信能力を使い、不明・不正・取得失敗なら
-送信を開始しません。本体、プレビュー、メッセージは各1回だけ試行します。
-平文メッセージ作成後のアップロード失敗でも、構造化エラーは確認済みIDを保持します。
-結果が不明な場合は再試行前にLINEを確認してください。[画像プロトコルの根拠](protocol/endpoints/image-send.md)を参照。実アカウントでの相互運用性は未検証です。
+Letter Sealingで送信できる場合だけ送るには、次を指定します。
 
-対応するトークではLetter Sealingを使います。鍵の不足、グループメンバー情報の不足、通信の失敗があれば、
-暗号化送信を停止し、勝手に平文へ切り替えることはありません。
-新しいグループ鍵を登録できるのは、明示的なグループ送信で、現在の全メンバーを把握できている場合だけです。
+```sh
+line send CHAT_ID --file ./report.pdf --require-e2ee --json
+```
 
-`--json` を付けると、メッセージID、暗号化の有無、グループ鍵登録の有無、リクエストの連番を確認できます。
+非対応の場合はリモート変更前に `encryption_required` で停止します。
+[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)はTLS、Letter Sealing、新しい公式クライアントのメディアE2EE対応を説明しています。
+本CLIのメディア相互運用性は別途検証が必要です。ファイルとテキストでは暗号化への対応を個別に確認します。
+対応情報の欠落や不正、鍵の不足、不完全なメンバー情報、通信障害を理由にE2EEを無効にすることはありません。
+新しいグループ鍵の登録は、明示的な送信で現在の全メンバーを把握できている場合に限ります。
+
+**画像メッセージ：** 本体とプレビューで暗号化ストリームが再利用されるため、暗号化した `--image` 送信は
+無効です。アップロード、グループ鍵登録、メッセージ作成の前に停止し、非E2EEへの自動切り替えでも回避できません。
+元の画像を一般ファイルとして送るには `--file` を使います。ファイルの対応状況に関する上記の確認は必要です。
+
+LINEが非E2EEの画像送信に対応すると明示した場合は、次を使います。HTTPS/TLSで転送しますが、LINEは画像を読めます。
+
+```sh
+line send CHAT_ID --image ./screenshot.png --json
+```
+
+`--image` は実際のJPEGまたは静止PNGデータを受け付けます。上限は20 MiB、4,000万画素、各辺16384画素です。
+セッションへのアクセス前にEXIFの向きを適用し、メタデータを除去し、透明部分を白にして、縦横比を保ちつつ
+総画素数1280×1280以下、品質60のJPEGへ変換します。GIF、アニメーションPNG、BMP、WebP、動画・音声の専用送信、
+画像による返信は非対応です。本文、stdin、file、mentionsとの併用もできません。画像送信の実環境での相互運用性は
+未検証です。[プロトコルの根拠](protocol/endpoints/image-send.md)を参照してください。
+
+`--json` にはメッセージID、暗号化状態、グループ鍵登録、リクエスト連番を出力します。
+通常の送信結果には `end-to-end encrypted` または `transport encrypted (no E2EE)` と表示します。
+送信結果の `encrypted: false` はLetter Sealing未使用を示し、HTTPS/TLSによる通信の暗号化は引き続き有効です。
 
 > [!CAUTION]
-> 送信やその他のリモート変更は、それぞれ1回だけ試行します。応答が届かなかった場合は、
-> 再試行する前にLINEで確認してください。操作がすでに成功している可能性があります。
+> 送信、アップロード、その他のリモート変更は各1回だけ試行します。非E2EEのファイルメッセージはアップロード失敗前に
+> 作成される場合があり、構造化エラーには確認済みIDが残ります。結果が不明な場合は再試行前にLINEを確認してください。
 
 <a id="download-or-change-a-message"></a>
 
@@ -336,9 +390,16 @@ line unsend "Alice" --message MY_MESSAGE_ID
 リアクションは `like`、`love`、`laugh`、`surprise`、`sad`、`angry` です。
 送信取消は自分のメッセージに限られ、LINEサーバーのルールが適用されます。
 
-ダウンロード、リアクション、送信取消、`send --reply-to` は同じ検索処理を使い、選択したトークを最大10ページ、各100件、30秒まで調べます。短い `--timeout` が優先されます。返信は対象のトークを確認してからアップロード、グループ鍵登録、送信を行います。対話式の選択肢は直近100件のままです。古い対象にはIDを直接指定してください。
-ダウンロードで既存ファイルを上書きすることはありません。暗号化データは保存前に検証し、
-リモートのメタデータが保存先のパスを決めることもありません。
+ダウンロード、リアクション、送信取消、`send --reply-to` は選択したトークだけを検索します。
+認証の復旧を含め、最大10ページ、各100件、30秒です。短いコマンド期限が優先されます。
+すべての対象についてトークとの一致を確認し、送信取消では所有者も確認します。
+返信は対象が見つかってから、アップロード、グループ鍵登録、送信を行います。
+検索範囲外の対象はローカルで拒否します。全トークを横断するID検索ではありません。
+
+空の過去ページでは `message_not_found`、ページ数上限では `lookup_incomplete`、時間切れでは `deadline_exceeded` を返します。
+どの結果も、メッセージが一度も存在しなかったことを意味しません。対話式の選択肢は直近100件だけです。
+古いメッセージを探すにはIDを直接指定してください。ダウンロードは保存前に暗号化データを検証し、既存ファイルを上書きしません。
+リモートのメタデータが保存先を決めることもありません。
 
 `download` は画像・動画・音声・一般ファイルのメッセージに対応し、上限は20 MiB、
 コマンド全体の期限は既定で2分です（`--timeout` で変更可能）。メディアの全バイトをそのまま保存するため、拡張子を変えても形式は変換されません。
@@ -448,7 +509,8 @@ Windowsの更新コマンドは、検出したディレクトリを `LINE_CLI_IN
 
 ### JSON出力と終了コード
 
-対応するコマンドに `--json` を付けます。
+スクリプトでは完全なトークIDを使い、メッセージIDは文字列のまま扱ってください。
+`--json`、`--error-format=json`、`--stdin` は対話入力を無効にするため、必要な引数をすべて指定します。JSONを出力するコマンドの例：
 
 ```sh
 line whoami --json
@@ -479,6 +541,19 @@ JSONはstdout、診断情報はstderrに出力します。成功とヘルプは�
 
 一部を復号できない場合も、`messages --json` は各メッセージの状態を含む全配列を出力してから、
 終了コード1で終了します。暗号化チャンクや生のサーバー応答本文は表示しません。
+
+<a id="structured-errors"></a>
+
+### 構造化エラー
+
+`line --error-format=json COMMAND ... --json` を使うと、成功結果と部分結果のJSONをstdoutに保ったまま、
+stderrに構造化エラーを1件出力します。グローバルオプションはコマンドの前に指定し、対話入力を無効にします。
+基本コマンドと `auth status` に対応します。ログイン、ログアウト、移行、watch、updateでは処理前に拒否されるため、通常の診断出力を使ってください。
+
+エラーには安定したコードと処理段階を含みます。メッセージ操作では、既知のトーク／メッセージID、リクエスト連番、
+操作を試行したかどうか、結果、準備やアップロードの各段階も報告します。アップロードが失敗しても、ファイルメッセージ自体は作成済みの場合があります。
+結果の出力に失敗しても、送信済みという結果は保持します。通信エラーを含め、`unknown` の操作を自動再試行しないでください。
+先にLINEで確認してください。ストレージとシグナルの終了コードは変わりません。[エラーのフィールド、コード、例](JSON.md#errors)を参照してください。
 
 <a id="json-lookup-results"></a>
 
@@ -562,7 +637,7 @@ watcherは必要に応じて保存済み認証情報で再接続します。
 トークン変更後に保存が失敗すると、新しいトークンを保存できた保証がないため、以降のリクエストを停止します。
 
 更新タイミング、再試行のルール、呼び出し経路の根拠は、
-[トークンとセッションの監査](../TOKEN_SESSION.md)を参照してください。
+[トークンとセッションの監査](SESSION.md#token-refresh)を参照してください。
 
 <a id="linux-servers-and-headless-storage"></a>
 
@@ -570,34 +645,32 @@ watcherは必要に応じて保存済み認証情報で再接続します。
 
 <a id="enroll-without-an-unlocked-keyring"></a>
 
-### ロック解除済みキーリングなしで初期登録する
+### キーリングなしで初期設定する
 
-対応Linuxホストにロック解除済みSecret Serviceキーリングがない場合は、
-ヘッドレスストレージを使って対話式で登録します。
+通常のUnixユーザーと対話式ターミナルを使います。SSH接続には `ssh -t user@host` を使えます。
+信頼できる `/usr/bin/systemd-creds`（systemd 256–259）と、動作するユーザー認証情報ブローカーが必要です。
+古いバージョンや未確認の新しいバージョンは拒否します。
 
 ```sh
-line login --headless --email you@example.com
-line auth status
+line login --headless
 line auth status --check --json
 ```
 
-この例はメールログインです。`line login --headless` は実験的なQRログインを選び、
-同じストレージ保護を使います。登録には対話式ターミナルが必要です。
-`--headless` はログインを無人実行にするオプションではありません。
+最初のコマンドは実験的なQRログインを使います。メールアドレスとパスワードを使う場合は、
+`line login --headless --email you@example.com` に置き換えます。
+**Session saved securely** と表示されてからストレージを確認してください。
+`--headless` は保存方法を選ぶオプションで、初回ログインには対話操作とスマートフォンでの承認が必要です。
 
-LINEへの接続前に、**Host key; no TPM**（ホスト鍵、TPMなし）という保護方式への同意を求めます。
-`--force` でも省略できません。この保存方法はほかの一般ユーザーから保護しますが、
-root、自分のアカウントで動くマルウェア、ディスク全体のコピーを持つ人には対抗できません。
-TPM保護は提供しません。新しいセッションの保存前にキャンセルすると、新しいローカルセッションは残りません。
+LINEへの接続前に **Host key; no TPM** への同意を求めます。`--force` でも省略しません。
+この方式は他の非特権ユーザーから保護しますが、root、自分のアカウントで動くマルウェア、ディスク全体のコピーには対応しません。
+TPM保護はありません。保存前に中止した場合、新しいローカルセッションは残りません。
 
-登録後はストレージのオプションなしで通常のコマンドを使います。再ログインでも選んだバックエンドを維持します。
+初期設定後の通常コマンドに `--headless` は不要です。再ログイン時は選択済みの保存方式を使います。
 `login --headless` は既存のネイティブセッションを変換・上書きしません。
+コマンド、SSH、cron、サービスで同じUnixユーザーと設定ディレクトリを使ってください。
 
-信頼できる `/usr/bin/systemd-creds` ヘルパーと、ユーザーの認証情報ブローカーが必要です。
-対話コマンド、SSH、cron、サービスでは同じUnixアカウントと設定ディレクトリを使ってください。
-systemd 256〜259を受け付けます。Debian 13／systemd 257とUbuntu 26.04／systemd 259は
-使い捨てVMで検証済みです。ほかの対応版もローカルの確認を通過する必要があります。
-古い版と未確認の新しい版は拒否します。UniPiや物理TPMでの動作は未検証です。
+Debian 13/systemd 257とUbuntu 26.04/systemd 259では、使い捨てVMで検証済みです。
+他の対応バージョンもローカルでの検査が必要です。UniPiと物理TPMの動作は未確認です。
 
 <a id="move-an-existing-linux-session"></a>
 
@@ -616,7 +689,7 @@ watchのチェックポイントを保持し、LINEへの接続やパスワー�
 途中で止まった場合は同じコマンドを再実行してください。`migration.pending` の削除や
 `session.enc` の手動置き換えはしないでください。後処理が完了するまで、
 `line auth status` は `migration_pending` を報告します。
-復旧手順は[ヘッドレスストレージの内部仕様](../internal/session/HEADLESS.md)を参照してください。
+復旧手順は[ヘッドレスストレージの内部仕様](SESSION.md#headless-storage-engine)を参照してください。
 
 <a id="run-a-watcher-without-a-login-session"></a>
 
@@ -645,7 +718,7 @@ NoNewPrivileges=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 MemoryDenyWriteExecute=true
-ExecStart=/usr/local/bin/line watch
+ExecStart=%h/.local/bin/line watch
 Restart=on-failure
 RestartSec=15s
 RestartPreventExitStatus=65 69 74 78
@@ -710,7 +783,7 @@ systemd-run --user --wait --collect \
   --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
   --property=LockPersonality=true \
   --property=MemoryDenyWriteExecute=true \
-  /usr/local/bin/line auth status --check --json
+  "$HOME/.local/bin/line" auth status --check --json
 ```
 
 これはローカルの確認で、LINEには接続しません。サンドボックス設定は1つずつ変更してください。
@@ -771,6 +844,22 @@ Linuxでは、確認したセッションのパスを `$HOME/.config/line-cli` �
 ストレージが利用できなくても、`auth status --json` は状態オブジェクトを出力してから
 対応する非ゼロのコードを返す場合があります。
 
+<a id="troubleshooting"></a>
+
+## 問題の解決
+
+| 症状 | 次に確認すること |
+| --- | --- |
+| ガイドのオプションが不明と表示される | `line version` と `line COMMAND --help` を実行し、該当タグのガイドと比較します。更新確認は `line update --check` です。 |
+| `encryption_required` | E2EE非対応のため厳格モードで停止しました。`--require-e2ee`を外すとHTTPS/TLSで送信しますが、LINEは内容を読めます。 |
+| `encrypted_image_unavailable` | 暗号化画像は無効です。元のバイト列には `--file` を使いますが、ファイルの対応状況の確認は必要です。 |
+| SSHやサービスでストレージにアクセスできない | 同じユーザーと環境で `line auth status --check --json` を実行し、[サービスの診断](#diagnose-a-headless-service)を確認します。回避のためにセッションファイルを削除しないでください。 |
+| 送信失敗、または最近の履歴に見つからない | 再実行前にLINEを確認します。[構造化エラー](#structured-errors)で確認済みか不明かを判断します。最近の履歴にないことは未配信の証拠ではありません。 |
+| 履歴ページが短い、または一部を復号できない | `exhausted` が真になるまでカーソルで続行できます。各状態と終了コードを確認してください。古い履歴や鍵は取得できない場合があります。 |
+
+不具合報告には `line version`、OS、コマンド、機密情報を除いたエラーを含めてください。
+トークン、パスワード、QR/PIN、鍵、私的なメッセージは含めないでください。
+
 <a id="reference"></a>
 
 ## リファレンス
@@ -783,20 +872,14 @@ Linuxでは、確認したセッションのパスを `$HOME/.config/line-cli` �
 
 ```sh
 line help
-line login --help
-line contacts --help
-line chats --help
-line messages --help
 line send --help
-line watch --help
-line update --help
 ```
 
 <a id="build-from-source"></a>
 
 ### ソースからビルドする
 
-GitとGo 1.26以降が必要です。macOSではKeychain対応のため、Xcode Command Line ToolsとCGOも必要です。
+GitとGo 1.27.2が必要です。macOSではKeychain対応のため、Xcode Command Line ToolsとCGOも必要です。
 
 macOSまたはLinux：
 
@@ -816,28 +899,20 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 .\bin\line.exe help
 ```
 
-コントリビューター向けのチェック：
-
-```sh
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-go build -trimpath -o bin/line ./cmd/line
-```
-
-通常のテストは偽のAPIと認証情報を使います。実接続テストは初期状態では無効で、明示的な許可が必要です。
-キャンセルのテストには合成の子プロセスを使います。macOS／Linuxのパスワード入力テストは、
-利用可能であればPython 3標準ライブラリのPTY機能を使います。
-ネイティブLinux Secret Serviceの統合テストには、明示的に有効化した使い捨てD-Busセッションが必要です。
-Windows DPAPIのテストには一時ファイルを使います。
+開発用チェック、テストデータ、プラットフォーム統合、リリース手順は
+[開発ガイド](DEVELOPMENT.md)を参照してください。通常のテストは合成データと偽のAPIを使います。
+実際のLINEを使うテストには明示的な許可が必要です。
 
 <a id="current-limitations"></a>
 
 ### 現在の制限
 
+- LINEがE2EE非対応と明示した場合はHTTPS/TLSで送信しますが、LINEは内容を読めます。
+  `--require-e2ee` でこの送信を防げます。詳しくは[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)を参照してください。
 - 保存できるLINEアカウントはOSユーザーごとに1つです。
-- QRログインは実験的で、Letter Sealingを無効にしたアカウントには対応しません。
+- QRログインは実験的な機能で、利用可能なLetter Sealingキーが必要です。
 - 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めます。操作対象の検索は最大10ページ、30秒です。
-- 一般ファイルと JPEG/PNG 静止画像を送信できます。動画・音声の専用送信、アニメーション画像、画像での返信、スタンプ送信には対応しません。
+- 一般ファイルはLINEの対応状況を確認し、非E2EEの場合もHTTPS/TLSで送信します。暗号化画像は無効です。非E2EEのJPEG/PNG画像はLINEが対応を明示した場合だけ送信できます。動画・音声の専用送信、アニメーション画像、画像返信、スタンプ送信は非対応です。
 - 画像・動画・音声・ファイルのダウンロードは20 MiBまで。外部メディアURLには対応しません。
 - メッセージを読んでも既読にはなりません。
 - リリース版バイナリは署名・公証されていません。
@@ -845,44 +920,3 @@ Windows DPAPIのテストには一時ファイルを使います。
 
 LINE CLIは `beeper/line` を基にした独立プロジェクトです。LINEの公式製品ではなく、
 BeeperやMatrixホームサーバーも必要ありません。
-
-## 構造化エラー
-
-コマンドの前に `--error-format=json` を指定します（例：`line --error-format=json send CHAT_ID --stdin --json`）。エラーは stderr に単一の JSON オブジェクトとして出力され、stdout の成功結果と部分結果の配列は従来の形式を保ちます。対話プロンプトは無効になります。対象は基本コマンドと `auth status` です。ログイン、ログアウト、移行、watch、update は従来の診断方式を使用します。
-
-エラーにはコード、処理段階、既知のチャット／メッセージ ID、リクエスト番号、各変更処理の結果が含まれます。`unknown` の場合は再試行前に LINE を確認してください。ファイルメッセージ作成後のアップロード失敗や送信後の出力失敗でも、確認済みのメッセージ情報は保持されます。ストレージとシグナルの終了コードは変わりません。詳細は[エラー形式とコード](ERRORS.md)を参照してください。
-
-
-### 履歴ページの JSON
-
-```sh
-line messages CHAT_ID --page --json --limit 50
-line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
-```
-
-通常の表示は作成時刻の古い順、従来の `--json` 配列はサーバーの順序です。
-`--page` には `--json` が必要で、`--cursor` には両方が必要です。1回につき1ページを取得し、
-`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
-`exhausted`、`stop_reason`、任意の `next_cursor` を返します。
-IDは文字列のまま、新しいページは数値IDの降順です。カーソルは同じトークへ
-そのまま渡してください。正確な配信時刻を保持し、作成時刻で代用しません。
-
-`count_limit` は件数上限、`page_limit` は短い非空ページです。どちらも末尾を意味しません。
-重複アンカーを除いて空の場合のみ `end_of_available_history` と `exhausted: true` を返し、
-カーソルを省略します。100件の指定でもアンカーのため99件になる場合があります。
-古い履歴がサーバーで提供されなくなる場合があり、完全な履歴や固定の保存期間は保証しません。
-
-不正なカーソル、別トーク、配信時刻の欠落、進まないページはエラーになります。
-タイムアウトは末尾として扱いません。一部の復号失敗ではカーソル付きページを出力し、非ゼロで終了します。
-対象検索の `message_not_found` は取得可能な履歴内の不在のみを示します。
-`lookup_incomplete` はページ数上限、`deadline_exceeded` は時間制限です。
-
-### 詳細コンテンツ JSON
-
-```sh
-line chats --details --json
-line messages CHAT_ID --details --json --resolve-names
-line messages CHAT_ID --details --page --json --limit 50
-```
-
-`--details` は `--json` と併用し、`schema_version: 1` のオブジェクトを返します。チャット ID、受信したメンション、位置、復号したファイル名、添付のサイズ・再生時間、連絡先、スタンプ ID、上限付きのリッチテキストとリンクを取得できます。`--resolve-names` は送信者名をバッチで取得する任意の指定です。チャットの詳細には名前、最終活動時刻、未読数が含まれ、不明な値は `null` です。既存の JSON と watch 形式は変わりません。復号失敗時も部分結果を出力し、終了コードは非ゼロになります。フィールド・状態・制限は [詳細出力仕様](CONTENT.md) を参照してください。

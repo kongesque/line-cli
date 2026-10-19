@@ -33,7 +33,7 @@ func TestSendStdinPreservesMultilineTextAndJSONOutput(t *testing.T) {
 	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "token", NoE2EE: true}}
 	a.Manager.NewClient = func(string) session.API { return f }
 	a.In = strings.NewReader("hello\nworld\n")
-	if err := a.Run([]string{"send", "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--allow-plaintext", "--stdin", "--json"}); err != nil {
+	if err := a.Run([]string{"send", "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--stdin", "--json"}); err != nil {
 		t.Fatal(err)
 	}
 	var result messaging.SendResult
@@ -99,12 +99,12 @@ func TestMentionTextAndStdinReplies(t *testing.T) {
 		f := &messageAPI{history: []*line.Message{{ID: "9007199254740993", From: "u-self", To: "c-group", ToType: 2}}}
 		a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 		a.Manager.NewClient = func(string) session.API { return f }
-		args := []string{"send", "id:c-group", "--allow-plaintext", "--reply-to", "9007199254740993", "--json", "--mentions", `[{"start":3,"end":8,"mid":"Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"start":9,"end":13,"all":true}]`}
+		args := []string{"send", "id:c-group", "--reply-to", "9007199254740993", "--json", "--mentions", `[{"start":3,"end":8,"mid":"Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"start":9,"end":13,"all":true}]`}
 		if stdin {
 			args = append(args, "--stdin")
 			a.In = strings.NewReader("😀 @Peer @All")
 		} else {
-			args = append(args, "--allow-plaintext", "--text", "😀 @Peer @All")
+			args = append(args, "--text", "😀 @Peer @All")
 		}
 		if err := a.Run(args); err != nil {
 			t.Fatal(err)
@@ -120,7 +120,7 @@ func TestLiteralMentionDoesNotNotify(t *testing.T) {
 	f := &messageAPI{}
 	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 	a.Manager.NewClient = func(string) session.API { return f }
-	if err := a.Run([]string{"send", "id:c-group", "--allow-plaintext", "--text", "@All @Peer"}); err != nil {
+	if err := a.Run([]string{"send", "id:c-group", "--text", "@All @Peer"}); err != nil {
 		t.Fatal(err)
 	}
 	if f.sent.ContentMetadata["MENTION"] != "" {

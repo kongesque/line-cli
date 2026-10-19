@@ -48,7 +48,7 @@ func TestJSONErrorFlagDoesNotConsumeMessageText(t *testing.T) {
 	f := &messageAPI{}
 	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 	a.Manager.NewClient = func(string) session.API { return f }
-	if err := a.Run([]string{"--error-format", "json", "send", outcomeChat, "--allow-plaintext", "--text", "--error-format=json", "--json"}); err != nil {
+	if err := a.Run([]string{"--error-format", "json", "send", outcomeChat, "--text", "--error-format=json", "--json"}); err != nil {
 		t.Fatal(err)
 	}
 	if f.sent.Text != "--error-format=json" {
@@ -77,7 +77,7 @@ func TestConfirmedSendOutputFailureRetainsReceipt(t *testing.T) {
 		a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 		a.Manager.NewClient = func(string) session.API { return f }
 		a.Out = failedWriter{errors.New("secret writer details")}
-		args := []string{"--error-format=json", "send", outcomeChat, "--allow-plaintext", "--text", "synthetic"}
+		args := []string{"--error-format=json", "send", outcomeChat, "--text", "synthetic"}
 		if jsonOutput {
 			args = append(args, "--json")
 		}
@@ -145,7 +145,7 @@ func TestSignalAfterSuccessRetainsConfirmedReceipt(t *testing.T) {
 	f := &messageAPI{}
 	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 	a.Manager.NewClient = func(string) session.API { return f }
-	if err := a.Run([]string{"--error-format=json", "send", outcomeChat, "--allow-plaintext", "--text", "synthetic", "--json"}); err != nil {
+	if err := a.Run([]string{"--error-format=json", "send", outcomeChat, "--text", "synthetic", "--json"}); err != nil {
 		t.Fatal(err)
 	}
 	detail := machineDetail(t, a.SignalError())

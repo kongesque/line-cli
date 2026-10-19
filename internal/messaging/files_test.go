@@ -36,7 +36,8 @@ func (f *fileCrypto) EncryptGroupMessageRaw(_ string, _ string, kind int, payloa
 
 func TestFileSendEnvelopeAndUploadOrdering(t *testing.T) {
 	for _, chat := range []string{"u-peer", "c-group"} {
-		for _, plain := range []bool{false, true} {
+		for _, mode := range []struct{ plain, allow bool }{{false, false}, {false, true}, {true, true}} {
+			plain := mode.plain
 			c, f, crypto, _ := setup(t, plain)
 			api := &fileAPI{fakeAPI: f}
 			crypt := &fileCrypto{fakeCrypto: crypto}
@@ -45,7 +46,7 @@ func TestFileSendEnvelopeAndUploadOrdering(t *testing.T) {
 			f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
 			f.history = []*line.Message{{ID: "123", From: "u-self", To: chat, ToType: toType(chat)}}
 			attachment := Attachment{Name: "notes.pdf", Data: []byte("private attachment bytes")}
-			result, err := c.SendFileWithOptionsContext(context.Background(), chat, attachment, "123", SendOptions{AllowPlaintext: plain})
+			result, err := c.SendFileWithOptionsContext(context.Background(), chat, attachment, "123", SendOptions{AllowPlaintext: mode.allow})
 			if err != nil {
 				t.Fatal(err)
 			}

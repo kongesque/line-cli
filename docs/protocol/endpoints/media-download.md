@@ -101,7 +101,6 @@ restores them only after decryption. These helpers apply to encrypted media,
 not just images. The CLI now follows this envelope for generic files while
 retaining historical incoming metadata conflict checks. No live send was used.
 
-
 ## File capability validation after live inspection
 
 The same Chrome 3.7.2 source uses `sP` and `checkAndGetMediaMessageFlow` for

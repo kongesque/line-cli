@@ -25,8 +25,8 @@ The runner and LTSM regression suites can be run separately with
 `pkg/ltsm` from vet/staticcheck. Do not edit `pkg/ltsm/wbc_generated.go` or its
 embedded `data/` files.
 
-See [docs/TESTING.md](docs/TESTING.md) for test tiers, shared fixtures, platform
-integration requirements, and CI coverage.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#test-suites) for test tiers, shared
+fixtures, platform integration requirements, and CI coverage.
 
 ## Package layout
 
@@ -43,12 +43,13 @@ integration requirements, and CI coverage.
 
 ## Behavior and validation
 
-Require encryption by default; plaintext needs per-command `--allow-plaintext`
-or an affirmative interactive confirmation plus explicit account/server capability
-evidence. Scripts, JSON output/errors, and `--stdin` never prompt. Preserve explicit
-capability checks before plaintext fallback. Missing or malformed
-keys and transport failures must not silently downgrade encryption. Only an
-explicit send may register a group key, and it needs complete membership.
+Prefer Letter Sealing whenever supported. When LINE explicitly reports no E2EE
+support, CLI sends proceed over HTTPS/TLS without encryption confirmation and
+report the mode in the receipt (`encrypted: false` in JSON). `--require-e2ee`
+blocks non-E2EE delivery. Scripts, JSON output/errors, and `--stdin` never prompt.
+Preserve explicit capability checks before plaintext fallback. Missing or malformed
+keys and transport failures must not silently downgrade encryption.
+Only an explicit send may register a group key, and it needs complete membership.
 Remote mutations are attempted once with a persisted request sequence; reads can
 recover authentication and retry. Never add automatic mutation retries.
 

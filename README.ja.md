@@ -2,15 +2,10 @@
 
 [English](README.md) | [繁體中文（台灣）](README.zh-TW.md) | 日本語 | [ภาษาไทย](README.th.md)
 
-**LINE CLI** は、Goで開発された軽量な非公式コマンドラインツールです。ターミナルから自分のLINEアカウントを利用できます。
-ターミナルからLINEメッセージを送信し、個人やグループのトークを閲覧したり、
-ファイルを共有したり、添付ファイルをダウンロードしたり、リアルタイムイベントを
-受信したりできます。日常の操作には対話式の入力を、シェルスクリプトや
-AIエージェントのワークフローにはJSON出力を利用できます。
-
-**macOS、Linux、Windows**に対応し、トークが対応している場合はLetter Sealingで
-エンドツーエンド暗号化を行います。個人のLINEアカウントでログインでき、
-ボットアカウントの作成やLINE Messaging APIの設定は不要です。
+**LINE CLI** は、個人のLINEアカウントをターミナルから使うためのGo製の非公式CLIです。
+トークの閲覧、メッセージやファイルの送信、添付ファイルのダウンロード、イベントの受信ができます。
+**macOS、Linux、Windows**に対応し、対話形式の操作とJSON出力を利用できます。
+ボットアカウントやLINE Messaging APIの設定は不要です。
 
 [![CI](https://github.com/kongesque/line-cli/actions/workflows/cli.yml/badge.svg)](https://github.com/kongesque/line-cli/actions/workflows/cli.yml)
 [![Release](https://img.shields.io/github/v/release/kongesque/line-cli?filter=v*&label=release)](https://github.com/kongesque/line-cli/releases/latest)
@@ -20,6 +15,9 @@ AIエージェントのワークフローにはJSON出力を利用できます�
 [インストール](#install-line-cli) · [クイックスタート](#quick-start-send-your-first-line-message) · [コマンド](#line-messaging-commands) · [自動化](#automate-line-with-json-and-shell-scripts) · [詳しいガイド](docs/CLI.ja.md)
 
 ![LINE CLI：ターミナルから個人のLINEでメッセージ送信、ファイル共有、自動化](banner.png)
+
+このREADMEは開発ブランチの説明です。リリース済みバージョンについては該当タグのREADMEと
+`line COMMAND --help` を確認してください。[変更履歴](CHANGELOG.md)も参照してください。
 
 <a id="install-line-cli"></a>
 
@@ -40,19 +38,17 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/kongesqu
 インストーラーがOSとCPUアーキテクチャを判別し、リリースのチェックサムを検証して、
 `line` を `~/.local/bin` にインストールします。`PATH` 設定を反映するための案内が
 表示された場合は、ターミナルを開き直してください。
+現在のシェルですぐに使うには `export PATH="$HOME/.local/bin:$PATH"` を実行します。
 
-**Linuxデスクトップ：** ログイン前に、`line` と同じD-Busセッション内で
-Secret Serviceキーリングが起動し、ロックが解除されていることを確認してください。
-Debian／Ubuntuでは次のツールをインストールします。
+**Linuxデスクトップ：** DebianやUbuntuでは、ログイン前に認証情報の保存用パッケージを導入します。
 
 ```sh
 sudo apt install libsecret-tools gnome-keyring
 ```
 
-**Linuxサーバー／SSH：** パッケージのインストールだけでは不十分です。対応するホストでは、
-`line login --headless` でロック解除済みキーリングを必要としないホスト鍵ストレージを
-利用できます。初期設定は対話式で、このストレージはディスク全体のコピーに対する保護や
-TPM保護を提供しません。[ヘッドレス環境の設定、移行、サービス運用](docs/CLI.ja.md#linux-servers-and-headless-storage)を参照してください。
+`line` はデスクトップセッションから実行し、同じD-BusセッションでSecret Serviceキーリングが
+動作し、ロックが解除されていることを確認してください。デスクトップのキーリングがない
+サーバーやSSHでは、下記のヘッドレス環境でのログインを使ってください。
 
 ### Windows：PowerShell
 
@@ -71,7 +67,6 @@ irm https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-re
 
 ```sh
 line version
-line help
 ```
 
 <a id="quick-start-send-your-first-line-message"></a>
@@ -93,29 +88,34 @@ PINの入力を求められた場合は、表示された番号を入力して�
 **Session saved securely** と表示されるまで待ってください。QRログインは実験的な機能で、
 Letter Sealingが有効になっている必要があります。
 
-アカウントにメールアドレスとパスワードを設定済みの場合は、次の方法も使えます。
+LINEアカウントにメールアドレスとパスワードを設定済みなら、次の方法も使えます。QRログインに失敗した場合も利用できます。
 
 ```sh
 line login --email you@example.com
 ```
 
-パスワードは画面に表示せずに入力でき、保存されません。ログイン時にはストレージを検査し、
-利用可能な保存済みセッションを置き換える前に確認します。
-[ログインのオプションとQRコードのトラブルシューティング](docs/CLI.ja.md#login-options-and-qr-help)も参照してください。
+パスワードは入力中も画面に表示されません。求められた場合はスマートフォンで認証を完了してください。
+パスワードは保存されません。
 
-**Linuxサーバー上やSSH経由で利用する際、キーリングのロックを解除できない場合は `--headless` を付けてログインしてください。**
+<details>
+<summary>LinuxサーバーやSSH：デスクトップのキーリングなしでログイン</summary>
+
+通常のUnixユーザーと対話式ターミナルを使ってください。リモート接続では `ssh -t user@host` を使えます。
+ヘッドレスストレージには、systemd 256–259の `/usr/bin/systemd-creds` と、
+動作するユーザー認証情報ブローカーが必要です。
 
 ```sh
-line login --headless                        # QRコードでログイン
-line login --headless --email you@example.com # メールアドレスとパスワードでログイン
+line login --headless
 ```
 
-このオプションではホスト鍵を使ってセッションを保存するため、以降はデスクトップの
-キーリングをロック解除せずにコマンドを実行できます。初回ログイン時は、ターミナルでの
-対話操作とスマートフォンでの承認が必要です。設定が完了したら、`line chats` や
-`line watch` などの通常のコマンドに `--headless` を付ける必要はありません。
-対応環境、保存データの保護、既存セッションの移行については
-[ヘッドレス環境の設定とサービス運用](docs/CLI.ja.md#linux-servers-and-headless-storage)を参照してください。
+メールアドレスとパスワードを使う場合は `line login --headless --email you@example.com` を実行します。
+確認時に **Host key; no TPM** に同意してください。この保存方式はディスク全体のコピーに対する保護や
+TPM保護を提供しません。初回の設定にはターミナルでの対話操作とスマートフォンでの承認が必要です。
+
+**Session saved securely** と表示されたら `line auth status --check` を実行します。
+以降は同じUnixユーザーで下記のコマンドを実行し、`--headless` は付けません。
+
+</details>
 
 ### 2. トークを閲覧してメッセージを送信
 
@@ -129,6 +129,9 @@ line send       # 送信先を選んでメッセージを入力
 対話式ターミナルでは、必要な情報が不足しているとCLIが入力を促します。
 Ctrl-Cでキャンセルできます。次の例のようにトーク名を直接指定することもできます。
 
+送信に成功すると `Sent to … · end-to-end encrypted` と表示されます。
+非E2EE送信の場合は `Sent to … · transport encrypted (no E2EE)` と表示されます。
+
 <a id="line-messaging-commands"></a>
 
 ## LINEメッセージの操作コマンド
@@ -136,39 +139,16 @@ Ctrl-Cでキャンセルできます。次の例のようにトーク名を直�
 | 操作 | コマンド |
 | --- | --- |
 | 友だちを検索 | `line contacts --search "Alice"` |
-| ユーザーIDで人物を検索 | `line contacts --mid USER_MID` |
-| トークやグループを検索 | `line chats --search "Family"` |
 | 最近のメッセージを閲覧 | `line messages "Alice" --limit 20` |
 | テキストメッセージを送信 | `line send "Alice" --text "Hello!"` |
 | ファイルを送信 | `line send "Alice" --file ./report.pdf` |
 | 写真、動画、音声、ファイルをダウンロード | `line download` |
-| リアクションを追加・削除 | `line react` |
-| 自分のメッセージを送信取消 | `line unsend` |
 | リアルタイムイベントを受信 | `line watch` |
-| ローカルのセッションストレージを検査 | `line auth status --check` |
-| 保存済みのローカルセッションを削除 | `line logout` |
 
-例の名前は実際の名前に置き換えてください。名前は重複のない完全一致で指定します
-（大文字・小文字は区別しません）。空白を含む名前は引用符で囲んでください。
-名前が重複する場合は、`line chats --search "Alice" --show-ids` で調べて、完全なトークIDを指定します。
-
-オプションは `line COMMAND --help` で確認できます。ダウンロード、リアクション、
-送信取消も対話式の選択に対応しています。[トークの選択ガイド](docs/CLI.ja.md#find-chats-and-people)も参照してください。
-
-### LINEメッセージへの返信と添付ファイルのダウンロード
-
-`--show-ids` でIDを確認し、例の `MESSAGE_ID` を置き換えます。
-
-```sh
-line messages "Alice" --show-ids
-line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
-line react "Alice" --message MESSAGE_ID --reaction love
-line download "Alice" --message MESSAGE_ID --output ./received.pdf
-```
-
-ダウンロードには添付ファイルのメッセージIDを指定し、適切なファイル名を選んでください。
-既存のファイルは上書きされません。
-[リアクション、送信取消、ダウンロードの詳細](docs/CLI.ja.md#download-or-change-a-message)を参照してください。
+`Alice` は完全なトークID、または他と重複しないトーク名に置き換えてください。名前は全体を指定し、大文字と小文字は区別しません。
+同じ名前が複数ある場合は `line chats --search "Alice" --show-ids` を実行し、表示された完全なIDを使います。
+オプションは `line COMMAND --help`、返信やリアクション、ページ分割は
+[CLIガイド](docs/CLI.ja.md#daily-commands)で確認できます。
 
 <a id="automate-line-with-json-and-shell-scripts"></a>
 
@@ -185,40 +165,31 @@ line send CHAT_ID --stdin --json < message.txt
 line watch --json > events.ndjson
 ```
 
-`CHAT_ID` は `line chats --json` で取得します。`--stdin` はファイルやパイプから
-複数行のテキストを読み取れます。`watch` は1行につき1件のJSON（NDJSON）を出力し、
-保存済みチェックポイントから再開します。受信側ではrevisionで重複を除去してください。
-出力したメッセージやイベントは私的なデータとして扱ってください。
+`CHAT_ID` は `line chats --json` で取得します。イベント出力はNDJSONで、受信側はrevisionで重複を除いてください。
+フィールドとエラーの形式は[JSONリファレンス](docs/JSON.md)を参照してください。
 
-リモート側の状態を変更する操作は1回だけ試行され、自動では再試行されません。
-送信、アップロード、リアクション、送信取消の応答を受け取れなかった場合は、
-操作の重複を避けるため、再実行する前にLINE側の状態を確認してください。
-
-連携の詳細は[JSONフィールドと終了コード](docs/CLI.ja.md#json-output-and-exit-codes)と
-[リアルタイムイベントの受信](docs/CLI.ja.md#watch-new-events)を参照してください。
+サーバーの状態を変更する操作は1回だけ試行します。送信などの応答を受け取れなかった場合は、
+繰り返す前にLINEで結果を確認してください。
 
 ## Letter Sealingによる暗号化とセッションのセキュリティ
 
-- **暗号化：** 対応する場合はLetter Sealingを使用します。鍵の不足、形式の不正、
-  通信障害によって、暗号化した送信が通知なく平文に切り替わることはありません。
-  JSONの送信結果で暗号化の状態を確認できます。
-- **ストレージ：** macOSはキーチェーン、Linuxは鍵をSecret Serviceに保存する
-  AES-GCMセッションファイル、Windowsは現在のユーザー用DPAPIを使用します。
-  ヘッドレスLinuxはホスト鍵ストレージを使用します。
-- **セッションの復旧：** 保存済みの更新用認証情報が有効なら、再起動後もアクセストークンが
-  自動更新されます。更新でアクセスを復旧できない場合や、LINEがセッションを無効化した場合は、
-  再度ログインしてください。
+送信時は、対応している限りLetter Sealing（エンドツーエンド暗号化、E2EE）を使います。
+LINEが非対応と明示した場合は、確認なしでHTTPS/TLSによる送信を行います。
+転送中のデータは暗号化されますが、LINEは内容を読めます。非E2EE送信を防ぐには `--require-e2ee` を指定します。
+ファイルとテキストでは暗号化への対応を個別に確認し、キーの欠落や通信失敗でE2EEを無効にすることはありません。
 
-[セッションの保存先](docs/CLI.ja.md#where-your-session-is-stored) ·
-[トークンの更新と復旧](docs/CLI.ja.md#token-refresh)
+[送信と暗号化](docs/CLI.ja.md#send-messages-and-files)・
+[セッションの保存](docs/CLI.ja.md#where-your-session-is-stored)を参照してください。
 
 ## 制限事項
 
-- 閲覧できるのは最近の履歴のみで、1回につき最大100件です。閲覧しても既読にはなりません。
-  古い暗号化メッセージの一部は閲覧できない場合があります。
-- ファイル送信とメディアのダウンロードは最大20 MiBです。`--file` で送信した画像・動画・音声は
-  通常のファイルとして表示されます。スタンプやメディア専用メッセージの送信、
-  外部メディアURLからのダウンロードには対応していません。
+- LINEがE2EE非対応と明示した場合はHTTPS/TLSで送信しますが、LINEは内容を読めます。
+  `--require-e2ee` でこの送信を防げます。詳しくは[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)を参照してください。
+- 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めますが、
+  全履歴は保証しません。閲覧しても既読にはならず、古い暗号化メッセージの一部は読めない場合があります。
+- ファイル送信とメディアのダウンロードは最大20 MiBです。`--file` は元のバイト列を保持し、通常のファイルとして表示されます。
+  暗号化した画像メッセージの送信は無効です。非E2EE画像は、LINEが対応を明示した場合に限り送信できます。
+  動画・音声の専用送信、スタンプ送信、外部メディアURLのダウンロードは非対応です。
 - LINE CLIはLINEのChrome形式のプロトコルを使用します。サーバー側の変更によって
   互換性に影響が出る場合があり、一部の処理にはより幅広い実環境での検証が必要です。
 
@@ -232,49 +203,23 @@ line update --check   # インストールせずに最新版を確認
 line update           # 対応する場合は更新し、それ以外は手順を表示
 ```
 
-macOSとLinuxで公式インストーラーから導入した単体バイナリは、その場で更新できます。
-Homebrewの場合は `brew upgrade line-cli` を使用します。その他のインストール方法では
-更新手順が表示されます。確認にLINEへのログインは不要で、コマンドを実行したときだけ
-確認します。[更新の詳細](docs/CLI.ja.md#updating-line-cli)を参照してください。
+Homebrewでは `brew upgrade line-cli` を実行します。その他のインストール方法は
+[更新ガイド](docs/CLI.ja.md#updating-line-cli)を参照してください。
 
 ## ドキュメントとサポート
 
-- [CLIガイド](docs/CLI.ja.md)：全コマンドの使い方、トラブルシューティング、サーバー設定。
-- [トークンとセッションの監査](TOKEN_SESSION.md)：更新と復旧の実装詳細。
-- [GitHub Issues](https://github.com/kongesque/line-cli/issues)：不具合報告と機能リクエスト。
-
-不具合の報告には `line version`、OS、実行したコマンド、機密情報を除いたエラーを添えてください。
+[CLIガイド](docs/CLI.ja.md)または[ドキュメント一覧](docs/README.md)を参照してください（リファレンスは英語です）。
+不具合や機能要望は [GitHub Issues](https://github.com/kongesque/line-cli/issues) へ。
+不具合の報告には `line version`、OS、コマンド、機密情報を除いたエラーを添えてください。
 パスワード、トークン、QRログインの値、私的なメッセージは含めないでください。
 
 <a id="build-and-contribute"></a>
 
 ## ビルドと開発への参加
 
-ソースからのビルドにはGitと **Go 1.26+** が必要です。macOSではキーチェーンを
-利用するためにXcode Command Line ToolsとCGOも必要です。macOS／Linuxでは次を実行します。
-
-```sh
-git clone https://github.com/kongesque/line-cli.git
-cd line-cli
-./install.sh
-```
-
-インストーラーが表示するPATHの案内に従ってください。Windows PowerShellの手順は
-[ソースビルドガイド](docs/CLI.ja.md#build-from-source)を参照してください。
-ソースからビルドする場合も、Linuxのストレージ要件が適用されます。
-
-ローカルで開発する場合：
-
-```sh
-./build.sh
-./bin/line help
-go test -race ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
-go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
-```
-
-全チェック項目とプロトコルの要件は[コントリビューター向けガイド](AGENTS.md)を参照してください。
-CIは3つのプラットフォームとOS標準の認証情報ストレージを検査します。
-テストには合成データと偽のAPIを使い、実際のLINEを使うテストには明示的な許可が必要です。
+ソースからのビルドには **Go 1.27.2** が必要です。macOSではXcode Command Line ToolsとCGOも必要です。
+設定と開発時の検証は[ソースからのビルド](docs/CLI.ja.md#build-from-source)と
+[開発への参加](CONTRIBUTING.md)（英語）を参照してください。
 
 ## ライセンスと由来
 
