@@ -130,7 +130,7 @@ line send       # 送信先を選んでメッセージを入力
 Ctrl-Cでキャンセルできます。次の例のようにトーク名を直接指定することもできます。
 
 送信に成功すると `Sent to … · end-to-end encrypted` と表示されます。
-平文送信に明示的に同意した場合は、エンドツーエンド暗号化されていないことが表示されます。
+非E2EE送信の場合は `Sent to … · transport encrypted (no E2EE)` と表示されます。
 
 <a id="line-messaging-commands"></a>
 
@@ -173,11 +173,11 @@ line watch --json > events.ndjson
 
 ## Letter Sealingによる暗号化とセッションのセキュリティ
 
-送信はデフォルトでLetter Sealingを必須とします。LINEが平文送信への対応を明示した場合に限り、
-ターミナルでの同意またはコマンドごとの `--allow-plaintext` 指定で平文送信を許可します。
-スクリプトでは確認しません。ファイルの送信能力はテキストと別に確認します
-（[LINEのメディア暗号化の制限](https://help.line.me/line/smartphone?contentId=50000087&lang=ja)）。
-キーの欠落や通信失敗で暗号化から平文へ自動的に切り替えることはありません。
+送信には対応している限りLetter Sealing（エンドツーエンド暗号化、E2EE）を使います。
+LINEが非対応と明示した場合は、確認なしでHTTPS/TLSによる送信を行います。
+転送中のデータは暗号化されますが、LINEは内容を読めます。非E2EE送信を防ぐには `--require-e2ee` を指定します。
+ファイルの送信能力はテキストと別に確認し、キーの欠落や通信失敗でE2EEを無効にすることはありません。
+[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)で、通信経路の暗号化とLetter Sealingの違いを確認できます。
 
 [送信と暗号化](docs/CLI.ja.md#send-messages-and-files)・
 [セッションの保存](docs/CLI.ja.md#where-your-session-is-stored)を参照してください。
@@ -187,7 +187,7 @@ line watch --json > events.ndjson
 - 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めますが、
   全履歴は保証しません。閲覧しても既読にはならず、古い暗号化メッセージの一部は読めない場合があります。
 - ファイル送信とメディアのダウンロードは最大20 MiBです。`--file` は元のバイト列を保持し、通常のファイルとして表示されます。
-  暗号化した画像メッセージの送信は無効です。平文画像には明示的な送信能力と同意が必要です。
+  暗号化した画像メッセージの送信は無効です。非E2EE画像にはLINEの明示的な送信能力が必要です。
   動画・音声の専用送信、スタンプ送信、外部メディアURLのダウンロードは非対応です。
 - LINE CLIはLINEのChrome形式のプロトコルを使用します。サーバー側の変更によって
   互換性に影響が出る場合があり、一部の処理にはより幅広い実環境での検証が必要です。

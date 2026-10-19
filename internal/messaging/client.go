@@ -277,7 +277,7 @@ type SendOptions struct {
 
 func (o SendOptions) checkPlaintext(plain bool, item string) error {
 	if plain && !o.AllowPlaintext {
-		return fault.New("encryption_required", "preparation", fmt.Sprintf("This chat doesn't support end-to-end encryption for this %s. Nothing was sent.\nTo send it anyway, add --allow-plaintext. LINE can read the %s.", item, item), nil)
+		return fault.New("encryption_required", "preparation", fmt.Sprintf("This chat doesn't support end-to-end encryption for this %s. Nothing was sent.\nThis send requires E2EE. Use the default send policy to allow HTTPS/TLS delivery (LINE can read the %s).", item, item), nil)
 	}
 	return nil
 }

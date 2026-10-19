@@ -35,7 +35,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	var cursor string
 	var text string
 	var stdin bool
-	var allowPlaintext bool
+	var allowNonE2EE, requireE2EE bool
 	var replyTo string
 	var filePath, imagePath string
 	var preparedImage *messaging.PreparedImage
@@ -52,7 +52,9 @@ func (a *App) messageCommand(command string, args []string) error {
 		fs.BoolVar(&pageMode, "page", false, "return a JSON history page with continuation cursor (requires --json)")
 		fs.StringVar(&cursor, "cursor", "", "continue a history page (requires --page --json)")
 	} else {
-		fs.BoolVar(&allowPlaintext, "allow-plaintext", false, "allow sending without end-to-end encryption (otherwise ask in a terminal; LINE can read it)")
+		fs.BoolVar(&requireE2EE, "require-e2ee", false, "send only with Letter Sealing; stop if end-to-end encryption is unavailable")
+		fs.BoolVar(&allowNonE2EE, "allow-non-e2ee", true, "compatibility option: allow HTTPS/TLS delivery when LINE explicitly reports no E2EE support (LINE can read that content)")
+		fs.BoolVar(&allowNonE2EE, "allow-plaintext", true, "compatibility alias for --allow-non-e2ee; --require-e2ee takes precedence")
 		fs.StringVar(&mentionsJSON, "mentions", "", "explicit JSON mention array: [{\"start\":0,\"end\":5,\"mid\":\"USER_MID\"}] (UTF-16 offsets; text/stdin only)")
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
@@ -271,43 +273,15 @@ func (a *App) messageCommand(command string, args []string) error {
 		return err
 	}
 	if command == "send" {
-		options := messaging.SendOptions{AllowPlaintext: allowPlaintext}
-		send := func() (*messaging.SendResult, error) {
-			if preparedImage != nil {
-				return client.SendImageWithOptionsContext(a.loginContext(), chat, *preparedImage, replyTo, options)
-			} else if attachment != nil {
-				return client.SendFileWithOptionsContext(a.loginContext(), chat, *attachment, replyTo, options)
-			}
-			return client.SendMentionsWithOptionsContext(a.loginContext(), chat, text, replyTo, mentions, options)
-		}
-		result, err := send()
-		if guided && !allowPlaintext && canConfirmPlaintext(err) {
-			// Preparation stopped before any remote mutation. Release the lock
-			// for consent, then reload the client and repeat capability checks.
-			if err := a.rememberAccount(); err != nil {
-				return err
-			}
-			unlock()
-			unlock = nil
-			item := "message"
-			if preparedImage != nil {
-				item = "image"
-			} else if attachment != nil {
-				item = "file"
-			}
-			if err := a.confirmPlaintext(item); err != nil {
-				return err
-			}
-			unlock, err = a.lock()
-			if err != nil {
-				return err
-			}
-			client, err = messaging.New(a.Manager)
-			if err != nil {
-				return err
-			}
-			options.AllowPlaintext = true
-			result, err = send()
+		options := messaging.SendOptions{AllowPlaintext: !requireE2EE && allowNonE2EE}
+		var result *messaging.SendResult
+		switch {
+		case preparedImage != nil:
+			result, err = client.SendImageWithOptionsContext(a.loginContext(), chat, *preparedImage, replyTo, options)
+		case attachment != nil:
+			result, err = client.SendFileWithOptionsContext(a.loginContext(), chat, *attachment, replyTo, options)
+		default:
+			result, err = client.SendMentionsWithOptionsContext(a.loginContext(), chat, text, replyTo, mentions, options)
 		}
 		if err != nil {
 			return err
@@ -318,7 +292,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		}
 		mode := "end-to-end encrypted"
 		if !result.Encrypted {
-			mode = "not end-to-end encrypted"
+			mode = "transport encrypted (no E2EE)"
 		}
 		if *showIDs && result.GroupKeyRegistered {
 			mode += "; new group key registered"

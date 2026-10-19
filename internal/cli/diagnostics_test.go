@@ -44,7 +44,7 @@ func TestSendDiagnosticSurvivesSessionAndMachineWrapping(t *testing.T) {
 		store := &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 		a.Manager.Store = store
 		a.Manager.NewClient = func(string) session.API { return f }
-		err := a.Run([]string{"--error-format=json", "send", "id:c-group", "--allow-plaintext", "--text", "synthetic", "--json"})
+		err := a.Run([]string{"--error-format=json", "send", "id:c-group", "--allow-non-e2ee", "--text", "synthetic", "--json"})
 		d := machineDetail(t, err)
 		if d.Code != "remote_failed" || d.Stage != "send" || d.Diagnostic == nil || d.Diagnostic.Kind != tc.kind || d.Mutation == nil || d.Mutation.Outcome != fault.Unknown || !d.Mutation.Attempted || calls != 1 || out.Len() != 0 {
 			t.Fatalf("incorrect send result: %+v; calls %d", d, calls)

@@ -1,7 +1,7 @@
 # Security model and validation
 
 Contributor reference for Letter Sealing boundaries and recorded security work.
-For sending, plaintext consent, and user-visible restrictions, use the
+For sending, encryption policy, and user-visible restrictions, use the
 [send guide](CLI.md#send-messages-and-files). Storage format and refresh details
 are in [SESSION.md](SESSION.md); user-facing changes belong in the
 [changelog](../CHANGELOG.md).
@@ -15,11 +15,12 @@ are in [SESSION.md](SESSION.md); user-facing changes belong in the
 Login and message encryption reuse the LINE protocol and crypto runtime inherited
 from the upstream project.
 
-[LINE Help](https://help.line.me/line/ios/?contentId=50000087) describes Letter Sealing
-as enabled by default with no off switch, while media/file encryption can depend
-on version and specifications. These platform limits do not establish this
-client's media interoperability. Per-command plaintext consent does not change
-LINE account settings; the capability checks below still apply.
+[LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)
+distinguishes TLS transport encryption from Letter Sealing (E2EE) and documents
+media E2EE in modern official clients. This does not establish this CLI's media
+interoperability. Non-E2EE sends still use HTTPS/TLS, but LINE can read their
+content. Automatic non-E2EE delivery does not disable TLS or change LINE account
+settings; the capability checks below still apply.
 
 ### Login and keys
 
@@ -36,8 +37,8 @@ are runtime dependencies, even though some functions are invoked indirectly.
 `internal/messaging/client.go` and `keys.go` negotiate peer keys, restore historical
 keys, and register group keys only during an explicit send with complete membership.
 Missing keys, network errors, and ambiguous membership stop the send.
-The [send policy](#send-policy-and-attachment-changes) below defines plaintext
-consent and separate file/image capability checks.
+The [send policy](#send-policy-and-attachment-changes) below defines automatic
+non-E2EE delivery, strict mode, and separate file/image capability checks.
 
 History resolves the sender/receiver key IDs in each encrypted message. It does
 not mark messages read or register group keys. Missing historical device keys can
@@ -64,9 +65,9 @@ revisions and environments; they do not replace the next release's CI gates.
 
 | Path | Current restriction and validation |
 | --- | --- |
-| Text | Encryption required by default; one authorized encrypted group send/readback succeeded. |
-| Generic files | Explicit file capability required. Plaintext needs per-send consent. Synthetic encrypted roundtrip passed; live encrypted delivery remains unverified. Plaintext roundtrips succeeded in the authorized group and direct chat. |
-| Native images | Encrypted sending disabled before remote mutations. Plaintext requires explicit capability and consent; native-image live interoperability remains unverified. |
+| Text | E2EE preferred; explicit unavailability permits HTTPS/TLS delivery unless strict mode is requested. One authorized encrypted group send/readback succeeded. |
+| Generic files | Explicit file capability required. Explicit non-E2EE capability permits automatic HTTPS/TLS delivery. Synthetic encrypted roundtrip passed; live encrypted delivery remains unverified. Plaintext roundtrips succeeded in the authorized group and direct chat. |
+| Native images | Encrypted sending disabled before remote mutations. Non-E2EE delivery requires explicit capability; native-image live interoperability remains unverified. |
 
 ### Send policy and attachment changes
 
@@ -76,23 +77,24 @@ revisions and environments; they do not replace the next release's CI gates.
 - Encrypted native image sending is disabled before uploads or key registration:
   the existing image/preview representation reuses an AES-CTR encryption stream.
   Generic encrypted `--file` is available only with an explicit encrypted-file
-  media capability. Plaintext-only file capability requires per-send consent.
-- All sends require encryption by default. An affirmative terminal confirmation
-  or per-command `--allow-plaintext` permits plaintext only after an explicit
-  account/server capability signal. Scripts, JSON output/errors, and `--stdin`
-  never prompt. HTTPS still protects
-  the connection, but LINE can read this content. The option does not suppress
-  key validation, transport errors, or the encrypted-image restriction.
+  media capability. Explicit non-E2EE capability permits HTTPS/TLS delivery.
+- CLI sends prefer Letter Sealing and automatically permit non-E2EE delivery
+  only after an explicit account/server capability signal. `--require-e2ee`
+  blocks that mode before remote actions and takes precedence over compatibility
+  allow flags. Missing keys, transport failures, and the encrypted-image
+  restriction still stop sends. HTTPS/TLS protects non-E2EE transfers, but LINE
+  can read their content. Human receipts identify the mode; JSON reports
+  `encrypted: false` without extra output or prompts.
+- The messaging API's zero-value `SendOptions` still requires E2EE. The CLI
+  explicitly selects its automatic policy; library callers must choose theirs.
 
-Interactive confirmation occurs only after preparation stops with
-`encryption_required`, before any sequence reservation or remote mutation step.
-The credential lock is released during the prompt. On acceptance, the account
-identity is checked and a fresh messaging client repeats capability validation.
-Declining, incomplete input, and cancellation do not send anything. Sends,
-uploads, and group-key registrations are never replayed to obtain consent.
-Validation on 2026-10-19: synthetic terminal/script consent tests, the complete
-CLI/protocol race suite, go vet, Staticcheck, and the native build/help check
-passed. This UX change required no live sends.
+There is no encryption confirmation or consent-based restart. Capability and key
+validation run under the normal session lock. Sends, uploads, and group-key
+registrations are attempted once, with no automatic mutation retry.
+The earlier consent flow was synthetically validated on 2026-10-19; those recorded
+checks do not validate this replacement policy. For this change, the native build,
+help output, and `go vet` passed; updated regression tests have not been run.
+No live sends were performed.
 
 ### Protocol evidence
 

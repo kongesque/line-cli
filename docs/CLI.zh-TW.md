@@ -308,36 +308,29 @@ line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
 `--text`、`--stdin`、`--file`、`--image` 必須擇一使用。文字不能為空，長度上限為 10,000 個 UTF-16 單位。
 檔案最大為 20 MiB。透過 `--file` 傳送的圖片、影片與音訊會以一般檔案呈現，並保留原始位元組。
 
-**加密與同意：** 傳送預設需要 Letter Sealing。只有 LINE 明確回報不支援加密時，
-互動式終端機才會在傳送 LINE 能讀取的內容前詢問：
+**加密：** 傳送會優先使用 Letter Sealing。只有 LINE 明確回報不支援 E2EE 時，才會直接透過 HTTPS/TLS 傳送，不再詢問。
+傳輸仍有加密，但 LINE 可讀取非 E2EE 內容。指令稿、`--json`、`--error-format=json` 與 `--stdin` 也採用此規則，且不會詢問。
 
-```text
-This chat sends files without end-to-end encryption. LINE can read the file.
-Send this file? [y/N]:
-```
-
-輸入 `y` 或 `yes` 只允許本次傳送，其他回答都會取消。提示會區分訊息、檔案或圖片。
-等待輸入時會釋放工作階段鎖定，之後重新檢查帳號與傳送能力。
-
-指令稿、`--json`、`--error-format=json` 與 `--stdin` 不會詢問。需要明文傳送但未明確同意時，
-會在遠端變更前以 `encryption_required` 停止。明文仍經 HTTPS 傳輸，但 LINE 可讀取內容；若接受，僅對該指令允許明文：
+若只接受 Letter Sealing，請使用：
 
 ```sh
-line send CHAT_ID --file ./report.pdf --allow-plaintext --json
+line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-`--allow-plaintext` 在支援時仍會使用加密。[LINE 官方說明](https://help.line.me/line/smartphone?contentId=50000087&lang=zh-Hant)
-指出媒體與檔案加密會受版本及使用環境影響。CLI 會分開檢查檔案能力；文字加密不代表檔案也能加密。能力資訊缺漏或無效、缺少金鑰、成員資料不完整及傳輸錯誤，
-都不會允許降級成明文。只有明確執行群組傳送，且掌握所有目前成員時，才能註冊新群組金鑰。
+不支援時會在遠端變更前以 `encryption_required` 停止。`--allow-non-e2ee` 與 `--allow-plaintext` 保留作為相容選項
+（預設 `true`；設為 `false` 代表要求 E2EE），`--require-e2ee` 優先。
+[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)說明 TLS、Letter Sealing 及新版官方用戶端的媒體 E2EE 支援；本 CLI 的媒體互通性仍須另外驗證。
+檔案能力與文字分開檢查。能力資訊缺漏或無效、缺少金鑰、成員資料不完整及傳輸錯誤，都不會允許停用 E2EE。
+只有明確執行群組傳送，且掌握所有目前成員時，才能註冊新群組金鑰。
 
 **原生圖片：** 完整圖片與預覽會重複使用加密串流，因此目前停用加密的 `--image` 傳送。
-系統會在上傳、註冊群組金鑰或建立訊息前停止，`--allow-plaintext` 也無法繞過此限制。
-可用 `--file` 將原圖當作一般檔案傳送，但仍須遵守上述檔案能力與同意規則。
+系統會在上傳、註冊群組金鑰或建立訊息前停止，自動採用非 E2EE 傳送也無法繞過此限制。
+可用 `--file` 將原圖當作一般檔案傳送，但仍須遵守上述檔案能力規則。
 
-只有 LINE 明確允許明文圖片，且你接受 LINE 能讀取圖片時，才使用：
+只有 LINE 明確支援非 E2EE 圖片時才能使用下列指令；傳輸有 HTTPS/TLS 保護，但 LINE 可讀取圖片：
 
 ```sh
-line send CHAT_ID --image ./screenshot.png --allow-plaintext --json
+line send CHAT_ID --image ./screenshot.png --json
 ```
 
 `--image` 接受實際 JPEG 或靜態 PNG 資料，上限為 20 MiB、4,000 萬像素，單邊不超過 16384 像素。
@@ -347,7 +340,8 @@ line send CHAT_ID --image ./screenshot.png --allow-plaintext --json
 詳見[協定證據](protocol/endpoints/image-send.md)。
 
 `--json` 顯示訊息 ID、加密狀態、群組金鑰註冊狀態與請求序號。
-一般傳送結果會顯示 `end-to-end encrypted` 或 `not end-to-end encrypted`。
+一般傳送結果會顯示 `end-to-end encrypted` 或 `transport encrypted (no E2EE)`。
+傳送結果中的 `encrypted: false` 表示未使用 Letter Sealing，仍有 HTTPS/TLS 傳輸加密。
 
 > [!CAUTION]
 > 每次傳送、上傳或其他遠端變更都只嘗試一次。明文訊息可能在上傳失敗前就已建立，
@@ -797,8 +791,8 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 | 症狀 | 下一步 |
 | --- | --- |
 | 不認得指南中的選項 | 執行 `line version` 與 `line COMMAND --help`，比對該發行標籤的指南。用 `line update --check` 檢查更新。 |
-| `encryption_required` | LINE 回報此類內容只支援明文。在終端機同意單次傳送，或接受 LINE 能讀取內容後使用 `--allow-plaintext`。 |
-| `encrypted_image_unavailable` | 目前停用加密圖片。可用 `--file` 傳送原始位元組，但仍須遵守能力與同意規則。 |
+| `encryption_required` | 不支援 E2EE，已由嚴格模式阻止傳送。移除 `--require-e2ee`（或設為 `false` 的相容選項）即可透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。 |
+| `encrypted_image_unavailable` | 目前停用加密圖片。可用 `--file` 傳送原始位元組，但仍須遵守能力規則。 |
 | SSH 或服務無法存取儲存 | 以相同使用者與環境執行 `line auth status --check --json`，查看[服務診斷](#diagnose-a-headless-service)。不要刪除工作階段檔案來繞過錯誤。 |
 | 傳送失敗或最近歷史中找不到 | 重做前先查看 LINE。用[結構化錯誤](#structured-errors)區分已確認與不明結果；最近歷史中沒有不代表未送達。 |
 | 歷史頁面較短或部分無法解密 | 除非 `exhausted` 為真，否則可繼續使用游標。請檢查各訊息狀態與結束代碼；舊歷史或金鑰可能已無法取得。 |
@@ -855,7 +849,7 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 - 每位作業系統使用者只能儲存一個 LINE 帳號。
 - QR 登入仍屬實驗性功能，需要可用的 Letter Sealing 金鑰。
 - 每頁最多 100 則；使用 `--page --json` 與游標可讀取仍可取得的較舊歷史。查找操作目標最多 10 頁、30 秒。
-- 一般檔案須檢查能力；只支援明文時需要同意。加密的原生圖片已停用；明文 JPEG/PNG 圖片須有明確能力與同意。不支援原生影音、動態圖片、圖片回覆及貼圖傳送。
+- 一般檔案須檢查能力；非 E2EE 傳送仍經 HTTPS/TLS 加密。加密的原生圖片已停用；非 E2EE JPEG/PNG 圖片須有明確能力。不支援原生影音、動態圖片、圖片回覆及貼圖傳送。
 - 支援下載最大 20 MiB 的圖片、影片、音訊與檔案，不支援外部媒體網址。
 - 讀取訊息不會標示已讀。
 - 發行版執行檔尚未經過數位簽署或公證。

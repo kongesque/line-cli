@@ -10,22 +10,26 @@ and the documentation at your installed version's tag.
 
 - Stop commands, watchers, and services that restart watchers before upgrading.
   Running old and new versions concurrently is unsupported.
-- Sends require Letter Sealing by default. When LINE explicitly reports
-  plaintext-only support, interactive terminals ask for per-send consent.
-  Scripts, `--json`, `--error-format=json`, and `--stdin` never prompt; use
-  `--allow-plaintext` only if you accept that LINE can read that content.
+- CLI sends prefer Letter Sealing. When LINE explicitly reports no E2EE support,
+  sends proceed over HTTPS/TLS without confirmation; LINE can read this content.
+  Use `--require-e2ee` to block non-E2EE sends, including in scripts and JSON mode.
+
 - File media capability is checked independently of text encryption. A chat
   with encrypted text may allow only plaintext files. Unsupported or unknown
   capabilities never justify bypassing the check.
 - Encrypted native image sending is disabled because image and preview reuse
-  an encryption stream. `--allow-plaintext` cannot override this restriction.
+  an encryption stream. Automatic non-E2EE delivery cannot override this restriction.
   Generic `--file` preserves the original bytes, subject to file capability
-  and consent. Plaintext native images require explicit capability and consent.
+  checks. Non-E2EE native images require explicit capability.
 - Source builds require the reviewed **Go 1.27.2** compiler; module, build guard,
   and CI/release pins agree on this version.
 
 ### Added
 
+- Add `send --require-e2ee` for strict encryption policy. Keep `--allow-non-e2ee`
+  and `--allow-plaintext` as compatibility options (default `true`; `false`
+  requires E2EE). Strict mode takes precedence. Non-E2EE human receipts say
+  `transport encrypted (no E2EE)`; JSON continues to report `encrypted: false`.
 - Command deadlines and cancellation across core commands with `--timeout`.
 - Opt-in structured errors using global `--error-format=json`, with individual
   mutation-step outcomes and sanitized request diagnostics.
@@ -53,7 +57,7 @@ and the documentation at your installed version's tag.
 ### Documentation and packaging
 
 - Align English, Thai, Japanese, and Traditional Chinese guides on encryption
-  consent, image restrictions, pagination, build requirements, and navigation.
+  policy, image restrictions, pagination, build requirements, and navigation.
 - Add troubleshooting tables and a maintainer release checklist.
 - Consolidate scattered references into `docs/JSON.md`, `docs/SESSION.md`,
   `docs/SECURITY.md`, and `docs/DEVELOPMENT.md`; remove their superseded copies.

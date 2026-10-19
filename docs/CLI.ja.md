@@ -318,39 +318,30 @@ line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
 上限はUTF-16で10,000コード単位です。ファイルは20 MiBまでです。`--file` で送る画像・動画・音声は
 通常のファイルとして表示され、元のバイト列を保持します。
 
-**暗号化と同意：** 送信には既定でLetter Sealingが必要です。LINEが暗号化非対応と明示した場合、
-対話式ターミナルでは、LINEが読める内容を送信する前に確認します。
+**暗号化：** 送信はLetter Sealingを優先します。LINEがE2EE非対応と明示した場合は、確認なしでHTTPS/TLSによる送信を行います。
+転送中のデータは暗号化されますが、LINEは非E2EEの内容を読めます。スクリプト、`--json`、`--error-format=json`、`--stdin` でも確認しません。
 
-```text
-This chat sends files without end-to-end encryption. LINE can read the file.
-Send this file? [y/N]:
-```
-
-`y` または `yes` で今回の送信だけを許可し、それ以外はキャンセルします。確認には本文・ファイル・画像の
-区別が表示されます。入力待ちの間はセッションロックを解放し、その後にアカウントと送信能力を再確認します。
-
-スクリプト、`--json`、`--error-format=json`、`--stdin` では確認しません。平文送信が必要で同意がなければ、
-リモート変更前に `encryption_required` で停止します。平文でもHTTPSで転送しますが、LINEは内容を読めます。
-同意する場合だけ、そのコマンドに平文送信を許可してください。
+Letter Sealingで送信できる場合だけ送るには、次を指定します。
 
 ```sh
-line send CHAT_ID --file ./report.pdf --allow-plaintext --json
+line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-`--allow-plaintext` を付けても、対応していれば暗号化します。[LINEの公式説明](https://help.line.me/line/smartphone?contentId=50000087&lang=ja)
-では、メディアやファイルの暗号化はバージョンや環境に依存します。CLIはファイルの送信能力を別に確認するため、
-テキストを暗号化できても、ファイルを暗号化できるとは限りません。送信能力の欠落・不正、鍵の不足、
-不完全なメンバー情報、通信障害を理由に平文へ切り替えることはありません。新しいグループ鍵の登録は、
-明示的な送信で現在の全メンバーを把握できている場合に限ります。
+非対応の場合はリモート変更前に `encryption_required` で停止します。`--allow-non-e2ee` と `--allow-plaintext` は互換用オプションです
+（既定は `true`、`false` ならE2EEが必須）。`--require-e2ee` が優先されます。
+[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)はTLS、Letter Sealing、新しい公式クライアントのメディアE2EE対応を説明しています。
+本CLIのメディア相互運用性は別途検証が必要です。ファイルの送信能力はテキストと別に確認します。
+送信能力の欠落・不正、鍵の不足、不完全なメンバー情報、通信障害を理由にE2EEを無効にすることはありません。
+新しいグループ鍵の登録は、明示的な送信で現在の全メンバーを把握できている場合に限ります。
 
 **画像メッセージ：** 本体とプレビューで暗号化ストリームが再利用されるため、暗号化した `--image` 送信は
-無効です。アップロード、グループ鍵登録、メッセージ作成の前に停止し、`--allow-plaintext` でも回避できません。
-元の画像を一般ファイルとして送るには `--file` を使います。上記のファイル送信能力と同意の条件が適用されます。
+無効です。アップロード、グループ鍵登録、メッセージ作成の前に停止し、非E2EEへの自動切り替えでも回避できません。
+元の画像を一般ファイルとして送るには `--file` を使います。上記のファイル送信能力の条件が適用されます。
 
-LINEが平文の画像送信を明示的に許可し、LINEが画像を読めることに同意する場合だけ、次を使ってください。
+LINEが非E2EEの画像送信に対応すると明示した場合は、次を使います。HTTPS/TLSで転送しますが、LINEは画像を読めます。
 
 ```sh
-line send CHAT_ID --image ./screenshot.png --allow-plaintext --json
+line send CHAT_ID --image ./screenshot.png --json
 ```
 
 `--image` は実際のJPEGまたは静止PNGデータを受け付けます。上限は20 MiB、4,000万画素、各辺16384画素です。
@@ -360,7 +351,8 @@ line send CHAT_ID --image ./screenshot.png --allow-plaintext --json
 未検証です。[プロトコルの根拠](protocol/endpoints/image-send.md)を参照してください。
 
 `--json` にはメッセージID、暗号化状態、グループ鍵登録、リクエスト連番を出力します。
-通常の送信結果には `end-to-end encrypted` または `not end-to-end encrypted` と表示します。
+通常の送信結果には `end-to-end encrypted` または `transport encrypted (no E2EE)` と表示します。
+送信結果の `encrypted: false` はLetter Sealing未使用を示し、HTTPS/TLSによる通信の暗号化は引き続き有効です。
 
 > [!CAUTION]
 > 送信、アップロード、その他のリモート変更は各1回だけ試行します。平文メッセージはアップロード失敗前に
@@ -832,8 +824,8 @@ Linuxでは、確認したセッションのパスを `$HOME/.config/line-cli` �
 | 症状 | 次に確認すること |
 | --- | --- |
 | ガイドのオプションが不明と表示される | `line version` と `line COMMAND --help` を実行し、該当タグのガイドと比較します。更新確認は `line update --check` です。 |
-| `encryption_required` | LINEはこの内容の平文送信のみを許可しています。ターミナルで今回だけ同意するか、LINEが読めることを受け入れる場合に `--allow-plaintext` を使います。 |
-| `encrypted_image_unavailable` | 暗号化画像は無効です。元のバイト列には `--file` を使いますが、送信能力と同意の条件は適用されます。 |
+| `encryption_required` | E2EE非対応のため厳格モードで停止しました。`--require-e2ee`（または `false` にした互換オプション）を外すとHTTPS/TLSで送信しますが、LINEは内容を読めます。 |
+| `encrypted_image_unavailable` | 暗号化画像は無効です。元のバイト列には `--file` を使いますが、送信能力の条件は適用されます。 |
 | SSHやサービスでストレージにアクセスできない | 同じユーザーと環境で `line auth status --check --json` を実行し、[サービスの診断](#diagnose-a-headless-service)を確認します。回避のためにセッションファイルを削除しないでください。 |
 | 送信失敗、または最近の履歴に見つからない | 再実行前にLINEを確認します。[構造化エラー](#structured-errors)で確認済みか不明かを判断します。最近の履歴にないことは未配信の証拠ではありません。 |
 | 履歴ページが短い、または一部を復号できない | `exhausted` が真になるまでカーソルで続行できます。各状態と終了コードを確認してください。古い履歴や鍵は取得できない場合があります。 |
@@ -891,7 +883,7 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 - 保存できるLINEアカウントはOSユーザーごとに1つです。
 - QRログインは実験的な機能で、利用可能なLetter Sealingキーが必要です。
 - 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めます。操作対象の検索は最大10ページ、30秒です。
-- 一般ファイルは送信能力を確認し、平文のみの場合は同意が必要です。暗号化画像は無効です。平文JPEG/PNG画像には明示的な送信能力と同意が必要です。動画・音声の専用送信、アニメーション画像、画像返信、スタンプ送信は非対応です。
+- 一般ファイルは送信能力を確認し、非E2EEの場合もHTTPS/TLSで送信します。暗号化画像は無効です。非E2EEのJPEG/PNG画像には明示的な送信能力が必要です。動画・音声の専用送信、アニメーション画像、画像返信、スタンプ送信は非対応です。
 - 画像・動画・音声・ファイルのダウンロードは20 MiBまで。外部メディアURLには対応しません。
 - メッセージを読んでも既読にはなりません。
 - リリース版バイナリは署名・公証されていません。

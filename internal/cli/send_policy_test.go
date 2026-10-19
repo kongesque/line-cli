@@ -10,13 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
 
-func TestCLIRequiresPlaintextConsent(t *testing.T) {
+func TestCLIRequiresE2EEWhenRequested(t *testing.T) {
 	for _, jsonMode := range []bool{false, true} {
 		for _, input := range []string{"text", "stdin", "file", "image"} {
 			t.Run(input+map[bool]string{false: "/human", true: "/json"}[jsonMode], func(t *testing.T) {
@@ -26,7 +25,7 @@ func TestCLIRequiresPlaintextConsent(t *testing.T) {
 				a.Manager.Store = store
 				a.Manager.NewClient = func(string) session.API { return api }
 				a.In = strings.NewReader("synthetic")
-				args := []string{"--error-format=json", "send", "id:u-peer"}
+				args := []string{"--error-format=json", "send", "id:u-peer", "--require-e2ee"}
 				switch input {
 				case "text":
 					args = append(args, "--text", "synthetic")
@@ -40,13 +39,90 @@ func TestCLIRequiresPlaintextConsent(t *testing.T) {
 				}
 				err := a.Run(args)
 				if err == nil || api.sent != nil || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 {
-					t.Fatal("send without consent changed state")
+					t.Fatal("strict E2EE send changed state")
 				}
 				encoded, _ := json.Marshal(machineDetail(t, err))
 				if !strings.Contains(string(encoded), `"code":"encryption_required"`) || !strings.Contains(strings.ToLower(err.Error()), "nothing was sent") {
-					t.Fatal("missing safe consent error")
+					t.Fatal("missing safe encryption policy error")
 				}
 			})
+		}
+	}
+}
+
+func TestNonE2EEFlagAndLegacyAlias(t *testing.T) {
+	for _, flagName := range []string{"--allow-non-e2ee", "--allow-plaintext"} {
+		for _, input := range []string{"text", "stdin", "file", "image"} {
+			for _, value := range []string{"true", "false"} {
+				t.Run(flagName+"/"+input+"/"+value, func(t *testing.T) {
+					a, api, store, out, diagnostics, _ := consentFixture(t, "unused")
+					store.state.NoE2EE = true
+					args := []string{"--error-format=json", "send", "id:u-peer", flagName + "=" + value, "--json"}
+					switch input {
+					case "text":
+						args = append(args, "--text", "synthetic")
+					case "stdin":
+						a.In = strings.NewReader("synthetic")
+						args = append(args, "--stdin")
+					case "file":
+						args = append(args, "--file", consentFile(t))
+					case "image":
+						args = append(args, "--image", cliImageFixture(t))
+					}
+					err := a.Run(args)
+					if diagnostics.Len() != 0 {
+						t.Fatal("explicit flag displayed an interactive prompt")
+					}
+					if value == "false" {
+						if err == nil || api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 {
+							t.Fatal("false flag permitted a send or changed state")
+						}
+						if machineDetail(t, err).Code != "encryption_required" || !strings.Contains(err.Error(), "default send policy") || !strings.Contains(err.Error(), "HTTPS") {
+							t.Fatal("missing strict-policy refusal or default-policy guidance")
+						}
+						return
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantUploads := 0
+					if input == "file" || input == "image" {
+						wantUploads = 1
+					}
+					var result messaging.SendResult
+					if json.Unmarshal(out.Bytes(), &result) != nil || result.Encrypted || result.ID != "message-id" ||
+						api.sends != 1 || api.uploads != wantUploads || result.RequestSequence == 0 || result.RequestSequence != store.state.LastReqSeq {
+						t.Fatal("flag did not preserve a single send and its non-E2EE receipt")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestNonE2EEFlagsDoNotBypassMissingKeys(t *testing.T) {
+	for _, flagName := range []string{"--allow-non-e2ee", "--allow-plaintext"} {
+		t.Run(flagName, func(t *testing.T) {
+			a, api, store, out, diagnostics, _ := consentFixture(t, "unused")
+			store.state.NoE2EE = false
+			store.state.ExportedKeys = nil
+			err := a.Run([]string{"send", "id:u-peer", flagName, "--text", "synthetic", "--json"})
+			if err == nil || api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
+				t.Fatal("flag bypassed missing keys or prompted for a downgrade")
+			}
+		})
+	}
+}
+
+func TestSendHelpDescribesNonE2EETransport(t *testing.T) {
+	a, _, diagnostics := testApp(nil)
+	a.Lock = func() (func(), error) { t.Fatal("help accessed session"); return nil, nil }
+	if err := a.Run([]string{"send", "--help"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"-require-e2ee", "-allow-non-e2ee", "HTTPS/TLS", "end-to-end encryption", "LINE can read", "-allow-plaintext", "compatibility alias"} {
+		if !strings.Contains(diagnostics.String(), text) {
+			t.Fatalf("help is missing %q", text)
 		}
 	}
 }
@@ -82,45 +158,27 @@ func consentFile(t *testing.T) string {
 	return path
 }
 
-func TestInteractiveFileConsentBeforeMutations(t *testing.T) {
-	for _, tc := range []struct {
-		name, answer string
-		accepted     bool
-	}{
-		{"yes", "y\n", true}, {"uppercase", "YES\n", true}, {"no", "n\n", false},
-		{"default", "\n", false}, {"invalid", "maybe\n", false}, {"eof", "", false}, {"unfinished", "y", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			answer := tc.answer
-			a, api, store, out, diagnostics, locked := consentFixture(t, answer)
-			a.In = checkedInput{t: t, locked: locked, Reader: strings.NewReader(answer), onRead: func() {
-				if api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 {
-					t.Fatal("consent did not precede mutations")
-				}
-			}}
-			err := a.Run([]string{"send", "id:u-peer", "--file", consentFile(t)})
-			if !tc.accepted {
-				if !errors.Is(err, ErrCancelled) || api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 {
-					t.Fatal("declined/unfinished consent changed remote state", err)
-				}
-			} else if err != nil || api.sends != 1 || api.uploads != 1 || store.state.LastReqSeq == 0 || string(api.data) != "synthetic file\n" || !strings.Contains(out.String(), "not end-to-end encrypted") {
-				t.Fatal("confirmed file did not send once", err)
-			}
-			if !strings.Contains(diagnostics.String(), "Send this file? [y/N]") || strings.Count(diagnostics.String(), "Send this file?") != 1 || *locked {
-				t.Fatal("incorrect prompt or lock retained")
-			}
-		})
+func TestInteractiveFileSendsWithoutConfirmation(t *testing.T) {
+	a, api, store, out, diagnostics, locked := consentFixture(t, "")
+	a.In = checkedInput{t: t, locked: locked, Reader: strings.NewReader(""), onRead: func() {
+		t.Fatal("explicit send asked for encryption confirmation")
+	}}
+	if err := a.Run([]string{"send", "id:u-peer", "--file", consentFile(t)}); err != nil {
+		t.Fatal(err)
+	}
+	if api.sends != 1 || api.uploads != 1 || store.state.LastReqSeq == 0 || string(api.data) != "synthetic file\n" || !strings.Contains(out.String(), "transport encrypted (no E2EE)") || diagnostics.Len() != 0 || *locked {
+		t.Fatal("default send failed, prompted, or retained lock")
 	}
 }
 
-func TestGuidedMessageConsent(t *testing.T) {
-	a, api, _, diagnostics, _ := guidedApp(t, "/New\n1\nsynthetic\ny\n")
-	if err := a.Run([]string{"send"}); err != nil || api.sends != 1 || api.sent.Text != "synthetic" || !strings.Contains(diagnostics.String(), "Send this message? [y/N]") {
-		t.Fatal("guided consent failed", err)
+func TestGuidedMessageWithoutEncryptionConfirmation(t *testing.T) {
+	a, api, _, diagnostics, _ := guidedApp(t, "/New\n1\nsynthetic\n")
+	if err := a.Run([]string{"send"}); err != nil || api.sends != 1 || api.sent.Text != "synthetic" || strings.Contains(diagnostics.String(), "Send this message?") {
+		t.Fatal("guided send failed", err)
 	}
 }
 
-func TestSendScriptsNeverPromptForPlaintext(t *testing.T) {
+func TestSendScriptsUseAutomaticNonE2EEWithoutPrompt(t *testing.T) {
 	for _, mode := range []string{"noninteractive", "json", "json-errors", "stdin", "flag"} {
 		t.Run(mode, func(t *testing.T) {
 			a, api, store, _, diagnostics, _ := consentFixture(t, "unused")
@@ -140,12 +198,8 @@ func TestSendScriptsNeverPromptForPlaintext(t *testing.T) {
 				args = append(args, "--allow-plaintext")
 			}
 			err := a.Run(args)
-			if mode == "flag" {
-				if err != nil || api.sends != 1 {
-					t.Fatal("explicit flag failed", err)
-				}
-			} else if err == nil || api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 {
-				t.Fatal("script bypassed consent", err)
+			if err != nil || api.sends != 1 || store.state.LastReqSeq == 0 {
+				t.Fatal("default script send failed", err)
 			}
 			if diagnostics.Len() != 0 {
 				t.Fatal("script or flag displayed prompt")
@@ -154,26 +208,24 @@ func TestSendScriptsNeverPromptForPlaintext(t *testing.T) {
 	}
 }
 
-func TestConsentRechecksAccountAndPreparation(t *testing.T) {
+func TestSendStopsOnInvalidPreparation(t *testing.T) {
 	for _, change := range []string{"account", "invalidated", "missing-keys", "cancelled"} {
 		t.Run(change, func(t *testing.T) {
 			a, api, store, out, _, locked := consentFixture(t, "y\n")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			a.Context = ctx
-			a.In = checkedInput{t: t, locked: locked, Reader: strings.NewReader("y\n"), onRead: func() {
-				switch change {
-				case "account":
-					store.state.Generation = "replacement"
-				case "invalidated":
-					store.state.Invalidated = true
-				case "missing-keys":
-					store.state.NoE2EE = false
-					store.state.ExportedKeys = nil
-				case "cancelled":
-					cancel()
-				}
-			}}
+			switch change {
+			case "account":
+				a.promptAccount = &promptAccount{mid: store.state.MID, generation: "previous"}
+			case "invalidated":
+				store.state.Invalidated = true
+			case "missing-keys":
+				store.state.NoE2EE = false
+				store.state.ExportedKeys = nil
+			case "cancelled":
+				cancel()
+			}
 			if err := a.Run([]string{"send", "id:u-peer", "--file", consentFile(t)}); err == nil {
 				t.Fatal("changed preparation allowed send")
 			}
@@ -205,7 +257,7 @@ func TestInteractiveSendDoesNotPromptOrReplayAfterFailures(t *testing.T) {
 				if failure == "upload" {
 					wantUploads = 1
 				}
-				if api.sends != 1 || api.uploads != wantUploads || strings.Count(diagnostics.String(), "Send this file?") != 1 {
+				if api.sends != 1 || api.uploads != wantUploads || diagnostics.Len() != 0 {
 					t.Fatal("mutation was replayed or re-prompted")
 				}
 			} else if api.sends != 0 || api.uploads != 0 || diagnostics.Len() != 0 || store.state.LastReqSeq != 0 {
@@ -215,21 +267,19 @@ func TestInteractiveSendDoesNotPromptOrReplayAfterFailures(t *testing.T) {
 	}
 }
 
-func TestPlaintextConsentCannotResumeRemotePreparation(t *testing.T) {
-	seq := int64(1)
-	for _, tc := range []struct {
-		name string
-		op   fault.Mutation
-	}{
-		{"upload", fault.Mutation{Action: "send", Outcome: fault.NotAttempted, Steps: []fault.Step{{Stage: "attachment_upload", Attempted: true, Outcome: fault.Confirmed}}}},
-		{"registration", fault.Mutation{Action: "send", Outcome: fault.NotAttempted, Steps: []fault.Step{{Stage: "group_key_registration", Attempted: true, Outcome: fault.Unknown}}}},
-		{"sequence", fault.Mutation{Action: "send", Outcome: fault.NotAttempted, RequestSequence: &seq}},
-		{"send", fault.Mutation{Action: "send", Attempted: true, Outcome: fault.Unknown}},
+func TestStrictE2EEOverridesCompatibilityFlags(t *testing.T) {
+	for _, flags := range [][]string{
+		{"--require-e2ee", "--allow-non-e2ee"},
+		{"--allow-non-e2ee", "--require-e2ee"},
+		{"--require-e2ee", "--allow-plaintext"},
+		{"--allow-plaintext", "--require-e2ee"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			err := fault.New("encryption_required", "preparation", "synthetic refusal", &messaging.MutationError{Stage: "preparation", Mutation: tc.op})
-			if canConfirmPlaintext(err) {
-				t.Fatal("consent could replay remote work")
+		t.Run(strings.Join(flags, "/"), func(t *testing.T) {
+			a, api, store, out, diagnostics, _ := consentFixture(t, "")
+			args := append([]string{"send", "id:u-peer", "--text", "synthetic", "--json"}, flags...)
+			err := a.Run(args)
+			if err == nil || machineDetail(t, err).Code != "encryption_required" || api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
+				t.Fatal("compatibility flag bypassed strict encryption or prompted", err)
 			}
 		})
 	}

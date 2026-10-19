@@ -20,10 +20,14 @@ diagnostics go to stderr. Use full chat IDs and keep message IDs as strings.
 | `line --error-format=json COMMAND ... --json` | Existing success/partial stdout contract; one structured error on stderr when the supported command fails. |
 
 `--error-format=json` does not imply `--json`. It disables prompts, as do `--json`
-and `--stdin`. Encryption remains the default; when plaintext is required,
-scripts need per-command `--allow-plaintext`. A nonzero exit can accompany valid
+and `--stdin`. Sends prefer Letter Sealing and automatically use HTTPS/TLS only
+when LINE explicitly reports no E2EE support. Add `--require-e2ee` to block that
+mode before remote actions. A nonzero exit can accompany valid
 partial JSON or a confirmed remote action; inspect statuses and mutation outcomes
 before deciding what to do next.
+
+In send results, `encrypted` reports Letter Sealing: `false` means no E2EE, while
+HTTPS/TLS still encrypts the transfer. LINE can read non-E2EE content.
 
 Pagination and cursors follow the [history contract](CLI.md#read-messages).
 Other command fields and exit codes are listed in the
@@ -229,7 +233,7 @@ reports returned IDs before decryption without message text or encrypted data.
 | `unsupported_content` | Requested download content is unsupported. |
 | `decryption_failed` | History contains failed decryptions, or an attachment could not be decrypted/authenticated. |
 | `encryption_failed` | Message encryption/key preparation failed. |
-| `encryption_required` | Explicit plaintext-only capability without per-send consent; no message action attempted. |
+| `encryption_required` | Explicit non-E2EE capability blocked by strict mode; no message action attempted. |
 | `encrypted_image_unavailable` | Encrypted native images disabled; no upload, group-key registration, or send attempted. |
 | `remote_failed` | Remote request failed or a send receipt was missing. |
 | `cancelled` | Cancellation, including a signal. |
@@ -304,9 +308,8 @@ follows message creation, so its failure retains the confirmed message receipt
 just like a generic-file upload. Never infer safe retries from a transport error.
 
 Send policy errors: `encryption_required` means Letter Sealing is unavailable
-and the command did not permit plaintext. Interactive terminal sends offer
-per-command confirmation before remote actions; declining returns `cancelled`.
-Scripts, JSON output/errors, and `--stdin` require `--allow-plaintext` and never
-prompt. `encrypted_image_unavailable` means
+and strict mode (`--require-e2ee` or a legacy allow flag set to `false`) blocked
+the send before remote actions. There is no encryption confirmation prompt in any
+output mode. `encrypted_image_unavailable` means
 native encrypted image sending is disabled until a secure compatible preview
 format is established. Neither error authorizes an automatic resend or downgrade.

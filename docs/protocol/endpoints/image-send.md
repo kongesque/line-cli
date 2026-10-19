@@ -3,8 +3,8 @@
 ## Current CLI status
 
 Encrypted native-image sending is disabled before uploads, group-key registration,
-or message creation. Plaintext images require an explicit plaintext capability
-and affirmative terminal confirmation or per-command `--allow-plaintext`.
+or message creation. Explicit non-E2EE capability permits automatic HTTPS/TLS
+delivery; `--require-e2ee` blocks it before remote actions.
 The encrypted stages below describe the investigated Chrome protocol, not an
 available CLI send path. Native-image live interoperability remains unverified.
 See the [security changes](../../SECURITY.md#security-change-record) and

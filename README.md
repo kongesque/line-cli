@@ -126,8 +126,8 @@ line send       # Choose a recipient and enter your message
 The CLI prompts for missing details in an interactive terminal. Use Ctrl-C to
 cancel, or pass a chat name directly as shown below.
 
-A successful send prints `Sent to … · end-to-end encrypted` (or reports that it
-was not end-to-end encrypted after you explicitly consent to plaintext).
+A successful send prints `Sent to … · end-to-end encrypted` or
+`Sent to … · transport encrypted (no E2EE)`.
 
 ## LINE messaging commands
 
@@ -166,11 +166,13 @@ check LINE before repeating it.
 
 ## Letter Sealing encryption and session security
 
-Sends require Letter Sealing by default. Plaintext requires explicit LINE
-capability evidence and terminal consent or per-command `--allow-plaintext`.
-Scripts never prompt. File capability is checked separately from text
-([LINE's media encryption caveat](https://help.line.me/line/ios/?contentId=50000087));
-missing keys and transport failures never silently downgrade encryption.
+Sends use Letter Sealing (end-to-end encryption, E2EE) whenever available. When
+LINE explicitly reports no E2EE support, the CLI sends over HTTPS/TLS without
+asking for confirmation. The transfer is encrypted, but LINE can read the content.
+Use `--require-e2ee` to block non-E2EE sends. File capability is checked separately
+from text; missing keys and transport failures never trigger a downgrade.
+[LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)
+explains transport encryption and Letter Sealing.
 
 See [sending and encryption](docs/CLI.md#send-messages-and-files) and
 [session storage](docs/CLI.md#where-your-session-is-stored).
@@ -182,7 +184,7 @@ See [sending and encryption](docs/CLI.md#send-messages-and-files) and
   mark messages as read; some older encrypted messages may be unavailable.
 - File sending and media downloads are limited to 20 MiB. `--file` preserves
   original bytes and appears as an ordinary file. Encrypted native image sending
-  is disabled; plaintext images require explicit capability and consent. Native
+  is disabled; non-E2EE images require explicit LINE capability. Native
   audio/video and sticker sends, and external media URL downloads, are unsupported.
 - LINE CLI uses LINE's Chrome-style protocol. Server changes can affect
   compatibility, and some protocol paths need broader live validation.

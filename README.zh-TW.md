@@ -125,8 +125,8 @@ line send       # 選擇收件人並輸入訊息
 在互動式終端機中，CLI 會提示你補齊所需資料。按 Ctrl-C 可取消，
 也能像以下範例一樣直接指定聊天室名稱。
 
-傳送成功後會顯示 `Sent to … · end-to-end encrypted`；若你明確同意明文傳送，
-則會顯示未使用端對端加密。
+傳送成功後會顯示 `Sent to … · end-to-end encrypted`，或
+`Sent to … · transport encrypted (no E2EE)`。
 
 <a id="line-messaging-commands"></a>
 
@@ -169,10 +169,11 @@ line watch --json > events.ndjson
 
 ## Letter Sealing 加密與工作階段安全性
 
-傳送預設要求 Letter Sealing 加密。只有 LINE 明確回報支援明文傳送時，
-才能透過終端機同意或每次指定 `--allow-plaintext` 傳送明文；指令稿不會詢問。
-檔案能力與文字分開檢查（[LINE 的媒體加密限制](https://help.line.me/line/smartphone?contentId=50000087&lang=zh-Hant)）；
-金鑰缺少或傳輸失敗時不會自動降為明文。
+傳送會優先使用 Letter Sealing（端對端加密，E2EE）。只有 LINE 明確回報不支援時，
+才會直接透過 HTTPS/TLS 傳送，不再逐次詢問。傳輸仍有加密，但 LINE 可讀取內容。
+若要禁止非 E2EE 傳送，請加上 `--require-e2ee`。檔案能力與文字分開檢查；
+金鑰缺少或傳輸失敗時不會停用端對端加密。
+[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)說明傳輸加密與 Letter Sealing 的差異。
 
 詳見[傳送與加密](docs/CLI.zh-TW.md#send-messages-and-files)及
 [工作階段儲存](docs/CLI.zh-TW.md#where-your-session-is-stored)。
@@ -182,7 +183,7 @@ line watch --json > events.ndjson
 - 每頁最多 100 則訊息。使用 `--page --json` 與游標可讀取仍可取得的較舊歷史，
   但不保證完整歷史。讀取不會標為已讀；部分較舊的加密訊息可能無法讀取。
 - 檔案傳送與媒體下載上限為 20 MiB。`--file` 保留原始位元組，並顯示為一般檔案。
-  目前停用加密的原生圖片傳送；明文圖片需要明確的傳送能力與同意。
+  目前停用加密的原生圖片傳送；非 E2EE 圖片需要 LINE 明確回報支援。
   不支援原生影音傳送、貼圖傳送及外部媒體 URL 下載。
 - LINE CLI 使用 LINE 的 Chrome 類型協定。伺服器變更可能影響相容性，
   部分協定流程仍需要更廣泛的實際環境驗證。
