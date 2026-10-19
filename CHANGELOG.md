@@ -6,6 +6,8 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
 ### Upgrade notes
 
 - Stop commands, watchers, and services that restart watchers before upgrading.
@@ -71,5 +73,6 @@ and the documentation at your installed version's tag.
 
 For earlier versions, see [GitHub Releases](https://github.com/kongesque/line-cli/releases).
 
-[Unreleased]: https://github.com/kongesque/line-cli/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kongesque/line-cli/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kongesque/line-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kongesque/line-cli/releases/tag/v0.4.0
