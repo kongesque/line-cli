@@ -91,7 +91,7 @@ has been tested for a newly enrolled user's machine.
 
 The credential parser is independently written from the systemd v257 wire
 layout (LGPL-2.1-or-later source provenance is retained in the code). Its IDs and
-layout checks come from the reviewed [Phase 0 experiment](../../scripts/systemd-probe/README.md).
+layout checks come from the reviewed [Phase 0 experiment](https://github.com/kongesque/line-cli/blob/main/scripts/systemd-probe/README.md).
 It performs no TPM sealing or systemd credential cryptography itself.
 
 ## Lifecycle and validation

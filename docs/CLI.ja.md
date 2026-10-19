@@ -2,6 +2,11 @@
 
 [English](CLI.md) | [繁體中文（台灣）](CLI.zh-TW.md) | 日本語 | [ภาษาไทย](CLI.th.md)
 
+`main` のガイドは開発ブランチの説明です。インストール済みリリースについては `line version`、
+`line COMMAND --help` と該当タグのガイドを確認してください。[変更履歴](../CHANGELOG.md)も参照してください。
+
+[はじめに](#get-started) · [日常のコマンド](#daily-commands) · [更新](#updating-line-cli) · [スクリプト](#use-from-scripts) · [アカウント](#account-and-session) · [Linux / ヘッドレス](#linux-servers-and-headless-storage) · [問題の解決](#troubleshooting) · [リファレンス](#reference)
+
 ターミナルから個人のLINEアカウントを使えます。トークの閲覧、メッセージやファイルの送信、
 添付ファイルのダウンロード、新しいイベントの受信に対応しています。
 ターミナルでは対話式の案内に従って操作でき、スクリプトではJSON出力を利用できます。
@@ -248,6 +253,44 @@ line messages CHAT_ID --json
 履歴を読んでも既読にはならず、本文をローカルに保存することもありません。
 元の端末の鍵をLINEから取得できなくなった場合、古い暗号化メッセージの一部は読めないことがあります。
 
+### 履歴ページの JSON
+
+```sh
+line messages CHAT_ID --page --json --limit 50
+line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
+```
+
+通常の表示は作成時刻の古い順、従来の `--json` 配列はサーバーの順序です。
+`--page` には `--json` が必要で、`--cursor` には両方が必要です。1回につき1ページを取得し、
+`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
+`exhausted`、`stop_reason`、任意の `next_cursor` を返します。
+IDは文字列のまま、新しいページは数値IDの降順です。カーソルは同じトークへ
+そのまま渡してください。正確な配信時刻を保持し、作成時刻で代用しません。
+
+`count_limit` は件数上限、`page_limit` は短い非空ページです。どちらも末尾を意味しません。
+重複アンカーを除いて空の場合のみ `end_of_available_history` と `exhausted: true` を返し、
+カーソルを省略します。100件の指定でもアンカーのため99件になる場合があります。
+古い履歴がサーバーで提供されなくなる場合があり、完全な履歴や固定の保存期間は保証しません。
+
+不正なカーソル、別トーク、配信時刻の欠落、進まないページはエラーになります。
+タイムアウトは末尾として扱いません。一部の復号失敗ではカーソル付きページを出力し、非ゼロで終了します。
+対象検索の `message_not_found` は取得可能な履歴内の不在のみを示します。
+`lookup_incomplete` はページ数上限、`deadline_exceeded` は時間制限です。
+
+<a id="detailed-content-and-chat-json"></a>
+
+### 詳細コンテンツ JSON
+
+```sh
+line chats --details --json
+line messages CHAT_ID --details --json --resolve-names
+line messages CHAT_ID --details --page --json --limit 50
+```
+
+`--details` は `--json` と併用し、`schema_version: 1` のオブジェクトを返します。チャット ID、受信したメンション、位置、復号したファイル名、添付のサイズ・再生時間、連絡先、スタンプ ID、上限付きのリッチテキストとリンクを取得できます。`--resolve-names` は送信者名をバッチで取得する任意の指定です。チャットの詳細には名前、最終活動時刻、未読数が含まれ、不明な値は `null` です。既存の JSON と watch 形式は変わりません。復号失敗時も部分結果を出力し、終了コードは非ゼロになります。フィールド・状態・制限は [詳細出力仕様](CONTENT.md) を参照してください。
+
+<a id="list-group-members-and-mention-someone"></a>
+
 ### グループメンバーの確認とメンション
 
 ```sh
@@ -288,36 +331,58 @@ line send "Alice" --stdin < message.txt
 line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
 line send "Family group" --file ./report.pdf
 line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
-line send "Family group" --image ./screenshot.png --json
 ```
 
 `--text`、`--stdin`、`--file`、`--image` のいずれか1つを指定します。テキストは空にできず、
-上限はUTF-16で10,000コード単位です。一般ファイルは20 MiBまで送信できます。
-`--file` で送る画像・動画・音声は、通常のファイルとして表示されます。
+上限はUTF-16で10,000コード単位です。ファイルは20 MiBまでです。`--file` で送る画像・動画・音声は
+通常のファイルとして表示され、元のバイト列を保持します。
 
-`--image` は実際のデータを検証した JPEG または静止 PNG を画像メッセージとして
-送ります。上限は20 MiB、4,000万画素、各辺16384画素です。EXIFの向きを適用し、
-メタデータを除去し、透明部分を白にして、縦横比を保ったまま総画素数1280×1280以下、
-品質60のJPEGへ変換します。暗号化送信では384×384以内、品質30のJPEGプレビューも
-アップロードします。元のバイト列を保つ場合は `--file` を使ってください。
-GIF、アニメーションPNG、BMP、WebP、動画・音声の専用送信には対応しません。
-画像処理はセッションへのアクセス前に行います。`--image` は本文、stdin、file、
-mentions、`--reply-to` と併用できません。Chromeの画像送信では返信対応が未確認です。
+**暗号化と同意：** 送信には既定でLetter Sealingが必要です。LINEが暗号化非対応と明示した場合、
+対話式ターミナルでは、LINEが読める内容を送信する前に確認します。
 
-サーバーが明示する暗号化／平文の画像送信能力を使い、不明・不正・取得失敗なら
-送信を開始しません。本体、プレビュー、メッセージは各1回だけ試行します。
-平文メッセージ作成後のアップロード失敗でも、構造化エラーは確認済みIDを保持します。
-結果が不明な場合は再試行前にLINEを確認してください。[画像プロトコルの根拠](protocol/endpoints/image-send.md)を参照。実アカウントでの相互運用性は未検証です。
+```text
+This chat sends files without end-to-end encryption. LINE can read the file.
+Send this file? [y/N]:
+```
 
-対応するトークではLetter Sealingを使います。鍵の不足、グループメンバー情報の不足、通信の失敗があれば、
-暗号化送信を停止し、勝手に平文へ切り替えることはありません。
-新しいグループ鍵を登録できるのは、明示的なグループ送信で、現在の全メンバーを把握できている場合だけです。
+`y` または `yes` で今回の送信だけを許可し、それ以外はキャンセルします。確認には本文・ファイル・画像の
+区別が表示されます。入力待ちの間はセッションロックを解放し、その後にアカウントと送信能力を再確認します。
 
-`--json` を付けると、メッセージID、暗号化の有無、グループ鍵登録の有無、リクエストの連番を確認できます。
+スクリプト、`--json`、`--error-format=json`、`--stdin` では確認しません。平文送信が必要で同意がなければ、
+リモート変更前に `encryption_required` で停止します。LINEが内容を読めることに同意する場合だけ、
+そのコマンドに平文送信を許可してください。
+
+```sh
+line send CHAT_ID --file ./report.pdf --allow-plaintext --json
+```
+
+`--allow-plaintext` を付けても、対応していれば暗号化します。ファイルの送信能力は別に確認します。
+テキストを暗号化できるトークでも、ファイルは平文のみの場合があります。送信能力の欠落・不正、鍵の不足、
+不完全なメンバー情報、通信障害を理由に平文へ切り替えることはありません。新しいグループ鍵の登録は、
+明示的な送信で現在の全メンバーを把握できている場合に限ります。
+
+**画像メッセージ：** 本体とプレビューで暗号化ストリームが再利用されるため、暗号化した `--image` 送信は
+無効です。アップロード、グループ鍵登録、メッセージ作成の前に停止し、`--allow-plaintext` でも回避できません。
+元の画像を一般ファイルとして送るには `--file` を使います。上記のファイル送信能力と同意の条件が適用されます。
+
+LINEが平文の画像送信を明示的に許可し、LINEが画像を読めることに同意する場合だけ、次を使ってください。
+
+```sh
+line send CHAT_ID --image ./screenshot.png --allow-plaintext --json
+```
+
+`--image` は実際のJPEGまたは静止PNGデータを受け付けます。上限は20 MiB、4,000万画素、各辺16384画素です。
+セッションへのアクセス前にEXIFの向きを適用し、メタデータを除去し、透明部分を白にして、縦横比を保ちつつ
+総画素数1280×1280以下、品質60のJPEGへ変換します。GIF、アニメーションPNG、BMP、WebP、動画・音声の専用送信、
+画像による返信は非対応です。本文、stdin、file、mentionsとの併用もできません。画像送信の実環境での相互運用性は
+未検証です。[プロトコルの根拠](protocol/endpoints/image-send.md)を参照してください。
+
+`--json` にはメッセージID、暗号化状態、グループ鍵登録、リクエスト連番を出力します。
+通常の送信結果には `end-to-end encrypted` または `not end-to-end encrypted` と表示します。
 
 > [!CAUTION]
-> 送信やその他のリモート変更は、それぞれ1回だけ試行します。応答が届かなかった場合は、
-> 再試行する前にLINEで確認してください。操作がすでに成功している可能性があります。
+> 送信、アップロード、その他のリモート変更は各1回だけ試行します。平文メッセージはアップロード失敗前に
+> 作成される場合があり、構造化エラーには確認済みIDが残ります。結果が不明な場合は再試行前にLINEを確認してください。
 
 <a id="download-or-change-a-message"></a>
 
@@ -479,6 +544,14 @@ JSONはstdout、診断情報はstderrに出力します。成功とヘルプは�
 
 一部を復号できない場合も、`messages --json` は各メッセージの状態を含む全配列を出力してから、
 終了コード1で終了します。暗号化チャンクや生のサーバー応答本文は表示しません。
+
+<a id="structured-errors"></a>
+
+### 構造化エラー
+
+コマンドの前に `--error-format=json` を指定します（例：`line --error-format=json send CHAT_ID --stdin --json`）。エラーは stderr に単一の JSON オブジェクトとして出力され、stdout の成功結果と部分結果の配列は従来の形式を保ちます。対話プロンプトは無効になります。対象は基本コマンドと `auth status` です。ログイン、ログアウト、移行、watch、update は従来の診断方式を使用します。
+
+エラーにはコード、処理段階、既知のチャット／メッセージ ID、リクエスト番号、各変更処理の結果が含まれます。`unknown` の場合は再試行前に LINE を確認してください。ファイルメッセージ作成後のアップロード失敗や送信後の出力失敗でも、確認済みのメッセージ情報は保持されます。ストレージとシグナルの終了コードは変わりません。詳細は[エラー形式とコード](ERRORS.md)を参照してください。
 
 <a id="json-lookup-results"></a>
 
@@ -771,6 +844,22 @@ Linuxでは、確認したセッションのパスを `$HOME/.config/line-cli` �
 ストレージが利用できなくても、`auth status --json` は状態オブジェクトを出力してから
 対応する非ゼロのコードを返す場合があります。
 
+<a id="troubleshooting"></a>
+
+## 問題の解決
+
+| 症状 | 次に確認すること |
+| --- | --- |
+| ガイドのオプションが不明と表示される | `line version` と `line COMMAND --help` を実行し、該当タグのガイドと比較します。更新確認は `line update --check` です。 |
+| `encryption_required` | LINEはこの内容の平文送信のみを許可しています。ターミナルで今回だけ同意するか、LINEが読めることを受け入れる場合に `--allow-plaintext` を使います。 |
+| `encrypted_image_unavailable` | 暗号化画像は無効です。元のバイト列には `--file` を使いますが、送信能力と同意の条件は適用されます。 |
+| SSHやサービスでストレージにアクセスできない | 同じユーザーと環境で `line auth status --check --json` を実行し、[サービスの診断](#diagnose-a-headless-service)を確認します。回避のためにセッションファイルを削除しないでください。 |
+| 送信失敗、または最近の履歴に見つからない | 再実行前にLINEを確認します。[構造化エラー](#structured-errors)で確認済みか不明かを判断します。最近の履歴にないことは未配信の証拠ではありません。 |
+| 履歴ページが短い、または一部を復号できない | `exhausted` が真になるまでカーソルで続行できます。各状態と終了コードを確認してください。古い履歴や鍵は取得できない場合があります。 |
+
+不具合報告には `line version`、OS、コマンド、機密情報を除いたエラーを含めてください。
+トークン、パスワード、QR/PIN、鍵、私的なメッセージは含めないでください。
+
 <a id="reference"></a>
 
 ## リファレンス
@@ -796,7 +885,7 @@ line update --help
 
 ### ソースからビルドする
 
-GitとGo 1.26以降が必要です。macOSではKeychain対応のため、Xcode Command Line ToolsとCGOも必要です。
+GitとGo 1.27.2が必要です。macOSではKeychain対応のため、Xcode Command Line ToolsとCGOも必要です。
 
 macOSまたはLinux：
 
@@ -837,7 +926,7 @@ Windows DPAPIのテストには一時ファイルを使います。
 - 保存できるLINEアカウントはOSユーザーごとに1つです。
 - QRログインは実験的で、Letter Sealingを無効にしたアカウントには対応しません。
 - 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めます。操作対象の検索は最大10ページ、30秒です。
-- 一般ファイルと JPEG/PNG 静止画像を送信できます。動画・音声の専用送信、アニメーション画像、画像での返信、スタンプ送信には対応しません。
+- 一般ファイルは送信能力を確認し、平文のみの場合は同意が必要です。暗号化画像は無効です。平文JPEG/PNG画像には明示的な送信能力と同意が必要です。動画・音声の専用送信、アニメーション画像、画像返信、スタンプ送信は非対応です。
 - 画像・動画・音声・ファイルのダウンロードは20 MiBまで。外部メディアURLには対応しません。
 - メッセージを読んでも既読にはなりません。
 - リリース版バイナリは署名・公証されていません。
@@ -845,44 +934,3 @@ Windows DPAPIのテストには一時ファイルを使います。
 
 LINE CLIは `beeper/line` を基にした独立プロジェクトです。LINEの公式製品ではなく、
 BeeperやMatrixホームサーバーも必要ありません。
-
-## 構造化エラー
-
-コマンドの前に `--error-format=json` を指定します（例：`line --error-format=json send CHAT_ID --stdin --json`）。エラーは stderr に単一の JSON オブジェクトとして出力され、stdout の成功結果と部分結果の配列は従来の形式を保ちます。対話プロンプトは無効になります。対象は基本コマンドと `auth status` です。ログイン、ログアウト、移行、watch、update は従来の診断方式を使用します。
-
-エラーにはコード、処理段階、既知のチャット／メッセージ ID、リクエスト番号、各変更処理の結果が含まれます。`unknown` の場合は再試行前に LINE を確認してください。ファイルメッセージ作成後のアップロード失敗や送信後の出力失敗でも、確認済みのメッセージ情報は保持されます。ストレージとシグナルの終了コードは変わりません。詳細は[エラー形式とコード](ERRORS.md)を参照してください。
-
-
-### 履歴ページの JSON
-
-```sh
-line messages CHAT_ID --page --json --limit 50
-line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
-```
-
-通常の表示は作成時刻の古い順、従来の `--json` 配列はサーバーの順序です。
-`--page` には `--json` が必要で、`--cursor` には両方が必要です。1回につき1ページを取得し、
-`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
-`exhausted`、`stop_reason`、任意の `next_cursor` を返します。
-IDは文字列のまま、新しいページは数値IDの降順です。カーソルは同じトークへ
-そのまま渡してください。正確な配信時刻を保持し、作成時刻で代用しません。
-
-`count_limit` は件数上限、`page_limit` は短い非空ページです。どちらも末尾を意味しません。
-重複アンカーを除いて空の場合のみ `end_of_available_history` と `exhausted: true` を返し、
-カーソルを省略します。100件の指定でもアンカーのため99件になる場合があります。
-古い履歴がサーバーで提供されなくなる場合があり、完全な履歴や固定の保存期間は保証しません。
-
-不正なカーソル、別トーク、配信時刻の欠落、進まないページはエラーになります。
-タイムアウトは末尾として扱いません。一部の復号失敗ではカーソル付きページを出力し、非ゼロで終了します。
-対象検索の `message_not_found` は取得可能な履歴内の不在のみを示します。
-`lookup_incomplete` はページ数上限、`deadline_exceeded` は時間制限です。
-
-### 詳細コンテンツ JSON
-
-```sh
-line chats --details --json
-line messages CHAT_ID --details --json --resolve-names
-line messages CHAT_ID --details --page --json --limit 50
-```
-
-`--details` は `--json` と併用し、`schema_version: 1` のオブジェクトを返します。チャット ID、受信したメンション、位置、復号したファイル名、添付のサイズ・再生時間、連絡先、スタンプ ID、上限付きのリッチテキストとリンクを取得できます。`--resolve-names` は送信者名をバッチで取得する任意の指定です。チャットの詳細には名前、最終活動時刻、未読数が含まれ、不明な値は `null` です。既存の JSON と watch 形式は変わりません。復号失敗時も部分結果を出力し、終了コードは非ゼロになります。フィールド・状態・制限は [詳細出力仕様](CONTENT.md) を参照してください。

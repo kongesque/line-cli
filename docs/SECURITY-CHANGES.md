@@ -1,5 +1,18 @@
 # Security changes (unreleased)
 
+For user-facing upgrade actions, see the [changelog](../CHANGELOG.md#unreleased).
+This record separates implementation changes, synthetic verification, and
+authorized live observations. The dated checks below apply to their recorded
+revisions and environments; they do not replace the next release's CI gates.
+
+| Path | Current restriction and validation |
+| --- | --- |
+| Text | Encryption required by default; one authorized encrypted group send/readback succeeded. |
+| Generic files | Explicit file capability required. Plaintext needs per-send consent. Synthetic encrypted roundtrip passed; live encrypted delivery remains unverified. Plaintext roundtrips succeeded in the authorized group and direct chat. |
+| Native images | Encrypted sending disabled before remote mutations. Plaintext requires explicit capability and consent; native-image live interoperability remains unverified. |
+
+## Send policy and attachment changes
+
 - Generic encrypted files keep attachment key material and filenames exclusively
   in the authenticated Letter Sealing payload. Historical downloads still accept
   compatible old envelopes with conflict checks.
@@ -24,7 +37,9 @@ Validation on 2026-10-19: synthetic terminal/script consent tests, the complete
 CLI/protocol race suite, go vet, Staticcheck, and the native build/help check
 passed. This UX change required no live sends.
 
-Protocol evidence: official LINE Chrome extension 3.7.2, package SHA-256
+## Protocol evidence
+
+Official LINE Chrome extension 3.7.2, package SHA-256
 `3722ab02edb0aba49c229399ee8df5b4b5a38c60b76efadadfbae395015eb859`.
 Shared helpers `gL`/`EL` move media key/name fields into encrypted payloads;
 `yL` restores them after decryption. `_L`/`CL` derive and restart the same CTR
@@ -32,6 +47,8 @@ stream for each object using the same key material. No secure independent
 preview representation was established. Source remains copyright LY Corporation.
 Initial validation used synthetic data; the authorized live follow-up and its
 limitations are recorded below.
+
+## Transport and response limits
 
 Authenticated LINE requests now reject redirects at dispatch, even when a caller
 supplies an HTTP client with a permissive redirect callback. A redirect leaves a
@@ -45,6 +62,8 @@ event names. Oversized events never reach delivery/checkpoint callbacks.
 Synthetic maximum-count history pages fit the RPC budget; live server maximum
 keychain/history sizes have not been measured. Legitimate oversized responses
 fail explicitly and may require a reviewed budget adjustment.
+
+## Toolchain and vulnerability scans
 
 Builds select Go 1.27.2, including CI/release jobs. `build.sh` checks the actual
 compiler selected by `GO`/`GOTOOLCHAIN`; older compilers and unreviewed versions
@@ -72,6 +91,8 @@ all vulnerable module symbols as present in stripped executables. Retaining
 symbols made the rebuilt macOS binary scan pass without advisory exemptions;
 DWARF debug data remains omitted.
 
+## Recorded synthetic and build validation
+
 Validation on 2026-10-18 at source revision `d8df371`: the complete CLI/protocol
 race suite, runner/LTSM suites, go vet, and Staticcheck v0.8.2 passed. The real
 synthetic recipient decrypted the sealed file key/name, authenticated the
@@ -90,6 +111,7 @@ Cross-builds do not replace native CI. Linux Secret Service and Windows DPAPI
 integration, and the complete native CI matrix, remain release gates. The
 initial validation above did not include live LINE actions.
 
+## Authorized live follow-up
 
 Live follow-up (completed 2026-10-19): one explicitly authorized synthetic text
 was sent encrypted and read back successfully in the designated test group.
@@ -113,7 +135,6 @@ refusal check passed with `encryption_required`, zero uploads/sends/registration
 and an unchanged request sequence. No plaintext file was sent in that phase. Successful live
 encrypted file delivery and authenticated download remain unverified on flow 2;
 the earlier synthetic recipient roundtrip does not establish that live result.
-
 
 Authorized plaintext follow-up (2026-10-19): after separate explicit consent,
 one `line-security-test.txt` was sent with `--allow-plaintext`. The receipt and

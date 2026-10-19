@@ -2,6 +2,11 @@
 
 [English](CLI.md) | 繁體中文（台灣） | [日本語](CLI.ja.md) | [ภาษาไทย](CLI.th.md)
 
+`main` 上的指南說明開發分支。已安裝版本請查看 `line version`、`line COMMAND --help`
+及該發行標籤的指南。升級前請參閱[變更紀錄](../CHANGELOG.md)。
+
+[開始使用](#get-started) · [日常指令](#daily-commands) · [更新](#updating-line-cli) · [指令稿](#use-from-scripts) · [帳號](#account-and-session) · [Linux / 無頭環境](#linux-servers-and-headless-storage) · [疑難排解](#troubleshooting) · [參考資訊](#reference)
+
 在終端機使用你的個人 LINE 帳號：讀取聊天內容、傳送訊息與檔案、下載附件，以及接收新事件。
 日常操作可跟著互動式提示選擇；寫指令稿時則可使用 JSON 輸出。
 
@@ -234,6 +239,44 @@ line messages CHAT_ID --json
 讀取歷史訊息不會標示已讀，也不會在本機儲存訊息文字。
 若 LINE 不再提供原裝置金鑰，部分較舊的加密訊息可能無法讀取。
 
+### 歷史分頁 JSON
+
+```sh
+line messages CHAT_ID --page --json --limit 50
+line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
+```
+
+預設文字依建立時間由舊到新排列；原有 `--json` 陣列保留伺服器順序。
+`--page` 必須搭配 `--json`，`--cursor` 必須搭配兩者。每次讀取一頁，回傳
+`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
+`exhausted`、`stop_reason` 與可選的 `next_cursor`。訊息 ID 保持字串，
+新分頁依數值 ID 由新到舊排列。將游標原樣傳回同一聊天室；游標保存精確的
+送達時間，不會用建立時間代替。
+
+`count_limit` 表示達到筆數上限，`page_limit` 表示取得較短的非空頁；都不代表
+已讀完。移除重複錨點後沒有訊息才回傳 `end_of_available_history`、
+`exhausted: true` 並省略游標。要求 100 筆可能因錨點而只回傳 99 筆。
+伺服器可能不再提供更舊資料，並不保證完整歷史或固定保存期限。
+
+無效游標、錯誤聊天室、缺少送達時間或未向前推進的頁面會明確失敗。
+逾時回傳錯誤，不會當作讀完；部分解密失敗仍輸出含游標的分頁物件並以非零碼結束。
+目標查找的 `message_not_found` 只表示可取得的歷史中沒有目標；
+`lookup_incomplete` 表示已達頁數上限，`deadline_exceeded` 表示已逾時。
+
+<a id="detailed-content-and-chat-json"></a>
+
+### 詳細內容 JSON
+
+```sh
+line chats --details --json
+line messages CHAT_ID --details --json --resolve-names
+line messages CHAT_ID --details --page --json --limit 50
+```
+
+`--details` 必須搭配 `--json`，回傳 `schema_version: 1` 的物件。訊息包含聊天室 ID、收到的提及、位置、解密後的檔名、附件大小／時長、聯絡人、貼圖 ID，以及有上限的圖文訊息文字和連結。`--resolve-names` 可選擇批次查詢傳送者名稱。聊天室詳細資料包含名稱、活動時間及未讀數；未知值為 `null`。原有 JSON 與 watch 格式不變。解密失敗仍輸出部分結果並以非零代碼結束；欄位、狀態與限制詳見 [詳細輸出規格](CONTENT.md)。
+
+<a id="list-group-members-and-mention-someone"></a>
+
 ### 查看群組成員並標註
 
 ```sh
@@ -270,33 +313,55 @@ line send "Alice" --stdin < message.txt
 line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
 line send "Family group" --file ./report.pdf
 line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
-line send "Family group" --image ./screenshot.png --json
 ```
 
 `--text`、`--stdin`、`--file`、`--image` 必須擇一使用。文字不能為空，長度上限為 10,000 個 UTF-16 單位。
-一般檔案最大為 20 MiB。透過 `--file` 傳送的圖片、影片與音訊都會以一般檔案呈現。
+檔案最大為 20 MiB。透過 `--file` 傳送的圖片、影片與音訊會以一般檔案呈現，並保留原始位元組。
 
-`--image` 會以圖片訊息傳送經實際解碼驗證的 JPEG 或靜態 PNG：上限為 20 MiB、
-4,000 萬像素，且單邊不超過 16384 像素。會套用 EXIF 方向、移除中繼資料、
-將透明區域填白，再依比例轉為品質 60、總像素不超過 1280×1280 的 JPEG。
-加密傳送另上傳 384×384 範圍內、品質 30 的 JPEG 預覽；要保留原始位元組請用 `--file`。
-不支援 GIF、動態 PNG、BMP、WebP 或原生影音傳送。圖片處理在存取工作階段前完成。
-`--image` 不可搭配文字、stdin、file、mentions 或 `--reply-to`，因 Chrome 圖片流程
-尚無已驗證的回覆支援。
+**加密與同意：** 傳送預設需要 Letter Sealing。只有 LINE 明確回報不支援加密時，
+互動式終端機才會在傳送 LINE 能讀取的內容前詢問：
 
-圖片傳送使用伺服器明確回報的加密／明文能力；缺漏、無效或查詢失敗均不會開始傳送。
-完整圖片、預覽和訊息各只嘗試一次。明文訊息建立後上傳失敗，結構化錯誤仍保留
-已確認的訊息 ID；結果不明時請先查看 LINE 再重試。詳見[圖片協定證據](protocol/endpoints/image-send.md)，尚未進行真實帳號互通測試。
+```text
+This chat sends files without end-to-end encryption. LINE can read the file.
+Send this file? [y/N]:
+```
 
-聊天室支援時，CLI 會使用 Letter Sealing。缺少金鑰、群組成員資料不完整，或傳輸失敗時，
-加密傳送會中止，不會默默改傳明文。只有明確執行群組傳送，且掌握所有目前成員時，
-才能註冊新的群組金鑰。
+輸入 `y` 或 `yes` 只允許本次傳送，其他回答都會取消。提示會區分訊息、檔案或圖片。
+等待輸入時會釋放工作階段鎖定，之後重新檢查帳號與傳送能力。
 
-加上 `--json` 可查看訊息 ID、是否加密、是否註冊群組金鑰，以及請求序號。
+指令稿、`--json`、`--error-format=json` 與 `--stdin` 不會詢問。需要明文傳送但未明確同意時，
+會在遠端變更前以 `encryption_required` 停止。若接受 LINE 能讀取內容，請僅對該指令允許明文：
+
+```sh
+line send CHAT_ID --file ./report.pdf --allow-plaintext --json
+```
+
+`--allow-plaintext` 在支援時仍會使用加密。檔案能力會分開檢查：文字可加密的聊天室，
+仍可能只允許明文檔案。能力資訊缺漏或無效、缺少金鑰、成員資料不完整及傳輸錯誤，
+都不會允許降級成明文。只有明確執行群組傳送，且掌握所有目前成員時，才能註冊新群組金鑰。
+
+**原生圖片：** 完整圖片與預覽會重複使用加密串流，因此目前停用加密的 `--image` 傳送。
+系統會在上傳、註冊群組金鑰或建立訊息前停止，`--allow-plaintext` 也無法繞過此限制。
+可用 `--file` 將原圖當作一般檔案傳送，但仍須遵守上述檔案能力與同意規則。
+
+只有 LINE 明確允許明文圖片，且你接受 LINE 能讀取圖片時，才使用：
+
+```sh
+line send CHAT_ID --image ./screenshot.png --allow-plaintext --json
+```
+
+`--image` 接受實際 JPEG 或靜態 PNG 資料，上限為 20 MiB、4,000 萬像素，單邊不超過 16384 像素。
+在存取工作階段前，會套用 EXIF 方向、移除中繼資料、將透明區域填白，再依比例轉為品質 60、
+總像素不超過 1280×1280 的 JPEG。不支援 GIF、動態 PNG、BMP、WebP、原生影音傳送或圖片回覆，
+也不可搭配文字、stdin、file 或 mentions。原生圖片傳送尚未驗證真實環境互通性，
+詳見[協定證據](protocol/endpoints/image-send.md)。
+
+`--json` 顯示訊息 ID、加密狀態、群組金鑰註冊狀態與請求序號。
+一般傳送結果會顯示 `end-to-end encrypted` 或 `not end-to-end encrypted`。
 
 > [!CAUTION]
-> CLI 對每次傳送及其他遠端變更都只嘗試一次。若未收到回應，請先到 LINE 確認再重試：
-> 操作可能已經成功。
+> 每次傳送、上傳或其他遠端變更都只嘗試一次。明文訊息可能在上傳失敗前就已建立，
+> 結構化錯誤會保留已確認的 ID。若結果不明，請先到 LINE 確認再重試。
 
 <a id="download-or-change-a-message"></a>
 
@@ -451,6 +516,14 @@ SIGINT 為 130，SIGTERM 為 143。空的結果清單以 `[]` 表示。
 
 即使部分訊息無法解密，`messages --json` 仍會輸出完整陣列，附上每則訊息的狀態，
 然後以 1 結束。不會印出加密資料區塊或原始伺服器回應內容。
+
+<a id="structured-errors"></a>
+
+### 結構化錯誤
+
+在指令前加上 `--error-format=json`，例如 `line --error-format=json send CHAT_ID --stdin --json`。錯誤會以單一 JSON 物件輸出至 stderr；stdout 的成功結果及部分結果陣列維持原格式。此模式停用互動提示，適用於核心指令及 `auth status`；登入、登出、遷移、watch 與 update 保留原有診斷方式。
+
+錯誤包含代碼、階段，以及已知的聊天／訊息 ID、請求序號與各變更步驟的結果。`unknown` 表示結果不明，重試前請先在 LINE 確認。檔案訊息已建立但上傳失敗，或傳送成功但輸出失敗時，已確認的訊息資訊仍會保留。儲存與訊號結束代碼不變。完整欄位與代碼請參閱[錯誤格式說明](ERRORS.md)。
 
 <a id="json-lookup-results"></a>
 
@@ -727,6 +800,22 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 訊號優先：SIGINT 為 130，SIGTERM 為 143。其他 CLI 或網路錯誤為 1。
 儲存無法使用時，`auth status --json` 仍可能先輸出狀態物件，再以對應的非零代碼結束。
 
+<a id="troubleshooting"></a>
+
+## 疑難排解
+
+| 症狀 | 下一步 |
+| --- | --- |
+| 不認得指南中的選項 | 執行 `line version` 與 `line COMMAND --help`，比對該發行標籤的指南。用 `line update --check` 檢查更新。 |
+| `encryption_required` | LINE 回報此類內容只支援明文。在終端機同意單次傳送，或接受 LINE 能讀取內容後使用 `--allow-plaintext`。 |
+| `encrypted_image_unavailable` | 目前停用加密圖片。可用 `--file` 傳送原始位元組，但仍須遵守能力與同意規則。 |
+| SSH 或服務無法存取儲存 | 以相同使用者與環境執行 `line auth status --check --json`，查看[服務診斷](#diagnose-a-headless-service)。不要刪除工作階段檔案來繞過錯誤。 |
+| 傳送失敗或最近歷史中找不到 | 重做前先查看 LINE。用[結構化錯誤](#structured-errors)區分已確認與不明結果；最近歷史中沒有不代表未送達。 |
+| 歷史頁面較短或部分無法解密 | 除非 `exhausted` 為真，否則可繼續使用游標。請檢查各訊息狀態與結束代碼；舊歷史或金鑰可能已無法取得。 |
+
+回報問題時請提供 `line version`、作業系統、指令及已遮蔽敏感資料的錯誤。
+不要提供權杖、密碼、QR/PIN、金鑰或私人訊息。
+
 <a id="reference"></a>
 
 ## 參考資訊
@@ -752,7 +841,7 @@ line update --help
 
 ### 從原始碼建置
 
-需要 Git 與 Go 1.26 以上版本。macOS 還需要 Xcode Command Line Tools 與 CGO，以支援 Keychain。
+需要 Git 與 Go 1.27.2。macOS 還需要 Xcode Command Line Tools 與 CGO，以支援 Keychain。
 
 macOS 或 Linux：
 
@@ -792,7 +881,7 @@ Python 3 標準函式庫的 PTY 功能。原生 Linux Secret Service 整合測�
 - 每位作業系統使用者只能儲存一個 LINE 帳號。
 - QR 登入為實驗性功能，不支援停用 Letter Sealing 的帳號。
 - 每頁最多 100 則；使用 `--page --json` 與游標可讀取仍可取得的較舊歷史。查找操作目標最多 10 頁、30 秒。
-- 支援一般檔案與 JPEG/PNG 靜態圖片；不支援原生影音、動態圖片、圖片回覆或貼圖傳送。
+- 一般檔案須檢查能力；只支援明文時需要同意。加密的原生圖片已停用；明文 JPEG/PNG 圖片須有明確能力與同意。不支援原生影音、動態圖片、圖片回覆及貼圖傳送。
 - 支援下載最大 20 MiB 的圖片、影片、音訊與檔案，不支援外部媒體網址。
 - 讀取訊息不會標示已讀。
 - 發行版執行檔尚未經過數位簽署或公證。
@@ -800,44 +889,3 @@ Python 3 標準函式庫的 PTY 功能。原生 Linux Secret Service 整合測�
 
 LINE CLI 是衍生自 `beeper/line` 的獨立專案，並非 LINE 官方產品，
 也不需要 Beeper 或 Matrix 家伺服器。
-
-## 結構化錯誤
-
-在指令前加上 `--error-format=json`，例如 `line --error-format=json send CHAT_ID --stdin --json`。錯誤會以單一 JSON 物件輸出至 stderr；stdout 的成功結果及部分結果陣列維持原格式。此模式停用互動提示，適用於核心指令及 `auth status`；登入、登出、遷移、watch 與 update 保留原有診斷方式。
-
-錯誤包含代碼、階段，以及已知的聊天／訊息 ID、請求序號與各變更步驟的結果。`unknown` 表示結果不明，重試前請先在 LINE 確認。檔案訊息已建立但上傳失敗，或傳送成功但輸出失敗時，已確認的訊息資訊仍會保留。儲存與訊號結束代碼不變。完整欄位與代碼請參閱[錯誤格式說明](ERRORS.md)。
-
-
-### 歷史分頁 JSON
-
-```sh
-line messages CHAT_ID --page --json --limit 50
-line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
-```
-
-預設文字依建立時間由舊到新排列；原有 `--json` 陣列保留伺服器順序。
-`--page` 必須搭配 `--json`，`--cursor` 必須搭配兩者。每次讀取一頁，回傳
-`schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
-`exhausted`、`stop_reason` 與可選的 `next_cursor`。訊息 ID 保持字串，
-新分頁依數值 ID 由新到舊排列。將游標原樣傳回同一聊天室；游標保存精確的
-送達時間，不會用建立時間代替。
-
-`count_limit` 表示達到筆數上限，`page_limit` 表示取得較短的非空頁；都不代表
-已讀完。移除重複錨點後沒有訊息才回傳 `end_of_available_history`、
-`exhausted: true` 並省略游標。要求 100 筆可能因錨點而只回傳 99 筆。
-伺服器可能不再提供更舊資料，並不保證完整歷史或固定保存期限。
-
-無效游標、錯誤聊天室、缺少送達時間或未向前推進的頁面會明確失敗。
-逾時回傳錯誤，不會當作讀完；部分解密失敗仍輸出含游標的分頁物件並以非零碼結束。
-目標查找的 `message_not_found` 只表示可取得的歷史中沒有目標；
-`lookup_incomplete` 表示已達頁數上限，`deadline_exceeded` 表示已逾時。
-
-### 詳細內容 JSON
-
-```sh
-line chats --details --json
-line messages CHAT_ID --details --json --resolve-names
-line messages CHAT_ID --details --page --json --limit 50
-```
-
-`--details` 必須搭配 `--json`，回傳 `schema_version: 1` 的物件。訊息包含聊天室 ID、收到的提及、位置、解密後的檔名、附件大小／時長、聯絡人、貼圖 ID，以及有上限的圖文訊息文字和連結。`--resolve-names` 可選擇批次查詢傳送者名稱。聊天室詳細資料包含名稱、活動時間及未讀數；未知值為 `null`。原有 JSON 與 watch 格式不變。解密失敗仍輸出部分結果並以非零代碼結束；欄位、狀態與限制詳見 [詳細輸出規格](CONTENT.md)。

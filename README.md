@@ -20,6 +20,9 @@ no bot account or LINE Messaging API setup is required.
 
 ![LINE CLI: personal LINE messages, files, and automation from the terminal](banner.png)
 
+The README on `main` follows development. For a released version, use the
+README at its tag and `line COMMAND --help`. See the [changelog](CHANGELOG.md).
+
 ## Install LINE CLI
 
 ### macOS: Homebrew
@@ -133,6 +136,9 @@ cancel, or pass a chat name directly as shown below.
 | Look up a person by user ID | `line contacts --mid USER_MID` |
 | Find conversations and groups | `line chats --search "Family"` |
 | Read recent messages | `line messages "Alice" --limit 20` |
+| Continue older available history | `line messages CHAT_ID --page --json --limit 50` |
+| Inspect detailed message content | `line messages CHAT_ID --details --json` |
+| List group members | `line members "Family" --json` |
 | Send a text message | `line send "Alice" --text "Hello!"` |
 | Send a file | `line send "Alice" --file ./report.pdf` |
 | Download photos, video, audio, or files | `line download` |
@@ -141,6 +147,10 @@ cancel, or pass a chat name directly as shown below.
 | Stream live events | `line watch` |
 | Check local session storage | `line auth status --check` |
 | Remove your saved local session | `line logout` |
+
+File encryption is checked separately from text encryption. A chat may allow
+only plaintext files; terminal sends ask for consent, while scripts need
+`--allow-plaintext`. See [sending and encryption](docs/CLI.md#send-messages-and-files).
 
 Replace example names with your own. Names must be unique exact matches
 (case-insensitive); quote names with spaces. For duplicate names, use
@@ -207,11 +217,13 @@ See [JSON fields and exit codes](docs/CLI.md#json-output-and-exit-codes) and
 
 ## Limitations
 
-- Recent message history only, up to 100 messages per read. Reading does not mark
-  messages as read; some older encrypted messages may be unavailable.
-- File sending and media downloads are limited to 20 MiB. Images, video, and audio
-  sent with `--file` appear as ordinary files; stickers and specialized media
-  sending are not supported. External media URLs cannot be downloaded.
+- History contains up to 100 messages per page. Use `--page --json` and its cursor
+  for older available history; full history is not guaranteed. Reading does not
+  mark messages as read; some older encrypted messages may be unavailable.
+- File sending and media downloads are limited to 20 MiB. `--file` preserves
+  original bytes and appears as an ordinary file. Encrypted native image sending
+  is disabled; plaintext images require explicit capability and consent. Native
+  audio/video and sticker sends, and external media URL downloads, are unsupported.
 - LINE CLI uses LINE's Chrome-style protocol. Server changes can affect
   compatibility, and some protocol paths need broader live validation.
 
@@ -232,6 +244,8 @@ instructions. Checks require no LINE login and run only when requested.
 
 ## Documentation and help
 
+- [Changelog](CHANGELOG.md): release changes and upgrade notes.
+- [Release checklist](docs/RELEASING.md): maintainer packaging and publication steps.
 - [CLI guide](docs/CLI.md): complete usage, troubleshooting, and server setup.
 - [Token and session audit](TOKEN_SESSION.md): refresh and recovery internals.
 - [Testing guide](docs/TESTING.md): test suites, fixtures, and CI coverage.

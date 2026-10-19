@@ -1,5 +1,15 @@
 # Native still-image send contract
 
+## Current CLI status
+
+Encrypted native-image sending is disabled before uploads, group-key registration,
+or message creation. Plaintext images require an explicit plaintext capability
+and affirmative terminal confirmation or per-command `--allow-plaintext`.
+The encrypted stages below describe the investigated Chrome protocol, not an
+available CLI send path. Native-image live interoperability remains unverified.
+See the [security changes](../../SECURITY-CHANGES.md) and
+[user guide](../../CLI.md#send-messages-and-files).
+
 ## Evidence
 
 Inspected the official public LINE Chrome extension **3.7.2** on 2026-10-16,

@@ -20,6 +20,9 @@ LINE Messaging API。
 
 ![LINE CLI：在終端機傳送個人 LINE 訊息、分享檔案與自動化](banner.png)
 
+本 README 說明開發分支。已發布版本請查看該標籤的 README 與 `line COMMAND --help`。
+升級前請參閱[變更紀錄](CHANGELOG.md)。
+
 <a id="install-line-cli"></a>
 
 ## 安裝 LINE CLI
@@ -133,6 +136,9 @@ line send       # 選擇收件人並輸入訊息
 | 以使用者 ID 查詢個人資料 | `line contacts --mid USER_MID` |
 | 尋找聊天室與群組 | `line chats --search "Family"` |
 | 讀取近期訊息 | `line messages "Alice" --limit 20` |
+| 讀取仍可取得的較舊歷史 | `line messages CHAT_ID --page --json --limit 50` |
+| 查看訊息內容詳細資料 | `line messages CHAT_ID --details --json` |
+| 查看群組成員 | `line members "Family" --json` |
 | 傳送文字訊息 | `line send "Alice" --text "Hello!"` |
 | 傳送檔案 | `line send "Alice" --file ./report.pdf` |
 | 下載照片、影片、音訊或檔案 | `line download` |
@@ -141,6 +147,9 @@ line send       # 選擇收件人並輸入訊息
 | 串流接收即時事件 | `line watch` |
 | 檢查本機工作階段儲存機制 | `line auth status --check` |
 | 移除本機已儲存的工作階段 | `line logout` |
+
+檔案加密能力與文字分開檢查。部分聊天室只允許明文檔案；終端機會詢問是否同意，
+指令稿則須指定 `--allow-plaintext`。詳見[傳送與加密](docs/CLI.zh-TW.md#send-messages-and-files)。
 
 請將範例名稱換成自己的聯絡人或聊天室名稱。名稱必須唯一且完全相符
 （不區分大小寫）；含空格的名稱請加上引號。若名稱重複，可使用
@@ -193,6 +202,7 @@ line watch --json > events.ndjson
 
 - **加密：** 支援時會使用 Letter Sealing。金鑰缺少、格式錯誤或傳輸失敗時，
   原應加密的訊息不會在未告知的情況下改以明文傳送。JSON 傳送結果會顯示加密狀態。
+  LINE 明確回報不支援加密時，終端機會先詢問；指令稿須使用 `--allow-plaintext`。
 - **儲存：** macOS 使用 Keychain；Linux 使用 AES-GCM 加密的工作階段檔案，
   金鑰存放於 Secret Service；Windows 使用目前使用者的 DPAPI。
   無頭 Linux 使用主機金鑰儲存。
@@ -204,10 +214,11 @@ line watch --json > events.ndjson
 
 ## 使用限制
 
-- 僅能讀取近期訊息，每次最多 100 則。讀取不會將訊息標為已讀；
-  部分較舊的加密訊息可能無法讀取。
-- 檔案傳送與媒體下載上限為 20 MiB。以 `--file` 傳送的圖片、影片與音訊
-  會顯示為一般檔案；不支援貼圖或專用媒體訊息傳送，也無法下載外部媒體 URL。
+- 每頁最多 100 則訊息。使用 `--page --json` 與游標可讀取仍可取得的較舊歷史，
+  但不保證完整歷史。讀取不會標為已讀；部分較舊的加密訊息可能無法讀取。
+- 檔案傳送與媒體下載上限為 20 MiB。`--file` 保留原始位元組，並顯示為一般檔案。
+  目前停用加密的原生圖片傳送；明文圖片需要明確的傳送能力與同意。
+  不支援原生影音傳送、貼圖傳送及外部媒體 URL 下載。
 - LINE CLI 使用 LINE 的 Chrome 類型協定。伺服器變更可能影響相容性，
   部分協定流程仍需要更廣泛的實際環境驗證。
 
@@ -226,6 +237,8 @@ macOS 與 Linux 的官方獨立執行檔安裝可直接更新。Homebrew 請使�
 
 ## 文件與協助
 
+- [變更紀錄](CHANGELOG.md)：發行變更與升級注意事項（英文）。
+- [發行檢查清單](docs/RELEASING.md)：維護者的打包與發布步驟（英文）。
 - [CLI 指南](docs/CLI.zh-TW.md)：完整用法、疑難排解與伺服器設定。
 - [權杖與工作階段稽核](TOKEN_SESSION.md)：更新與復原的實作細節。
 - [GitHub Issues](https://github.com/kongesque/line-cli/issues)：回報錯誤或提出功能需求。
@@ -237,7 +250,7 @@ macOS 與 Linux 的官方獨立執行檔安裝可直接更新。Homebrew 請使�
 
 ## 建置與參與開發
 
-從原始碼建置需要 Git 與 **Go 1.26+**。macOS 另需 Xcode Command Line Tools
+從原始碼建置需要 Git 與 **Go 1.27.2**。macOS 另需 Xcode Command Line Tools
 及 CGO，以支援 Keychain。在 macOS 或 Linux 上執行：
 
 ```sh

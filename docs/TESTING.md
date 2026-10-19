@@ -113,8 +113,8 @@ go test ./scripts/systemd-probe
 
 These tests exercise credential parsing, helper-process limits, redaction, and
 synthetic fixture handling. Real systemd/TPM observations have a separate
-[probe guide](../scripts/systemd-probe/README.md) and
-[runtime record](../scripts/systemd-probe/RUNTIME.md).
+[probe guide](https://github.com/kongesque/line-cli/blob/main/scripts/systemd-probe/README.md) and
+[runtime record](https://github.com/kongesque/line-cli/blob/main/scripts/systemd-probe/RUNTIME.md).
 
 ## Platform integration
 
@@ -126,7 +126,7 @@ storage and boot-time checks have additional requirements:
   for the lock check, `LINE_CLI_TEST_KEYRING_LOCK=1`. Run
   `go test -count=1 ./internal/session -run '^TestLinuxNativeSecretService$'`
   inside that session. The isolated setup is recorded in
-  [the CI workflow](../.github/workflows/cli.yml).
+  [the CI workflow](https://github.com/kongesque/line-cli/blob/main/.github/workflows/cli.yml).
 - **Windows DPAPI:** `go test -count=1 ./internal/session -run '^TestDPAPI'`
   exercises temporary session files on Windows. This also runs in Windows CI.
 - **Linux systemd/headless integration:** `LINE_CLI_TEST_SYSTEMD_CREDS=1` is
@@ -190,7 +190,7 @@ staticcheck ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
 
 When changing runner or LTSM test files, format those files too. Exclude generated
 `pkg/ltsm` from vet/staticcheck. The
-[CI workflow](../.github/workflows/cli.yml) runs the main package suite on Linux,
+[CI workflow](https://github.com/kongesque/line-cli/blob/main/.github/workflows/cli.yml) runs the main package suite on Linux,
 macOS, and Windows, with native Linux Secret Service and Windows DPAPI checks.
 Its separate crypto job runs the full runner/LTSM regression command with
 `CGO_ENABLED=0`, a 20-minute test timeout, and a 30-minute job limit. Live LINE and

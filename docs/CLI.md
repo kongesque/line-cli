@@ -2,6 +2,12 @@
 
 English | [繁體中文（台灣）](CLI.zh-TW.md) | [日本語](CLI.ja.md) | [ภาษาไทย](CLI.th.md)
 
+Documentation on `main` follows development. For an installed release, use
+`line version`, `line COMMAND --help`, and the guide at that release tag.
+See the [changelog](../CHANGELOG.md) for upgrade notes.
+
+[Get started](#get-started) · [Daily commands](#daily-commands) · [Update](#updating-line-cli) · [Scripts](#use-from-scripts) · [Account](#account-and-session) · [Linux / headless](#linux-servers-and-headless-storage) · [Troubleshooting](#troubleshooting) · [Reference](#reference)
+
 Use your personal LINE account from a terminal. You can read conversations,
 send messages and files, download attachments, and follow new events. Commands
 can guide you through choices in a terminal or return JSON for scripts.
@@ -358,81 +364,70 @@ line send "Alice" --stdin < message.txt
 line send "Alice" --text "Sounds good" --reply-to MESSAGE_ID
 line send "Family group" --file ./report.pdf
 line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
-line send "Family group" --image ./screenshot.png --json
 ```
 
-Choose exactly one of `--text`, `--stdin`, `--file`, or `--image`. Text must be nonempty
-and at most 10,000 UTF-16 units. Generic files can be up to 20 MiB. Images,
-video, and audio sent with `--file` appear as ordinary files.
+Choose exactly one of `--text`, `--stdin`, `--file`, or `--image`. Text must be
+nonempty and at most 10,000 UTF-16 code units. Files can be up to 20 MiB.
+Images, video, and audio sent with `--file` appear as ordinary files and retain
+their original bytes.
 
-`--image` sends a native still-image message from actual JPEG or PNG data, up to
-20 MiB, 40 million decoded pixels, and 16384 pixels on either axis. It applies
-EXIF orientation, removes metadata, flattens transparency onto white, and converts
-to JPEG at quality 60 with at most 1280×1280 total pixels (aspect ratio preserved).
-Use `--file` to preserve original bytes. GIF, animated PNG, BMP, WebP, and native
-audio/video sends are unsupported. Image preparation is local and precedes session
-access. `--image` cannot be combined with text, stdin, file, mentions, or
-`--reply-to`: Chrome's image path does not establish reply support.
-
-Encrypted `--image` sends are disabled because the current full-image/preview
-format reuses an encryption stream. They fail before uploads or sends. Generic
-`--file` sends preserve original bytes and remain available with Letter Sealing.
-Image sends use the server's explicit encrypted/plaintext media capability.
-A missing or invalid capability fails locally before mutation. Plaintext-capable
-images require interactive confirmation or `--allow-plaintext`; message creation
-and upload each happen once.
-A failed upload after message creation retains that confirmed ID in structured errors;
-unknown outcomes require checking LINE before retrying. See
-[image protocol evidence](protocol/endpoints/image-send.md) for details. Live
-interoperability has not been verified.
-
-Sending requires Letter Sealing by default. If the account or server explicitly
-reports it unavailable, a terminal send asks for consent before any remote action:
+**Encryption and consent.** Sends require Letter Sealing by default. If LINE
+explicitly reports encryption unavailable, an interactive terminal asks before
+sending content that LINE can read:
 
 ```text
 This chat sends files without end-to-end encryption. LINE can read the file.
 Send this file? [y/N]:
 ```
 
-Enter `y` or `yes` to permit this send; Enter, `n`, or any other answer cancels.
-The confirmation applies only to the current command. The session lock is
-released while waiting; the account and capabilities are checked again afterward.
-Encrypted sends do not ask. The prompt names the message, file, or image.
+Enter `y` or `yes` to permit only this send; any other answer cancels. The prompt
+names the message, file, or image. The session lock is released while waiting;
+the account and capabilities are checked again afterward.
 
-Scripts, `--json`, `--error-format=json`, and `--stdin` never prompt. They return
-`encryption_required` without sending unless `--allow-plaintext` was supplied.
-Use that flag on a single command to permit content visible to LINE after
-HTTPS termination. This flag applies to text, stdin, mentions, replies, files,
-and plaintext-capable images; it still uses encryption when available. It does
-not override the encrypted-image restriction or authorize fallback on errors.
+Scripts, `--json`, `--error-format=json`, and `--stdin` never prompt. When
+plaintext is required, they fail with `encryption_required` before remote
+actions unless you explicitly permit it.
+If you accept that LINE can read this content, permit plaintext for one command:
 
-For `--file`, the server's file-specific media capability must also permit
-encryption. A chat can support encrypted text while allowing only plaintext
-files. In that case, the default file send stops before upload or message creation;
-Interactive confirmation or `--allow-plaintext` is required to send the file
-without Letter Sealing.
-Missing, unknown, or unreadable media capabilities never authorize plaintext.
-The CLI names the affected message, file, or image and explains the next step
-without protocol details. For example, a script without consent reports:
-
-```text
-This chat doesn't support end-to-end encryption for this file. Nothing was sent.
-To send it anyway, add --allow-plaintext. LINE can read the file.
+```sh
+line send CHAT_ID --file ./report.pdf --allow-plaintext --json
 ```
 
-Send confirmations use `end-to-end encrypted` or `not end-to-end encrypted`.
+`--allow-plaintext` still uses encryption when available. File capability is
+checked separately: encrypted text support does not imply encrypted-file
+support. Missing or invalid capabilities, missing keys, incomplete membership,
+and transport errors never authorize a downgrade. An explicit group send can
+register a new group key only when every current member is known.
 
-The CLI uses Letter Sealing when the conversation supports it. Missing keys,
-incomplete group membership, or a transport failure stop an encrypted send
-instead of silently sending plaintext. An explicit group send can register a
-new group key only when every current member is known.
+**Native images.** Encrypted `--image` sending is disabled because the current
+full-image/preview format reuses an encryption stream. It stops before uploads,
+group-key registration, or message creation; `--allow-plaintext` does not bypass
+that restriction. Use `--file` to send the original image as a generic file,
+subject to the file capability and consent rules above.
 
-Add `--json` to see the message ID, whether it was encrypted, whether a group
-key was registered, and the request sequence.
+Only when LINE explicitly permits plaintext images, and you accept that LINE
+can read the image, use:
+
+```sh
+line send CHAT_ID --image ./screenshot.png --allow-plaintext --json
+```
+
+`--image` accepts actual JPEG or still PNG data up to 20 MiB, 40 million decoded
+pixels, and 16384 pixels per side. Before session access it applies EXIF
+orientation, removes metadata, fills transparency with white, and converts to
+JPEG at quality 60, preserving aspect ratio with at most 1280×1280 total pixels.
+GIF, animated PNG, BMP, WebP, native audio/video, and image replies are unsupported.
+Images cannot be combined with text, stdin, files, or mentions. Native-image
+live interoperability remains unverified; see [protocol evidence](protocol/endpoints/image-send.md).
+
+`--json` reports message ID, encryption status, group-key registration, and
+request sequence. Human receipts say `end-to-end encrypted` or
+`not end-to-end encrypted`.
 
 > [!CAUTION]
-> The CLI attempts each send and other remote change once. If the response is
-> lost, check LINE before you retry: the action may have succeeded.
+> Each send, upload, or other remote change is attempted once. A plaintext
+> message can be created before its upload fails; structured errors retain its
+> confirmed ID. If the outcome is unknown, inspect LINE before retrying.
 
 ### Download or change a message
 
@@ -928,6 +923,20 @@ Signals take precedence: SIGINT exits 130 and SIGTERM exits 143. Other CLI or
 network errors exit 1. `auth status --json` can still write its status object
 when storage is unavailable, then return the matching nonzero code.
 
+## Troubleshooting
+
+| Symptom | What to check next |
+| --- | --- |
+| A documented option is unknown | Run `line version` and `line COMMAND --help`; compare with the docs at that release tag. Check for updates with `line update --check`. |
+| `encryption_required` | LINE reports plaintext-only support for this content. Approve only that send in a terminal, or use `--allow-plaintext` if you accept that LINE can read it. |
+| `encrypted_image_unavailable` | Encrypted native images are disabled. Try `--file` for the original bytes; file capability and consent still apply. |
+| Login or an SSH service cannot access storage | Run `line auth status --check --json` as the same user and environment. Follow [headless diagnostics](#diagnose-a-headless-service); do not delete session files to bypass the error. |
+| A send fails or is absent from recent history | Inspect LINE before repeating it. Use [structured errors](#structured-errors) to distinguish a confirmed action from an unknown outcome. Recent history is not proof of non-delivery. |
+| A history page is short or partly unreadable | Continue with its cursor unless `exhausted` is true. Check each message status and the exit code; older keys/history may be unavailable. |
+
+For a bug report, include `line version`, OS, command, and a redacted error.
+Never include tokens, passwords, QR/PIN values, keys, or private messages.
+
 ## Reference
 
 ### Command help
@@ -947,7 +956,7 @@ line update --help
 
 ### Build from source
 
-You need Git and Go 1.26 or newer. macOS also needs Xcode Command Line Tools
+You need Git and Go 1.27.2. macOS also needs Xcode Command Line Tools
 and CGO for Keychain support.
 
 On macOS or Linux:
@@ -992,7 +1001,10 @@ fixtures, slow crypto regressions, and CI coverage.
 - QR login is experimental and cannot handle accounts with Letter Sealing
   disabled.
 - History pages contain at most 100 messages; use `--page --json` and its cursor for older available history. Action/reply lookup is bounded to 10 pages and 30 seconds.
-- Sending supports generic files and native JPEG/PNG still images; native audio/video, animated images, image replies, and sticker sends are unsupported.
+- Generic files require media capability and consent when plaintext-only.
+  Encrypted native images are disabled; plaintext JPEG/PNG images require explicit
+  capability and consent. Native audio/video, animated images, image replies, and
+  sticker sends are unsupported.
 - Downloads support images, video, audio, and files up to 20 MiB; external
   media URLs are unsupported.
 - Reading messages does not mark them as read.

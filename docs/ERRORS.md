@@ -84,6 +84,8 @@ reports returned IDs before decryption without message text or encrypted data.
 | `unsupported_content` | Requested download content is unsupported. |
 | `decryption_failed` | History contains failed decryptions, or an attachment could not be decrypted/authenticated. |
 | `encryption_failed` | Message encryption/key preparation failed. |
+| `encryption_required` | Explicit plaintext-only capability without per-send consent; no message action attempted. |
+| `encrypted_image_unavailable` | Encrypted native images disabled; no upload, group-key registration, or send attempted. |
 | `remote_failed` | Remote request failed or a send receipt was missing. |
 | `cancelled` | Cancellation, including a signal. |
 | `deadline_exceeded` | Command timeout or the 30-second lookup budget expired; stage `lookup` identifies lookup. |
@@ -149,11 +151,12 @@ No mutation is retried for reporting failures.
 These contracts are covered with synthetic APIs and transports. They do not
 constitute a new live LINE compatibility validation.
 
-Native image sends record full encrypted upload (`attachment_upload`), encrypted
-preview (`preview_upload`), and `send` separately. An upload may leave an object
-without creating a message. Plain image upload follows message creation, so its
-failure retains the confirmed message receipt just like a generic-file upload.
-Never infer that an upload or send can safely be retried from a transport error.
+Encrypted native images currently stop at `preparation` with
+`encrypted_image_unavailable`, before upload, group-key registration, or send.
+The outcome schema retains `preview_upload` for compatibility; its presence in
+the schema does not mean encrypted image sending is enabled. Plain image upload
+follows message creation, so its failure retains the confirmed message receipt
+just like a generic-file upload. Never infer safe retries from a transport error.
 
 Send policy errors: `encryption_required` means Letter Sealing is unavailable
 and the command did not permit plaintext. Interactive terminal sends offer
