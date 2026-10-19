@@ -1,6 +1,6 @@
 # JSON output and errors
 
-This is the script integration reference. For command usage and setup, see the
+Use this reference when writing scripts. For commands and setup, see the
 [CLI guide](CLI.md#use-from-scripts). Success and partial results go to stdout;
 diagnostics go to stderr. Use full chat IDs and keep message IDs as strings.
 
@@ -9,7 +9,7 @@ diagnostics go to stderr. Use full chat IDs and keep message IDs as strings.
 
 ## Output modes
 
-| Invocation | stdout contract |
+| Invocation | stdout format |
 | --- | --- |
 | `line messages CHAT_ID --json` | Legacy message array in server order. |
 | `line messages CHAT_ID --page --json` | Schema-1 page object with `chat_id`, newest-first messages, continuation cursor, and exhaustion status. |
@@ -17,7 +17,7 @@ diagnostics go to stderr. Use full chat IDs and keep message IDs as strings.
 | `line chats --json` | Legacy chat array. |
 | `line chats --details --json` | Schema-1 `chats` envelope with explicit unknown values. |
 | `line watch --json` | Existing NDJSON stream; no detailed-content envelope. |
-| `line --error-format=json COMMAND ... --json` | Existing success/partial stdout contract; one structured error on stderr when the supported command fails. |
+| `line --error-format=json COMMAND ... --json` | Usual success/partial output on stdout; one structured error on stderr when the supported command fails. |
 
 `--error-format=json` does not imply `--json`. It disables prompts, as do `--json`
 and `--stdin`. Sends prefer Letter Sealing and automatically use HTTPS/TLS only
@@ -29,9 +29,20 @@ before deciding what to do next.
 In send results, `encrypted` reports Letter Sealing: `false` means no E2EE, while
 HTTPS/TLS still encrypts the transfer. LINE can read non-E2EE content.
 
-Pagination and cursors follow the [history contract](CLI.md#read-messages).
+Pagination and cursors follow the [history guide](CLI.md#history-pagination-json).
 Other command fields and exit codes are listed in the
 [CLI reference](CLI.md#json-output-and-exit-codes).
+
+## History diagnostics
+
+`messages CHAT_ID --diagnostics --json` inspects recent-history IDs before
+decryption, without message content or key lookups. It requires `--json` and
+cannot combine with `--details`, `--resolve-names`, `--page`, or `--cursor`.
+The result includes `schema_version: 1`, `chat_id`, `method: "getRecentMessagesV2"`,
+`requested_count`, `returned_count`, `null_count`, `invalid_id_count`, and
+`message_ids` in server order. IDs stay strings; malformed IDs are counted
+instead of printed. This is one logical read; authentication recovery may retry it.
+A missing ID does not prove failed delivery or a search of all available history.
 
 ## Detailed content
 
@@ -283,7 +294,7 @@ uploading an encrypted file. Its message outcome is `not_attempted`, while the
 preparation steps may be `confirmed` or `unknown`. Do not equate this with zero
 remote effects.
 
-A plaintext file send creates the message **before** uploading bytes. If that
+A non-E2EE file send creates the message **before** uploading bytes. If that
 upload fails, the report retains `mutation.outcome: "confirmed"`, the created
 `message_id`, chat ID, and request sequence. Its `attachment_upload` step records
 whether the upload was not attempted, rejected, or uncertain. A confirmed message
@@ -303,13 +314,12 @@ constitute a new live LINE compatibility validation.
 Encrypted native images currently stop at `preparation` with
 `encrypted_image_unavailable`, before upload, group-key registration, or send.
 The outcome schema retains `preview_upload` for compatibility; its presence in
-the schema does not mean encrypted image sending is enabled. Plain image upload
+the schema does not mean encrypted image sending is enabled. Non-E2EE image upload
 follows message creation, so its failure retains the confirmed message receipt
 just like a generic-file upload. Never infer safe retries from a transport error.
 
 Send policy errors: `encryption_required` means Letter Sealing is unavailable
 and strict mode (`--require-e2ee` or a legacy allow flag set to `false`) blocked
 the send before remote actions. There is no encryption confirmation prompt in any
-output mode. `encrypted_image_unavailable` means
-native encrypted image sending is disabled until a secure compatible preview
-format is established. Neither error authorizes an automatic resend or downgrade.
+output mode. `encrypted_image_unavailable` is the image restriction described
+above. Neither error permits an automatic resend or downgrade.

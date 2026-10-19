@@ -2,8 +2,8 @@
 
 This is a historical record of synthetic credential experiments in disposable
 ARM64 VMware Fusion VMs. No LINE session, personal keyring, or UniPi was used.
-The results certify only the tested behavior and configuration; they do not
-certify the later production backend. See
+The results cover only the tested behavior and configuration. They do not
+validate the later production backend. See
 [SESSION.md](../../docs/SESSION.md#release-verification) for current
 release evidence.
 

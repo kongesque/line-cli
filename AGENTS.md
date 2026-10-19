@@ -49,8 +49,8 @@ report the mode in the receipt (`encrypted: false` in JSON). `--require-e2ee`
 blocks non-E2EE delivery; it takes precedence over legacy `--allow-non-e2ee` /
 `--allow-plaintext` options. Scripts, JSON output/errors, and `--stdin` never
 prompt. Preserve explicit capability checks before plaintext fallback. Missing
-or malformed keys and transport failures must not silently downgrade encryption. Only an
-explicit send may register a group key, and it needs complete membership.
+or malformed keys and transport failures must not silently downgrade encryption.
+Only an explicit send may register a group key, and it needs complete membership.
 Remote mutations are attempted once with a persisted request sequence; reads can
 recover authentication and retry. Never add automatic mutation retries.
 

@@ -90,7 +90,7 @@ line messages
 line send
 ```
 
-`line send` 會依序詢問收件人、文字內容與傳送確認。
+`line send` 會先讓你選擇收件人，輸入訊息並按 Enter 後即傳送。
 若要使用電子郵件與密碼，請選擇下方選項。輸入的密碼不會顯示或儲存，
 也不接受透過指令選項或環境變數提供密碼。
 
@@ -140,7 +140,7 @@ Ctrl-C 可取消提示、QR 輪詢與一般請求。SIGINT 的結束代碼為 13
 本機加密與檔案寫入會完成目前步驟，再檢查是否取消。
 
 已送出的請求可能在中斷前就已成功，請先在 LINE 確認再重做；CLI 不會自動重送。
-即使後續上傳或輸出失敗，仍會保留已確認的傳送結果與已建立的明文檔案訊息 ID，
+即使後續上傳或輸出失敗，仍會保留已確認的傳送結果與已建立的非 E2EE 檔案訊息 ID，
 因此成功輸出可能伴隨訊號結束代碼。
 
 在新工作階段儲存前取消會保留本機舊工作階段，但 LINE 可能已取代原有的 Chrome 類型工作階段。
@@ -220,11 +220,21 @@ line messages "Alice" --show-ids
 line messages CHAT_ID --json
 ```
 
-`messages` 取得最近 1–100 則訊息，並依時間由舊到新顯示。
-`--show-ids` 會顯示回覆、表情回應、下載與收回訊息所需的 ID。
+`messages` 預設取得最近 20 則訊息，`--limit` 可指定 1–100 則。
+一般文字輸出由舊到新排列；一般 `--json` 保留伺服器順序。
+`--show-ids` 會顯示回覆、表情回應、下載與收回所需的 ID。
+讀取不會標為已讀，也不會在本機儲存文字。若 LINE 不再提供原裝置金鑰，部分較舊的加密訊息可能無法讀取。
 
-讀取歷史訊息不會標示已讀，也不會在本機儲存訊息文字。
-若 LINE 不再提供原裝置金鑰，部分較舊的加密訊息可能無法讀取。
+若要在解密前查看回傳的 ID，不顯示訊息內容，也不查詢金鑰：
+
+```sh
+line --error-format=json messages "Chat name" --diagnostics --json --limit 50
+```
+
+`--diagnostics` 必須搭配 `--json`，不能搭配 `--details`、`--resolve-names`、`--page` 或 `--cursor`。
+找不到 ID 只表示它不在這次回應中。詳見[診斷欄位](JSON.md#history-diagnostics)。
+
+<a id="history-pagination-json"></a>
 
 ### 歷史分頁 JSON
 
@@ -233,22 +243,20 @@ line messages CHAT_ID --page --json --limit 50
 line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
 ```
 
-預設文字依建立時間由舊到新排列；原有 `--json` 陣列保留伺服器順序。
-`--page` 必須搭配 `--json`，`--cursor` 必須搭配兩者。每次讀取一頁，回傳
+`--page` 必須搭配 `--json`，`--cursor` 必須搭配兩者。每次回傳一頁，包含
 `schema_version: 1`、`chat_id`、`order: "newest_first"`、`messages`、
-`exhausted`、`stop_reason` 與可選的 `next_cursor`。訊息 ID 保持字串，
-新分頁依數值 ID 由新到舊排列。將游標原樣傳回同一聊天室；游標保存精確的
-送達時間，不會用建立時間代替。
+`exhausted`、`stop_reason` 與可選的 `next_cursor`。ID 保持字串，依數值由新到舊排列。
+請將游標原樣傳回同一聊天室；它保留精確的送達時間與訊息 ID，不會以建立時間代替。
+無效或不屬於該聊天室的游標會在取得歷史前被拒絕；若指定聊天室名稱，則須先查出 ID。
 
-`count_limit` 表示達到筆數上限，`page_limit` 表示取得較短的非空頁；都不代表
-已讀完。移除重複錨點後沒有訊息才回傳 `end_of_available_history`、
-`exhausted: true` 並省略游標。要求 100 筆可能因錨點而只回傳 99 筆。
-伺服器可能不再提供更舊資料，並不保證完整歷史或固定保存期限。
+`stop_reason` 為 `count_limit` 時表示已達指定筆數，`page_limit` 表示頁面較短但不為空。
+只有移除重複錨點後沒有訊息時，才回傳 `end_of_available_history`、`exhausted: true`，並省略 `next_cursor`。
+較短的頁面不代表已讀完：要求 100 筆可能因錨點占用一筆而只回傳 99 筆，下一頁也可能為空。
+只能讀取 LINE 仍提供給此用戶端的歷史，不保證完整歷史或固定保存期限。
 
-無效游標、錯誤聊天室、缺少送達時間或未向前推進的頁面會明確失敗。
-逾時回傳錯誤，不會當作讀完；部分解密失敗仍輸出含游標的分頁物件並以非零碼結束。
-目標查找的 `message_not_found` 只表示可取得的歷史中沒有目標；
-`lookup_incomplete` 表示已達頁數上限，`deadline_exceeded` 表示已逾時。
+缺少送達時間、格式錯誤或未向前推進的頁面都會明確失敗。`--timeout` 涵蓋取得與解碼；
+逾時或取消會回傳錯誤，不會當作已讀完。部分解密失敗仍輸出分頁與游標，並以非零代碼結束。
+繼續前請檢查每則訊息的狀態。一般 `--json` 仍回傳陣列。
 
 <a id="detailed-content-and-chat-json"></a>
 
@@ -271,6 +279,7 @@ line messages CHAT_ID --details --page --json --limit 50
 
 ```sh
 line members "Family group" --json
+line members "Family group" --timeout 30s
 line send "Family group" --text '😀 @Alex' --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]'
 line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"all":true}]'
 ```
@@ -281,7 +290,7 @@ line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"al
 
 JSON 包含 `schema_version:1`、`chat`、`members`、`invitees`、
 `members_complete`、`invitees_complete`。目前成員與受邀者分開列出，依 MID
-排序；每筆包含 `mid`、可為 `null` 的有效名稱 `name`、`name_status`
+排序；每筆包含 `mid`、用於顯示的名稱 `name`（可為 `null`）、`name_status`
 （`resolved` 或 `unavailable`）及 `self`。清單明確為空仍屬完整，省略或
 `null` 表示不完整。個人檔案查詢失敗時保留 MID，不會憑空補入自己。
 完整性只描述這次成員清單回應，不代表名稱齊全或日後成員不會變更。
@@ -292,6 +301,12 @@ JSON 包含 `schema_version:1`、`chat`、`members`、`invitees`、
 全體標註僅限群組或多人聊天室。可搭配 `--text`、`--stdin`、`--reply-to`，
 不可搭配 `--file`、`--image` 或互動輸入訊息。參數會在存取工作階段前驗證；既有的加密
 檢查與單次傳送規則不變。標註中繼資料與 Chrome 一樣保留在加密文字之外。
+
+指令稿中的位置必須對應未經修改的 stdin 內容：
+
+```sh
+printf '%s' '😀 @Alex' | line send "Family group" --stdin --reply-to MESSAGE_ID --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]' --json
+```
 
 <a id="send-messages-and-files"></a>
 
@@ -320,12 +335,12 @@ line send CHAT_ID --file ./report.pdf --require-e2ee --json
 不支援時會在遠端變更前以 `encryption_required` 停止。`--allow-non-e2ee` 與 `--allow-plaintext` 保留作為相容選項
 （預設 `true`；設為 `false` 代表要求 E2EE），`--require-e2ee` 優先。
 [LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)說明 TLS、Letter Sealing 及新版官方用戶端的媒體 E2EE 支援；本 CLI 的媒體互通性仍須另外驗證。
-檔案能力與文字分開檢查。能力資訊缺漏或無效、缺少金鑰、成員資料不完整及傳輸錯誤，都不會允許停用 E2EE。
+檔案與文字的加密支援會分開檢查。支援資訊缺漏或無效、缺少金鑰、成員資料不完整及傳輸錯誤，都不會允許停用 E2EE。
 只有明確執行群組傳送，且掌握所有目前成員時，才能註冊新群組金鑰。
 
 **原生圖片：** 完整圖片與預覽會重複使用加密串流，因此目前停用加密的 `--image` 傳送。
 系統會在上傳、註冊群組金鑰或建立訊息前停止，自動採用非 E2EE 傳送也無法繞過此限制。
-可用 `--file` 將原圖當作一般檔案傳送，但仍須遵守上述檔案能力規則。
+可用 `--file` 將原圖當作一般檔案傳送，但仍須通過上述檔案支援檢查。
 
 只有 LINE 明確支援非 E2EE 圖片時才能使用下列指令；傳輸有 HTTPS/TLS 保護，但 LINE 可讀取圖片：
 
@@ -344,7 +359,7 @@ line send CHAT_ID --image ./screenshot.png --json
 傳送結果中的 `encrypted: false` 表示未使用 Letter Sealing，仍有 HTTPS/TLS 傳輸加密。
 
 > [!CAUTION]
-> 每次傳送、上傳或其他遠端變更都只嘗試一次。明文訊息可能在上傳失敗前就已建立，
+> 每次傳送、上傳或其他遠端變更都只嘗試一次。非 E2EE 檔案訊息可能在上傳失敗前就已建立，
 > 結構化錯誤會保留已確認的 ID。若結果不明，請先到 LINE 確認再重試。
 
 <a id="download-or-change-a-message"></a>
@@ -364,8 +379,13 @@ line unsend "Alice" --message MY_MESSAGE_ID
 表情回應可選 `like`、`love`、`laugh`、`surprise`、`sad` 或 `angry`。
 只能收回自己傳送的訊息，且須符合 LINE 伺服器的規則。
 
-下載、反應、收回與 `send --reply-to` 共用指定聊天室的查找流程：最多 10 頁、每頁 100 筆、30 秒；較短的 `--timeout` 優先。回覆會先確認目標屬於該聊天室，再上傳、註冊群組金鑰或傳送。互動選單仍顯示最近 100 則；較舊訊息請直接指定 ID。下載不會覆寫既有檔案；
-儲存前會驗證加密資料，遠端中繼資料也不能決定輸出路徑。
+下載、表情回應、收回與 `send --reply-to` 只會查找指定聊天室，最多 10 頁、每頁 100 筆、30 秒，
+包含登入狀態復原；較短的指令期限優先。所有操作都會確認目標屬於該聊天室，收回時也會確認是否為自己傳送。
+回覆必須先找到目標，才會上傳、註冊群組金鑰或傳送。超出範圍的目標會在本機被拒絕，並非跨聊天室的 ID 搜尋。
+
+較舊頁面為空時會回傳 `message_not_found`，達到頁數上限時為 `lookup_incomplete`，逾時則為 `deadline_exceeded`。
+這些結果都不能證明訊息從未存在。互動選單只顯示最近 100 則；較舊訊息請直接指定 ID 查找。
+下載會在儲存前驗證加密資料，不會覆寫既有檔案，也不會讓遠端中繼資料決定輸出路徑。
 
 `download` 支援最大 20 MiB 的圖片、影片、音訊與一般檔案訊息，預設整個指令的期限為兩分鐘（可用 `--timeout` 調整）。
 儲存的是完整且未轉換的媒體內容，因此變更副檔名不會轉換格式。
@@ -506,9 +526,14 @@ SIGINT 為 130，SIGTERM 為 143。空的結果清單以 `[]` 表示。
 
 ### 結構化錯誤
 
-在指令前加上 `--error-format=json`，例如 `line --error-format=json send CHAT_ID --stdin --json`。錯誤會以單一 JSON 物件輸出至 stderr；stdout 的成功結果及部分結果陣列維持原格式。此模式停用互動提示，適用於核心指令及 `auth status`；登入、登出、遷移、watch 與 update 保留原有診斷方式。
+使用 `line --error-format=json COMMAND ... --json`，會在 stderr 輸出一筆結構化錯誤，
+stdout 的成功與部分結果 JSON 則維持原格式。全域選項須放在指令前，並會停用互動提示。
+支援核心指令與 `auth status`。登入、登出、移轉、watch 與 update 會在開始操作前拒絕此選項，請使用原本的診斷輸出。
 
-錯誤包含代碼、階段，以及已知的聊天／訊息 ID、請求序號與各變更步驟的結果。`unknown` 表示結果不明，重試前請先在 LINE 確認。檔案訊息已建立但上傳失敗，或傳送成功但輸出失敗時，已確認的訊息資訊仍會保留。儲存與訊號結束代碼不變。完整欄位與代碼請參閱[錯誤格式說明](JSON.md#errors)。
+錯誤包含固定的代碼與處理階段。訊息操作也會回報已知的聊天室／訊息 ID、請求序號、是否已嘗試操作、
+結果，以及準備或上傳的各步驟。檔案訊息可能已建立，但上傳失敗；傳送成功後即使輸出失敗，仍會保留已確認的結果。
+不要自動重試 `unknown` 的操作，網路錯誤也一樣；請先在 LINE 確認。儲存與訊號結束代碼不變。
+完整欄位、代碼與範例請參閱[錯誤格式說明](JSON.md#errors)。
 
 <a id="json-lookup-results"></a>
 
@@ -792,7 +817,7 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 | --- | --- |
 | 不認得指南中的選項 | 執行 `line version` 與 `line COMMAND --help`，比對該發行標籤的指南。用 `line update --check` 檢查更新。 |
 | `encryption_required` | 不支援 E2EE，已由嚴格模式阻止傳送。移除 `--require-e2ee`（或設為 `false` 的相容選項）即可透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。 |
-| `encrypted_image_unavailable` | 目前停用加密圖片。可用 `--file` 傳送原始位元組，但仍須遵守能力規則。 |
+| `encrypted_image_unavailable` | 目前停用加密圖片。可用 `--file` 傳送原始位元組，但仍須通過檔案支援檢查。 |
 | SSH 或服務無法存取儲存 | 以相同使用者與環境執行 `line auth status --check --json`，查看[服務診斷](#diagnose-a-headless-service)。不要刪除工作階段檔案來繞過錯誤。 |
 | 傳送失敗或最近歷史中找不到 | 重做前先查看 LINE。用[結構化錯誤](#structured-errors)區分已確認與不明結果；最近歷史中沒有不代表未送達。 |
 | 歷史頁面較短或部分無法解密 | 除非 `exhausted` 為真，否則可繼續使用游標。請檢查各訊息狀態與結束代碼；舊歷史或金鑰可能已無法取得。 |
@@ -846,10 +871,12 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 
 ### 目前限制
 
+- LINE 回報不支援 E2EE 時，會透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。
+  使用 `--require-e2ee` 可阻止這類傳送。詳見[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)。
 - 每位作業系統使用者只能儲存一個 LINE 帳號。
 - QR 登入仍屬實驗性功能，需要可用的 Letter Sealing 金鑰。
 - 每頁最多 100 則；使用 `--page --json` 與游標可讀取仍可取得的較舊歷史。查找操作目標最多 10 頁、30 秒。
-- 一般檔案須檢查能力；非 E2EE 傳送仍經 HTTPS/TLS 加密。加密的原生圖片已停用；非 E2EE JPEG/PNG 圖片須有明確能力。不支援原生影音、動態圖片、圖片回覆及貼圖傳送。
+- 一般檔案須確認 LINE 的支援狀態；非 E2EE 傳送仍經 HTTPS/TLS 加密。加密的原生圖片已停用；非 E2EE JPEG/PNG 圖片須由 LINE 明確回報支援。不支援原生影音、動態圖片、圖片回覆及貼圖傳送。
 - 支援下載最大 20 MiB 的圖片、影片、音訊與檔案，不支援外部媒體網址。
 - 讀取訊息不會標示已讀。
 - 發行版執行檔尚未經過數位簽署或公證。

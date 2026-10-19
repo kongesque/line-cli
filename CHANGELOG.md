@@ -13,9 +13,8 @@ and the documentation at your installed version's tag.
 - CLI sends prefer Letter Sealing. When LINE explicitly reports no E2EE support,
   sends proceed over HTTPS/TLS without confirmation; LINE can read this content.
   Use `--require-e2ee` to block non-E2EE sends, including in scripts and JSON mode.
-
 - File media capability is checked independently of text encryption. A chat
-  with encrypted text may allow only plaintext files. Unsupported or unknown
+  with encrypted text may support only non-E2EE files. Unsupported or unknown
   capabilities never justify bypassing the check.
 - Encrypted native image sending is disabled because image and preview reuse
   an encryption stream. Automatic non-E2EE delivery cannot override this restriction.
@@ -38,7 +37,7 @@ and the documentation at your installed version's tag.
 - Detailed message/chat JSON using `--details --json`, with optional sender-name
   resolution, decoded content, and explicit unavailable values.
 - Group member/invitee listing and explicit UTF-16 mention spans for text sends.
-- Guarded native JPEG/PNG image preparation and plaintext sending. Encrypted
+- JPEG/PNG image preparation and non-E2EE sending with capability checks. Encrypted
   native images remain disabled and native-image live interoperability is unverified.
 
 ### Security
@@ -48,8 +47,8 @@ and the documentation at your installed version's tag.
   remain readable with conflict checks.
 - Authenticated requests reject redirects, and network responses and SSE events
   have explicit size budgets. Mutations are never automatically replayed.
-- Source and release binaries are scanned with pinned govulncheck. Release
-  executables retain symbols needed for binary analysis.
+- Source and release binaries are scanned with a pinned version of govulncheck.
+  Release executables retain symbols needed for binary analysis.
 - Live encrypted-file interoperability remains unverified. The authorized live
   file roundtrips verified plaintext delivery only. See the
   [security changes and validation record](docs/SECURITY.md#security-change-record).

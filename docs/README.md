@@ -1,7 +1,7 @@
 # Documentation
 
-Use the [CLI guide](CLI.md) to install and use LINE CLI. The repository README
-has the [quick start](../README.md#quick-start-send-your-first-line-message).
+Start with the [README quick start](../README.md#quick-start-send-your-first-line-message).
+Use the [CLI guide](CLI.md) for command options, troubleshooting, and server setup.
 Documentation on the development branch follows current development; for a
 released version, use the guide and README at that release tag.
 
@@ -25,6 +25,7 @@ released version, use the guide and README at that release tag.
 | Contributor workflow and pull requests | [Contributing](../CONTRIBUTING.md) |
 | User-visible changes and upgrade notes | [Changelog](../CHANGELOG.md) |
 
-The user guides describe supported behavior. The session and security documents
-include implementation details and dated validation records; those records
-apply to the revision and environment stated in each entry.
+The README and CLI guide are available in all four languages; the references
+are in English. The user guides describe supported behavior. The session and
+security documents include implementation details and dated validation records;
+those records apply to the revision and environment stated in each entry.

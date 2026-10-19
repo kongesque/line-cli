@@ -140,16 +140,17 @@ A successful send prints `Sent to … · end-to-end encrypted` or
 | Download photos, video, audio, or files | `line download` |
 | Stream live events | `line watch` |
 
-Replace `Alice` with a unique exact chat name (case-insensitive), or use a full
-chat ID. If names are duplicated, run `line chats --search "Alice" --show-ids`
-and use the full ID shown. Run `line COMMAND --help` for options; the
+Replace `Alice` with a full chat ID or a complete chat name that matches only
+one chat (case-insensitive). If names are duplicated, run
+`line chats --search "Alice" --show-ids` and use the full ID shown.
+Run `line COMMAND --help` for options; the
 [CLI guide](docs/CLI.md#daily-commands) covers replies, reactions, and pagination.
 
 ## Automate LINE with JSON and shell scripts
 
 Add `--json` for structured output on stdout; diagnostics go to stderr.
 `--json` and `--stdin` disable prompts, so supply all required arguments.
-Use full chat IDs in scripts, since names can change.
+Use full chat IDs in scripts because names can change.
 
 ```sh
 line chats --search "Family" --json
@@ -169,16 +170,17 @@ check LINE before repeating it.
 Sends use Letter Sealing (end-to-end encryption, E2EE) whenever available. When
 LINE explicitly reports no E2EE support, the CLI sends over HTTPS/TLS without
 asking for confirmation. The transfer is encrypted, but LINE can read the content.
-Use `--require-e2ee` to block non-E2EE sends. File capability is checked separately
-from text; missing keys and transport failures never trigger a downgrade.
-[LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)
-explains transport encryption and Letter Sealing.
+Use `--require-e2ee` to block non-E2EE sends. File encryption support is checked
+separately from text; missing keys and transport failures never trigger a downgrade.
 
 See [sending and encryption](docs/CLI.md#send-messages-and-files) and
 [session storage](docs/CLI.md#where-your-session-is-stored).
 
 ## Limitations
 
+- When LINE reports no E2EE support, sends use HTTPS/TLS; LINE can read the
+  content. `--require-e2ee` blocks these sends. See
+  [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/).
 - History contains up to 100 messages per page. Use `--page --json` and its cursor
   for older available history; full history is not guaranteed. Reading does not
   mark messages as read; some older encrypted messages may be unavailable.

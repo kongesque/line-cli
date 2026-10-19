@@ -1,6 +1,6 @@
 # Security model and validation
 
-Contributor reference for Letter Sealing boundaries and recorded security work.
+Contributor reference for encryption behavior and recorded security checks.
 For sending, encryption policy, and user-visible restrictions, use the
 [send guide](CLI.md#send-messages-and-files). Storage format and refresh details
 are in [SESSION.md](SESSION.md); user-facing changes belong in the
@@ -91,9 +91,10 @@ revisions and environments; they do not replace the next release's CI gates.
 There is no encryption confirmation or consent-based restart. Capability and key
 validation run under the normal session lock. Sends, uploads, and group-key
 registrations are attempted once, with no automatic mutation retry.
-The earlier consent flow was synthetically validated on 2026-10-19; those recorded
-checks do not validate this replacement policy. For this change, the native build,
-help output, and `go vet` passed; updated regression tests have not been run.
+The earlier confirmation flow passed synthetic checks on 2026-10-19. Those
+results apply to that flow, not the automatic send policy. For the switch to automatic
+sending, the native build, help output, and `go vet` passed; updated regression
+tests have not been run.
 No live sends were performed.
 
 ### Protocol evidence

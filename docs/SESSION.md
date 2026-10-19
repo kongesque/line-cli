@@ -1,10 +1,10 @@
 # Session lifecycle and storage
 
 Contributor reference for token refresh, credential persistence, and the Linux
-headless engine. For installation, consent, migration commands, service units,
+headless engine. For setup, host-only storage consent, migration, services,
 and recovery steps, use the [account](CLI.md#account-and-session) and
 [headless](CLI.md#linux-servers-and-headless-storage) chapters of the user guide.
-For message encryption boundaries, see [security](SECURITY.md#letter-sealing).
+For message encryption, see the [security model](SECURITY.md#letter-sealing).
 
 [Token refresh](#token-refresh) · [Call paths](#call-path-audit) ·
 [Headless engine](#headless-storage-engine) · [Envelope](#envelope-version-1) ·

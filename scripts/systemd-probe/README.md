@@ -1,9 +1,9 @@
 # Headless-storage Phase 0 probe
 
 This directory preserves the synthetic experiment that informed the production
-headless storage backend. It is an evidence and reproduction tool, not the setup
-path for ordinary users. See the [CLI guide](../../docs/CLI.md#linux-servers-and-headless-storage) for
-current usage and the [engine document](../../docs/SESSION.md#headless-storage-engine) for
+headless storage backend. Maintainers can use it to reproduce the experiment.
+For setup, see the [CLI guide](../../docs/CLI.md#linux-servers-and-headless-storage).
+The [engine document](../../docs/SESSION.md#headless-storage-engine) describes
 the production design.
 
 The probe remains separate from `cmd/line` and `internal/session`. It does not read

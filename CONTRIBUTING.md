@@ -7,8 +7,10 @@ test tiers, platform checks, and release procedures.
 
 - Keep changes focused. Explain the problem, resulting behavior, limitations,
   and any required upgrade action.
-- Update the user guide, translations, JSON reference, security record, and
-  changelog when the change affects them. See the [documentation map](docs/README.md).
+- Update affected guides, references, and the changelog together. Use the English
+  README and CLI guide as the content reference for translations. Keep commands,
+  options, JSON fields, limits, and anchors in sync; translate the explanations
+  naturally. See the [documentation map](docs/README.md).
 - Run the relevant checks from the development guide. Report which checks you
   ran and any platform or live-service checks that remain outstanding.
 - Use synthetic fixtures and fake APIs for ordinary tests. Live LINE tests

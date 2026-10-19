@@ -89,7 +89,7 @@ line messages
 line send
 ```
 
-`line send` asks you to choose a recipient, enter text, and confirm the message.
+`line send` asks you to choose a recipient. Enter your message and press Enter to send.
 For email/password login, use the options below; passwords are entered privately
 and never saved. There is no password flag or password environment variable.
 
@@ -145,7 +145,7 @@ their current step before cancellation is checked.
 
 A dispatched mutation may already have succeeded when interrupted. Inspect LINE
 before repeating it; the CLI never replays it. Confirmed receipts and created
-plaintext-file message IDs are retained even if a later upload or output fails.
+non-E2EE file message IDs are retained even if a later upload or output fails.
 Success output can therefore accompany a signal exit.
 
 Cancelling before a new session is saved preserves the old local session, but
@@ -225,58 +225,50 @@ line messages "Alice" --show-ids
 line messages CHAT_ID --json
 ```
 
-By default, `messages` fetches 1–100 recent messages. Human output sorts by
-created time, oldest first; legacy `--json` retains the server's array order.
-`--show-ids` includes the IDs needed for replies, reactions, downloads, and
-unsend. To inspect which IDs LINE returns before decryption, without printing
-message content:
+`messages` reads 20 recent messages by default; `--limit` accepts 1–100.
+Human output shows the oldest first; ordinary `--json` preserves server order.
+`--show-ids` includes IDs for replies, reactions, downloads, and unsend.
+Reading never marks messages as read or saves their text locally. Some older
+encrypted messages may be unreadable if LINE no longer provides their device keys.
+
+To inspect returned IDs before decryption, without message content or key lookups:
 
 ```sh
 line --error-format=json messages "Chat name" --diagnostics --json --limit 50
 ```
 
-This returns `schema_version: 1`, `chat_id`, `method: "getRecentMessagesV2"`,
-`requested_count`, `returned_count`, `null_count`, `invalid_id_count`, and
-`message_ids` in server order. IDs remain strings; malformed IDs are counted
-instead of printed. It performs one logical recent-history read (authentication
-recovery may retry), without decryption or key lookups. An absent ID means it
-was not in this response, not that delivery failed or all history was searched.
 `--diagnostics` requires `--json` and cannot combine with `--details`,
-`--resolve-names`, `--page`, or `--cursor`. Normal history output is unchanged.
+`--resolve-names`, `--page`, or `--cursor`. A missing ID only means it was absent
+from this response. See the [diagnostic fields](JSON.md#history-diagnostics).
 
-To continue into older available history, use the opt-in page contract:
+### History pagination JSON
 
 ```sh
 line messages CHAT_ID --page --json --limit 50
 line messages CHAT_ID --page --json --limit 50 --cursor 'NEXT_CURSOR'
 ```
 
-`--page` requires `--json`; `--cursor` requires both. Each call reads one page,
-returning a schema-1 object with `schema_version`, `chat_id`, `order`, `messages`,
-`exhausted`, `stop_reason`, and optional `next_cursor`. `messages` contains the
-same safe fields as the legacy array, ordered newest first by numeric message
-ID (`order: "newest_first"`). IDs remain strings. Pass `next_cursor` unchanged
-with the same chat. It contains the exact delivered time and message ID; created
-time is never substituted. Invalid or mismatched cursors fail before history
-retrieval (a chat name must first be resolved).
+`--page` requires `--json`; `--cursor` requires both. Each call returns one page
+with `schema_version: 1`, `chat_id`, `order: "newest_first"`, `messages`,
+`exhausted`, `stop_reason`, and optional `next_cursor`. Message IDs stay strings;
+pages sort by numeric ID, newest first. Pass the cursor unchanged to the same
+chat. It preserves the exact delivered time and message ID, never created time.
+Invalid or mismatched cursors fail before history retrieval; chat names must be
+resolved first.
 
-`stop_reason` is `count_limit` when the requested number was returned,
-`page_limit` for a shorter nonempty page, or `end_of_available_history` when no
-messages remain after removing the inclusive anchor. Only the last case sets
-`exhausted: true` and omits `next_cursor`. A short page is not proof of exhaustion;
-a request for 100 may return 99 because the anchor occupies one slot. A cursor
-may lead to an empty next page. This reads only history still available to this
-client; it does not promise all historical messages or a fixed retention period.
-Missing delivered times or nonadvancing/malformed pages fail explicitly.
+`stop_reason` is `count_limit` when the requested count is returned, `page_limit`
+for a shorter nonempty page, or `end_of_available_history` when no messages remain
+after removing the inclusive anchor. Only the last sets `exhausted: true` and
+omits `next_cursor`. A short page is not the end: requesting 100 may return 99
+because the anchor takes one slot, and a cursor can lead to an empty page.
+Only history still available to this client can be read; neither full history
+nor a fixed retention period is guaranteed.
 
-`--timeout` covers page retrieval and decoding. Timeout/cancellation returns an
-error, never an exhaustion result. Partial decryption failures still emit the
-page object, including its cursor, with a nonzero exit; inspect each message's
-status before continuing. Ordinary `--json` still returns an array.
-
-Reading history does not mark messages as read or save their text locally. Some
-older encrypted messages may be unavailable if LINE no longer provides their
-original device keys.
+Missing delivered times, malformed pages, and pages that do not advance fail
+explicitly. `--timeout` covers retrieval and decoding; timeout or cancellation
+returns an error, never exhaustion. Partial decryption failures still return the
+page and cursor with a nonzero exit; check each message's status before continuing.
+Ordinary `--json` remains an array.
 
 ### Detailed content and chat JSON
 
@@ -286,11 +278,11 @@ line messages CHAT_ID --details --json --resolve-names
 line messages CHAT_ID --details --page --json --limit 50
 ```
 
-`--details` requires `--json` and returns a schema-1 envelope with decoded
+`--details` requires `--json` and returns a `schema_version: 1` envelope with decoded
 content and explicit unknown values. Add `--resolve-names` to look up sender
 names. Legacy JSON and watch formats remain unchanged. Partial decryption
 failures still emit results and return a nonzero exit code.
-See the [detailed field contract](JSON.md#detailed-content) for fields, statuses,
+See the [detailed JSON reference](JSON.md#detailed-content) for fields, statuses,
 and limits.
 
 ### List group members and mention someone
@@ -303,9 +295,10 @@ line send "Family group" --text '@All hello' --mentions '[{"start":0,"end":4,"al
 ```
 
 Replace `USER_MID` with a full user MID from `members`. The command returns
-current `members` and `invitees` separately, sorted by MID. Each entry has `mid`,
-nullable effective `name`, `name_status` (`resolved` or `unavailable`), and `self`.
-The schema-1 envelope also has `chat`, `members_complete`, and
+current `members` and `invitees` separately, sorted by MID. It supports `--timeout`
+and the global JSON error format. Each entry has `mid`, the display `name`
+(`null` if unavailable), `name_status` (`resolved` or `unavailable`), and `self`.
+The `schema_version:1` envelope also has `chat`, `members_complete`, and
 `invitees_complete`. A present empty list is complete; an omitted/null list is
 incomplete. Failed profile lookups leave names unavailable without discarding
 the membership snapshot. Self is marked only if returned; no member is invented.
@@ -318,8 +311,8 @@ inclusive and `end` exclusive, measured in UTF-16 code units of the exact text:
 `😀` occupies two units. Each span needs either a full user `mid` or `all:true`.
 Spans cannot overlap or split a surrogate pair. Literal `@name` text does not
 create mentions. Mention-all requires a group or room. Mentions support
-`--text`, `--stdin`, and `--reply-to`; they cannot accompany `--file` or a
-prompted message. Invalid input is rejected before session access. The existing
+`--text`, `--stdin`, and `--reply-to`; they cannot accompany `--file`, `--image`,
+or a prompted message. Invalid input is rejected before session access. The existing
 single-attempt send and encryption rules apply. Mention metadata remains
 outside the encrypted text, matching Chrome.
 
@@ -360,16 +353,16 @@ unavailable. `--allow-non-e2ee` and `--allow-plaintext` remain compatibility opt
 (default `true`; `false` requires E2EE). `--require-e2ee` takes precedence.
 [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)
 explains TLS, Letter Sealing, and media E2EE in modern official clients; this CLI's
-media interoperability needs separate validation. File capability is checked
+media interoperability needs separate validation. File encryption support is checked
 separately from text. Missing or invalid capabilities, missing keys, incomplete
-membership, and transport errors never authorize a downgrade. Only an explicit
-group send with complete current membership can register a group key.
+membership, and transport errors never authorize a downgrade. A group key can be
+registered only during an explicit send with a complete list of current members.
 
 **Native images.** Encrypted `--image` sending is disabled because the current
 full-image/preview format reuses an encryption stream. It stops before uploads,
 group-key registration, or message creation; automatic non-E2EE delivery does not
 bypass that restriction. Use `--file` to send the original image as a generic file,
-subject to the file capability rules above.
+subject to the file support checks above.
 
 When LINE explicitly supports non-E2EE images, use the following. HTTPS/TLS
 protects the transfer, but LINE can read the image:
@@ -392,7 +385,7 @@ request sequence. Human receipts say `end-to-end encrypted` or
 Sealing; HTTPS/TLS transport encryption still applies.
 
 > [!CAUTION]
-> Each send, upload, or other remote change is attempted once. A plaintext
+> Each send, upload, or other remote change is attempted once. A non-E2EE file
 > message can be created before its upload fails; structured errors retain its
 > confirmed ID. If the outcome is unknown, inspect LINE before retrying.
 
@@ -411,19 +404,19 @@ line unsend "Alice" --message MY_MESSAGE_ID
 Reactions are `like`, `love`, `laugh`, `surprise`, `sad`, and `angry`. You can
 unsend only your own messages, subject to LINE's server rules.
 
-Downloads, reactions, unsend, and `send --reply-to` share a read-only lookup in
-the selected chat: at most 10 pages of 100 records each and 30 seconds, including
-authentication recovery. A shorter command deadline takes precedence. The lookup
-checks chat identity; unsend also checks ownership. Replies must find their target
-before any upload, group-key registration, or send. A target outside this search
-boundary is rejected locally. This is bounded pagination, not a global ID search.
+Downloads, reactions, unsend, and `send --reply-to` search only the selected chat:
+at most 10 pages of 100 records and 30 seconds, including authentication recovery.
+A shorter command deadline takes precedence. Every target must belong to that
+chat; unsend also checks ownership. Replies must find the target before any
+upload, group-key registration, or send. Targets outside this limit are rejected
+locally; this is not a global ID search.
 
-An empty older page reports `message_not_found` in available history; reaching
-the page budget reports `lookup_incomplete`, and a time budget reports
-`deadline_exceeded`. None proves that the message never existed. Interactive
-message choosers still show the latest 100; supply an explicit older message ID
-to use the extended lookup. Downloads never overwrite an existing destination. They verify encrypted data before
-saving, and remote metadata cannot choose the output path.
+An empty older page returns `message_not_found`; the page limit returns
+`lookup_incomplete`, and the time limit returns `deadline_exceeded`. None proves
+the message never existed. Interactive choosers show only the latest 100;
+specify an older message ID directly to search further. Downloads verify
+encrypted data before saving, never overwrite an existing file, and never let
+remote metadata choose the output path.
 
 `download` supports image, video, audio, and generic file messages up to 20
 MiB, with a two-minute command deadline by default (`--timeout` overrides it). It saves the full media bytes
@@ -575,20 +568,19 @@ chunks or raw server response bodies.
 
 ### Structured errors
 
-Use `line --error-format=json COMMAND ... --json` for one structured error on
-stderr while keeping the existing success and partial-result JSON on stdout.
-The global option must precede the command and disables guided prompts. It
-supports the core commands and `auth status`; login, logout, migration,
-watch, and update retain their existing diagnostics.
+Use `line --error-format=json COMMAND ... --json` to write one structured error
+to stderr while preserving success and partial-result JSON on stdout. Put the
+global option before the command; it disables prompts. It supports the core
+commands and `auth status`. Login, logout, migration, watch, and update reject
+this option before doing work; use their normal diagnostics instead.
 
-Errors include a stable code and stage. Message mutations also retain known IDs,
-the request sequence, whether the action was attempted, its outcome, and any
-preparation/upload steps. A created plaintext-file message is reported separately
-from a failed upload. A successful send with failed output remains confirmed.
-Never automatically retry an `unknown` mutation, even for a transient transport
-error. Inspect LINE first. Storage and signal exit codes are unchanged.
-
-See [the error schema, codes, and outcome examples](JSON.md#errors).
+Errors include a stable code and stage. Message actions also report known chat
+and message IDs, the request sequence, whether the action was attempted, its
+outcome, and any preparation/upload steps. A file message can be confirmed even
+if its upload fails; a send remains confirmed if writing the result fails.
+Never automatically retry an `unknown` action, including after a network error:
+check LINE first. Storage and signal exit codes are unchanged.
+See the [error fields, codes, and examples](JSON.md#errors).
 
 ### JSON lookup results
 
@@ -894,7 +886,7 @@ when storage is unavailable, then return the matching nonzero code.
 | --- | --- |
 | A documented option is unknown | Run `line version` and `line COMMAND --help`; compare with the docs at that release tag. Check for updates with `line update --check`. |
 | `encryption_required` | LINE reports no E2EE support and strict mode blocked the send. Omit `--require-e2ee` (or legacy allow flags set to `false`) to use HTTPS/TLS; LINE can read that content. |
-| `encrypted_image_unavailable` | Encrypted native images are disabled. Try `--file` for the original bytes; file capability checks still apply. |
+| `encrypted_image_unavailable` | Encrypted native images are disabled. Try `--file` for the original bytes; file support checks still apply. |
 | Login or an SSH service cannot access storage | Run `line auth status --check --json` as the same user and environment. Follow [headless diagnostics](#diagnose-a-headless-service); do not delete session files to bypass the error. |
 | A send fails or is absent from recent history | Inspect LINE before repeating it. Use [structured errors](#structured-errors) to distinguish a confirmed action from an unknown outcome. Recent history is not proof of non-delivery. |
 | A history page is short or partly unreadable | Continue with its cursor unless `exhausted` is true. Check each message status and the exit code; older keys/history may be unavailable. |
@@ -942,12 +934,15 @@ and fake APIs; live LINE tests require explicit authorization.
 
 ### Current limitations
 
+- When LINE reports no E2EE support, sends use HTTPS/TLS; LINE can read the
+  content. `--require-e2ee` blocks these sends. See
+  [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/).
 - One saved LINE account per operating-system user.
 - QR login is experimental and requires usable Letter Sealing keys.
 - History pages contain at most 100 messages; use `--page --json` and its cursor for older available history. Action/reply lookup is bounded to 10 pages and 30 seconds.
-- Generic files require explicit media capability; non-E2EE delivery uses HTTPS/TLS.
-  Encrypted native images are disabled; plaintext JPEG/PNG images require explicit
-  capability. Native audio/video, animated images, image replies, and
+- Generic files require LINE to report media support; non-E2EE delivery uses HTTPS/TLS.
+  Encrypted native images are disabled; non-E2EE JPEG/PNG images require explicit
+  support from LINE. Native audio/video, animated images, image replies, and
   sticker sends are unsupported.
 - Downloads support images, video, audio, and files up to 20 MiB; external
   media URLs are unsupported.

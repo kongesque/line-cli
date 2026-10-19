@@ -1,6 +1,6 @@
 # LINE CLI：個人 LINE 帳號的指令列用戶端
 
-[English](README.md) | 繁體中文（台灣）  | [日本語](README.ja.md) | [ภาษาไทย](README.th.md)
+[English](README.md) | 繁體中文（台灣） | [日本語](README.ja.md) | [ภาษาไทย](README.th.md)
 
 **LINE CLI** 是以 Go 撰寫的非官方工具，讓你能在終端機使用個人 LINE 帳號，
 讀取聊天室、傳送訊息與檔案、下載附件，並接收即時事件。
@@ -141,7 +141,7 @@ line send       # 選擇收件人並輸入訊息
 | 下載照片、影片、音訊或檔案 | `line download` |
 | 串流接收即時事件 | `line watch` |
 
-請將 `Alice` 換成唯一且完全相符的聊天室名稱（不區分大小寫），或使用完整的聊天室 ID。
+請將 `Alice` 換成沒有重複的完整聊天室名稱（不區分大小寫），或使用完整的聊天室 ID。
 若名稱重複，執行 `line chats --search "Alice" --show-ids`，再使用顯示的完整 ID。
 使用 `line COMMAND --help` 查看選項；回覆、表情回應與分頁等進階操作請參閱
 [CLI 指南](docs/CLI.zh-TW.md#daily-commands)。
@@ -171,15 +171,16 @@ line watch --json > events.ndjson
 
 傳送會優先使用 Letter Sealing（端對端加密，E2EE）。只有 LINE 明確回報不支援時，
 才會直接透過 HTTPS/TLS 傳送，不再逐次詢問。傳輸仍有加密，但 LINE 可讀取內容。
-若要禁止非 E2EE 傳送，請加上 `--require-e2ee`。檔案能力與文字分開檢查；
+若要禁止非 E2EE 傳送，請加上 `--require-e2ee`。檔案與文字的加密支援會分開檢查；
 金鑰缺少或傳輸失敗時不會停用端對端加密。
-[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)說明傳輸加密與 Letter Sealing 的差異。
 
 詳見[傳送與加密](docs/CLI.zh-TW.md#send-messages-and-files)及
 [工作階段儲存](docs/CLI.zh-TW.md#where-your-session-is-stored)。
 
 ## 使用限制
 
+- LINE 回報不支援 E2EE 時，會透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。
+  使用 `--require-e2ee` 可阻止這類傳送。詳見[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)。
 - 每頁最多 100 則訊息。使用 `--page --json` 與游標可讀取仍可取得的較舊歷史，
   但不保證完整歷史。讀取不會標為已讀；部分較舊的加密訊息可能無法讀取。
 - 檔案傳送與媒體下載上限為 20 MiB。`--file` 保留原始位元組，並顯示為一般檔案。

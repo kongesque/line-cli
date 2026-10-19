@@ -4,7 +4,7 @@
 
 **LINE CLI** は、個人のLINEアカウントをターミナルから使うためのGo製の非公式CLIです。
 トークの閲覧、メッセージやファイルの送信、添付ファイルのダウンロード、イベントの受信ができます。
-**macOS、Linux、Windows**に対応し、対話式の入力とJSON出力を利用できます。
+**macOS、Linux、Windows**に対応し、対話形式の操作とJSON出力を利用できます。
 ボットアカウントやLINE Messaging APIの設定は不要です。
 
 [![CI](https://github.com/kongesque/line-cli/actions/workflows/cli.yml/badge.svg)](https://github.com/kongesque/line-cli/actions/workflows/cli.yml)
@@ -94,7 +94,7 @@ LINEアカウントにメールアドレスとパスワードを設定済みな�
 line login --email you@example.com
 ```
 
-パスワードは画面に表示されない入力欄で入力し、求められた場合はスマートフォンで認証を完了してください。
+パスワードは入力中も画面に表示されません。求められた場合はスマートフォンで認証を完了してください。
 パスワードは保存されません。
 
 <details>
@@ -145,7 +145,7 @@ Ctrl-Cでキャンセルできます。次の例のようにトーク名を直�
 | 写真、動画、音声、ファイルをダウンロード | `line download` |
 | リアルタイムイベントを受信 | `line watch` |
 
-`Alice` は一意で完全一致するトーク名（大文字と小文字を区別しません）、または完全なトークIDに置き換えてください。
+`Alice` は完全なトークID、または他と重複しないトーク名に置き換えてください。名前は全体を指定し、大文字と小文字は区別しません。
 同じ名前が複数ある場合は `line chats --search "Alice" --show-ids` を実行し、表示された完全なIDを使います。
 オプションは `line COMMAND --help`、返信やリアクション、ページ分割は
 [CLIガイド](docs/CLI.ja.md#daily-commands)で確認できます。
@@ -173,21 +173,22 @@ line watch --json > events.ndjson
 
 ## Letter Sealingによる暗号化とセッションのセキュリティ
 
-送信には対応している限りLetter Sealing（エンドツーエンド暗号化、E2EE）を使います。
+送信時は、対応している限りLetter Sealing（エンドツーエンド暗号化、E2EE）を使います。
 LINEが非対応と明示した場合は、確認なしでHTTPS/TLSによる送信を行います。
 転送中のデータは暗号化されますが、LINEは内容を読めます。非E2EE送信を防ぐには `--require-e2ee` を指定します。
-ファイルの送信能力はテキストと別に確認し、キーの欠落や通信失敗でE2EEを無効にすることはありません。
-[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)で、通信経路の暗号化とLetter Sealingの違いを確認できます。
+ファイルとテキストでは暗号化への対応を個別に確認し、キーの欠落や通信失敗でE2EEを無効にすることはありません。
 
 [送信と暗号化](docs/CLI.ja.md#send-messages-and-files)・
 [セッションの保存](docs/CLI.ja.md#where-your-session-is-stored)を参照してください。
 
 ## 制限事項
 
+- LINEがE2EE非対応と明示した場合はHTTPS/TLSで送信しますが、LINEは内容を読めます。
+  `--require-e2ee` でこの送信を防げます。詳しくは[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)を参照してください。
 - 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めますが、
   全履歴は保証しません。閲覧しても既読にはならず、古い暗号化メッセージの一部は読めない場合があります。
 - ファイル送信とメディアのダウンロードは最大20 MiBです。`--file` は元のバイト列を保持し、通常のファイルとして表示されます。
-  暗号化した画像メッセージの送信は無効です。非E2EE画像にはLINEの明示的な送信能力が必要です。
+  暗号化した画像メッセージの送信は無効です。非E2EE画像は、LINEが対応を明示した場合に限り送信できます。
   動画・音声の専用送信、スタンプ送信、外部メディアURLのダウンロードは非対応です。
 - LINE CLIはLINEのChrome形式のプロトコルを使用します。サーバー側の変更によって
   互換性に影響が出る場合があり、一部の処理にはより幅広い実環境での検証が必要です。

@@ -2,7 +2,7 @@
 
 Maintainer reference for builds, tests, fixtures, CI, and release publication.
 Start with [AGENTS.md](../AGENTS.md) for package ownership and contributor rules;
-users should use the [CLI guide](CLI.md).
+for everyday usage, see the [CLI guide](CLI.md).
 
 [Build and checks](#build-and-checks) · [Test suites](#test-suites) ·
 [Platform integration](#platform-integration) · [Live tests](#live-line-checks) ·
@@ -178,8 +178,8 @@ watch checks read real events and update the saved watch cursor. Neither test
 sends messages, registers group keys, or marks messages read. `LINE_CLI_LIVE_SECURITY_READ=1` enables
 `TestLiveSecurityMediaFlow` for the explicit `LINE_CLI_LIVE_SECURITY_CHAT` ID. It
 reads group negotiation capability (without registration), then media capability,
-and for plaintext-only files verifies default
-refusal with a transport guard that prevents mutation requests.
+and for non-E2EE files checks the messaging API’s strict policy with a transport
+guard that prevents mutation requests. This is separate from the CLI’s default policy.
 
 `LINE_CLI_LIVE_SECURITY_SEND=1` enables `TestLiveSecuritySend`. This requires
 separate explicit authorization for the selected chat, text `Security test from
@@ -245,10 +245,10 @@ Transport-limit tests include a loopback-only HTTP server to verify gzip and
 chunked transfer decoding; they need permission to bind a local ephemeral port.
 All request payloads and credentials are synthetic. Security tests cover outer
 file envelopes, recipient attachment authentication, pre-upload image refusal,
-plaintext consent (terminal accept/decline/EOF, released prompt locks, changed
-accounts, fresh preparation, script suppression, and no mutation replay), redirect
-rejection, and response/SSE budgets. Cross builds do
-not substitute for native Linux keyring or Windows DPAPI integration tests.
+encryption policy (automatic non-E2EE delivery, strict-mode precedence,
+compatibility flags, missing-key failures, script behavior, and no mutation replay),
+redirect rejection, and response/SSE budgets. Cross builds do not substitute for
+native Linux keyring or Windows DPAPI integration tests.
 
 ## Release checklist
 
@@ -263,8 +263,9 @@ the [changelog](../CHANGELOG.md) until a version and release date are chosen.
 - Use a minor version for new commands/options or behavior changes, and a patch
   version for compatible fixes. Do not promise live interoperability based only
   on synthetic tests or static protocol evidence.
-- For this candidate, call out encryption consent, file-specific capabilities,
-  disabled encrypted native images, and stopping watchers before upgrading.
+- For this candidate, call out automatic non-E2EE delivery, `--require-e2ee`,
+  file capabilities, disabled encrypted native images, and stopping watchers
+  before upgrading.
 - Keep detailed evidence in [SECURITY.md](SECURITY.md#security-change-record); release notes
   should explain the effect on users and link to that record.
 
