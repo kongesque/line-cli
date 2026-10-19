@@ -81,7 +81,7 @@ line login
 
 Scan the terminal QR code with LINE's scanner on your phone, approve the login,
 and enter the displayed PIN if asked. Wait for **Session saved securely**.
-QR login is experimental and requires Letter Sealing to be enabled.
+QR login requires Letter Sealing to be enabled.
 
 If your LINE account has an email address and password configured, you can use
 this instead, including when QR login fails:

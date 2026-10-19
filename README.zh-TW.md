@@ -82,8 +82,8 @@ line login
 ```
 
 使用手機 LINE 的掃描器掃描終端機上的 QR 碼、核准登入，並依提示輸入顯示的 PIN。
-請等到出現 **Session saved securely**。QR 碼登入目前為實驗性功能，
-且必須啟用 Letter Sealing。
+請等到出現 **Session saved securely**。
+QR 碼登入必須啟用 Letter Sealing。
 
 若 LINE 帳號已設定電子郵件與密碼，可改用下列方式登入，QR 碼登入失敗時也適用：
 
