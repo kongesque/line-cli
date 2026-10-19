@@ -94,11 +94,11 @@ func TestNameResolutionExactUniqueAndNoSendOnAmbiguity(t *testing.T) {
 				t.Fatalf("got %q, %v", got, err)
 			}
 			if tc.want == "" {
-				if err := a.Run([]string{"send", tc.selector, "--allow-plaintext", "--text", "test"}); err == nil || f.sent != nil {
+				if err := a.Run([]string{"send", tc.selector, "--text", "test"}); err == nil || f.sent != nil {
 					t.Fatal("unresolved name sent")
 				}
 			} else if tc.want == "u-one" {
-				if err := a.Run([]string{"send", tc.selector, "--allow-plaintext", "--text", "test"}); err != nil {
+				if err := a.Run([]string{"send", tc.selector, "--text", "test"}); err != nil {
 					t.Fatal(err)
 				}
 				if f.sent == nil || f.sent.To != tc.want {

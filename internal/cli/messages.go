@@ -25,6 +25,9 @@ func (a *App) messageCommand(command string, args []string) error {
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	fs.Usage = func() {
 		fmt.Fprintf(a.Err, "Usage: line %s CHAT [options]\nCHAT is a full ID or unique exact name. Quote names with spaces.\n", command)
+		if command == "send" {
+			fmt.Fprintln(a.Err, "Uses Letter Sealing when available, otherwise HTTPS/TLS when LINE explicitly supports it.\nLINE can read non-E2EE content. Use --require-e2ee to block it.")
+		}
 		fs.PrintDefaults()
 	}
 	jsonOutput := fs.Bool("json", false, "write JSON to stdout")
@@ -35,7 +38,7 @@ func (a *App) messageCommand(command string, args []string) error {
 	var cursor string
 	var text string
 	var stdin bool
-	var allowNonE2EE, requireE2EE bool
+	var requireE2EE bool
 	var replyTo string
 	var filePath, imagePath string
 	var preparedImage *messaging.PreparedImage
@@ -53,8 +56,6 @@ func (a *App) messageCommand(command string, args []string) error {
 		fs.StringVar(&cursor, "cursor", "", "continue a history page (requires --page --json)")
 	} else {
 		fs.BoolVar(&requireE2EE, "require-e2ee", false, "send only with Letter Sealing; stop if end-to-end encryption is unavailable")
-		fs.BoolVar(&allowNonE2EE, "allow-non-e2ee", true, "compatibility option: allow HTTPS/TLS delivery when LINE explicitly reports no E2EE support (LINE can read that content)")
-		fs.BoolVar(&allowNonE2EE, "allow-plaintext", true, "compatibility alias for --allow-non-e2ee; --require-e2ee takes precedence")
 		fs.StringVar(&mentionsJSON, "mentions", "", "explicit JSON mention array: [{\"start\":0,\"end\":5,\"mid\":\"USER_MID\"}] (UTF-16 offsets; text/stdin only)")
 		fs.StringVar(&text, "text", "", "message text")
 		fs.BoolVar(&stdin, "stdin", false, "read UTF-8 message text from stdin")
@@ -273,7 +274,7 @@ func (a *App) messageCommand(command string, args []string) error {
 		return err
 	}
 	if command == "send" {
-		options := messaging.SendOptions{AllowPlaintext: !requireE2EE && allowNonE2EE}
+		options := messaging.SendOptions{AllowPlaintext: !requireE2EE}
 		var result *messaging.SendResult
 		switch {
 		case preparedImage != nil:

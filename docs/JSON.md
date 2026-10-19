@@ -319,7 +319,7 @@ follows message creation, so its failure retains the confirmed message receipt
 just like a generic-file upload. Never infer safe retries from a transport error.
 
 Send policy errors: `encryption_required` means Letter Sealing is unavailable
-and strict mode (`--require-e2ee` or a legacy allow flag set to `false`) blocked
+and strict mode (`--require-e2ee`) blocked
 the send before remote actions. There is no encryption confirmation prompt in any
 output mode. `encrypted_image_unavailable` is the image restriction described
 above. Neither error permits an automatic resend or downgrade.

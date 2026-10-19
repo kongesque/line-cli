@@ -332,8 +332,7 @@ line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
 line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-不支援時會在遠端變更前以 `encryption_required` 停止。`--allow-non-e2ee` 與 `--allow-plaintext` 保留作為相容選項
-（預設 `true`；設為 `false` 代表要求 E2EE），`--require-e2ee` 優先。
+不支援時會在遠端變更前以 `encryption_required` 停止。
 [LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)說明 TLS、Letter Sealing 及新版官方用戶端的媒體 E2EE 支援；本 CLI 的媒體互通性仍須另外驗證。
 檔案與文字的加密支援會分開檢查。支援資訊缺漏或無效、缺少金鑰、成員資料不完整及傳輸錯誤，都不會允許停用 E2EE。
 只有明確執行群組傳送，且掌握所有目前成員時，才能註冊新群組金鑰。
@@ -816,7 +815,7 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 | 症狀 | 下一步 |
 | --- | --- |
 | 不認得指南中的選項 | 執行 `line version` 與 `line COMMAND --help`，比對該發行標籤的指南。用 `line update --check` 檢查更新。 |
-| `encryption_required` | 不支援 E2EE，已由嚴格模式阻止傳送。移除 `--require-e2ee`（或設為 `false` 的相容選項）即可透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。 |
+| `encryption_required` | 不支援 E2EE，已由嚴格模式阻止傳送。移除 `--require-e2ee`即可透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。 |
 | `encrypted_image_unavailable` | 目前停用加密圖片。可用 `--file` 傳送原始位元組，但仍須通過檔案支援檢查。 |
 | SSH 或服務無法存取儲存 | 以相同使用者與環境執行 `line auth status --check --json`，查看[服務診斷](#diagnose-a-headless-service)。不要刪除工作階段檔案來繞過錯誤。 |
 | 傳送失敗或最近歷史中找不到 | 重做前先查看 LINE。用[結構化錯誤](#structured-errors)區分已確認與不明結果；最近歷史中沒有不代表未送達。 |

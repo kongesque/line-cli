@@ -349,8 +349,7 @@ line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
 Strict mode returns `encryption_required` before remote actions if E2EE is
-unavailable. `--allow-non-e2ee` and `--allow-plaintext` remain compatibility options
-(default `true`; `false` requires E2EE). `--require-e2ee` takes precedence.
+unavailable.
 [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)
 explains TLS, Letter Sealing, and media E2EE in modern official clients; this CLI's
 media interoperability needs separate validation. File encryption support is checked
@@ -885,7 +884,7 @@ when storage is unavailable, then return the matching nonzero code.
 | Symptom | What to check next |
 | --- | --- |
 | A documented option is unknown | Run `line version` and `line COMMAND --help`; compare with the docs at that release tag. Check for updates with `line update --check`. |
-| `encryption_required` | LINE reports no E2EE support and strict mode blocked the send. Omit `--require-e2ee` (or legacy allow flags set to `false`) to use HTTPS/TLS; LINE can read that content. |
+| `encryption_required` | LINE reports no E2EE support and strict mode blocked the send. Omit `--require-e2ee` to use HTTPS/TLS; LINE can read that content. |
 | `encrypted_image_unavailable` | Encrypted native images are disabled. Try `--file` for the original bytes; file support checks still apply. |
 | Login or an SSH service cannot access storage | Run `line auth status --check --json` as the same user and environment. Follow [headless diagnostics](#diagnose-a-headless-service); do not delete session files to bypass the error. |
 | A send fails or is absent from recent history | Inspect LINE before repeating it. Use [structured errors](#structured-errors) to distinguish a confirmed action from an unknown outcome. Recent history is not proof of non-delivery. |

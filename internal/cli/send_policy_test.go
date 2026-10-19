@@ -50,58 +50,59 @@ func TestCLIRequiresE2EEWhenRequested(t *testing.T) {
 	}
 }
 
-func TestNonE2EEFlagAndLegacyAlias(t *testing.T) {
-	for _, flagName := range []string{"--allow-non-e2ee", "--allow-plaintext"} {
+func TestSendEncryptionPolicyAcrossContent(t *testing.T) {
+	for _, flagName := range []string{"default", "--require-e2ee=true", "--require-e2ee=false"} {
 		for _, input := range []string{"text", "stdin", "file", "image"} {
-			for _, value := range []string{"true", "false"} {
-				t.Run(flagName+"/"+input+"/"+value, func(t *testing.T) {
-					a, api, store, out, diagnostics, _ := consentFixture(t, "unused")
-					store.state.NoE2EE = true
-					args := []string{"--error-format=json", "send", "id:u-peer", flagName + "=" + value, "--json"}
-					switch input {
-					case "text":
-						args = append(args, "--text", "synthetic")
-					case "stdin":
-						a.In = strings.NewReader("synthetic")
-						args = append(args, "--stdin")
-					case "file":
-						args = append(args, "--file", consentFile(t))
-					case "image":
-						args = append(args, "--image", cliImageFixture(t))
+			t.Run(flagName+"/"+input, func(t *testing.T) {
+				a, api, store, out, diagnostics, _ := consentFixture(t, "unused")
+				store.state.NoE2EE = true
+				args := []string{"--error-format=json", "send", "id:u-peer", "--json"}
+				if flagName != "default" {
+					args = append(args, flagName)
+				}
+				switch input {
+				case "text":
+					args = append(args, "--text", "synthetic")
+				case "stdin":
+					a.In = strings.NewReader("synthetic")
+					args = append(args, "--stdin")
+				case "file":
+					args = append(args, "--file", consentFile(t))
+				case "image":
+					args = append(args, "--image", cliImageFixture(t))
+				}
+				err := a.Run(args)
+				if diagnostics.Len() != 0 {
+					t.Fatal("explicit flag displayed an interactive prompt")
+				}
+				if flagName == "--require-e2ee=true" {
+					if err == nil || api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 {
+						t.Fatal("strict mode permitted a send or changed state")
 					}
-					err := a.Run(args)
-					if diagnostics.Len() != 0 {
-						t.Fatal("explicit flag displayed an interactive prompt")
+					if machineDetail(t, err).Code != "encryption_required" || !strings.Contains(err.Error(), "default send policy") || !strings.Contains(err.Error(), "HTTPS") {
+						t.Fatal("missing strict-policy refusal or default-policy guidance")
 					}
-					if value == "false" {
-						if err == nil || api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 {
-							t.Fatal("false flag permitted a send or changed state")
-						}
-						if machineDetail(t, err).Code != "encryption_required" || !strings.Contains(err.Error(), "default send policy") || !strings.Contains(err.Error(), "HTTPS") {
-							t.Fatal("missing strict-policy refusal or default-policy guidance")
-						}
-						return
-					}
-					if err != nil {
-						t.Fatal(err)
-					}
-					wantUploads := 0
-					if input == "file" || input == "image" {
-						wantUploads = 1
-					}
-					var result messaging.SendResult
-					if json.Unmarshal(out.Bytes(), &result) != nil || result.Encrypted || result.ID != "message-id" ||
-						api.sends != 1 || api.uploads != wantUploads || result.RequestSequence == 0 || result.RequestSequence != store.state.LastReqSeq {
-						t.Fatal("flag did not preserve a single send and its non-E2EE receipt")
-					}
-				})
-			}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantUploads := 0
+				if input == "file" || input == "image" {
+					wantUploads = 1
+				}
+				var result messaging.SendResult
+				if json.Unmarshal(out.Bytes(), &result) != nil || result.Encrypted || result.ID != "message-id" ||
+					api.sends != 1 || api.uploads != wantUploads || result.RequestSequence == 0 || result.RequestSequence != store.state.LastReqSeq {
+					t.Fatal("default mode did not preserve a single send and its non-E2EE receipt")
+				}
+			})
 		}
 	}
 }
 
-func TestNonE2EEFlagsDoNotBypassMissingKeys(t *testing.T) {
-	for _, flagName := range []string{"--allow-non-e2ee", "--allow-plaintext"} {
+func TestDefaultSendDoesNotBypassMissingKeys(t *testing.T) {
+	for _, flagName := range []string{"--require-e2ee=false", "--require-e2ee=true"} {
 		t.Run(flagName, func(t *testing.T) {
 			a, api, store, out, diagnostics, _ := consentFixture(t, "unused")
 			store.state.NoE2EE = false
@@ -120,7 +121,7 @@ func TestSendHelpDescribesNonE2EETransport(t *testing.T) {
 	if err := a.Run([]string{"send", "--help"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"-require-e2ee", "-allow-non-e2ee", "HTTPS/TLS", "end-to-end encryption", "LINE can read", "-allow-plaintext", "compatibility alias"} {
+	for _, text := range []string{"-require-e2ee", "HTTPS/TLS", "end-to-end encryption", "LINE can read"} {
 		if !strings.Contains(diagnostics.String(), text) {
 			t.Fatalf("help is missing %q", text)
 		}
@@ -179,7 +180,7 @@ func TestGuidedMessageWithoutEncryptionConfirmation(t *testing.T) {
 }
 
 func TestSendScriptsUseAutomaticNonE2EEWithoutPrompt(t *testing.T) {
-	for _, mode := range []string{"noninteractive", "json", "json-errors", "stdin", "flag"} {
+	for _, mode := range []string{"noninteractive", "json", "json-errors", "stdin"} {
 		t.Run(mode, func(t *testing.T) {
 			a, api, store, _, diagnostics, _ := consentFixture(t, "unused")
 			store.state.NoE2EE = true
@@ -194,15 +195,13 @@ func TestSendScriptsUseAutomaticNonE2EEWithoutPrompt(t *testing.T) {
 			case "stdin":
 				args = []string{"send", "id:u-peer", "--stdin"}
 				a.In = strings.NewReader("synthetic")
-			case "flag":
-				args = append(args, "--allow-plaintext")
 			}
 			err := a.Run(args)
 			if err != nil || api.sends != 1 || store.state.LastReqSeq == 0 {
 				t.Fatal("default script send failed", err)
 			}
 			if diagnostics.Len() != 0 {
-				t.Fatal("script or flag displayed prompt")
+				t.Fatal("script displayed prompt")
 			}
 		})
 	}
@@ -267,20 +266,17 @@ func TestInteractiveSendDoesNotPromptOrReplayAfterFailures(t *testing.T) {
 	}
 }
 
-func TestStrictE2EEOverridesCompatibilityFlags(t *testing.T) {
-	for _, flags := range [][]string{
-		{"--require-e2ee", "--allow-non-e2ee"},
-		{"--allow-non-e2ee", "--require-e2ee"},
-		{"--require-e2ee", "--allow-plaintext"},
-		{"--allow-plaintext", "--require-e2ee"},
-	} {
-		t.Run(strings.Join(flags, "/"), func(t *testing.T) {
-			a, api, store, out, diagnostics, _ := consentFixture(t, "")
-			args := append([]string{"send", "id:u-peer", "--text", "synthetic", "--json"}, flags...)
-			err := a.Run(args)
-			if err == nil || machineDetail(t, err).Code != "encryption_required" || api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 || diagnostics.Len() != 0 {
-				t.Fatal("compatibility flag bypassed strict encryption or prompted", err)
-			}
-		})
+func TestRemovedSendFlagsRejectedBeforeSession(t *testing.T) {
+	for _, name := range []string{"--allow-plaintext", "--allow-non-e2ee"} {
+		for _, value := range []string{"", "=true", "=false"} {
+			t.Run(name+value, func(t *testing.T) {
+				a, out, _ := testApp(nil)
+				a.Lock = func() (func(), error) { t.Fatal("removed flag accessed session"); return nil, nil }
+				err := a.Run([]string{"--error-format=json", "send", "id:u-peer", name + value, "--text", "synthetic", "--json"})
+				if err == nil || machineDetail(t, err).Code != "invalid_arguments" || out.Len() != 0 {
+					t.Fatal("removed flag was accepted or produced a result", err)
+				}
+			})
+		}
 	}
 }

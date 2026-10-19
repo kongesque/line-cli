@@ -25,9 +25,7 @@ and the documentation at your installed version's tag.
 
 ### Added
 
-- Add `send --require-e2ee` for strict encryption policy. Keep `--allow-non-e2ee`
-  and `--allow-plaintext` as compatibility options (default `true`; `false`
-  requires E2EE). Strict mode takes precedence. Non-E2EE human receipts say
+- Add `send --require-e2ee` to block non-E2EE sends. Non-E2EE human receipts say
   `transport encrypted (no E2EE)`; JSON continues to report `encrypted: false`.
 - Command deadlines and cancellation across core commands with `--timeout`.
 - Opt-in structured errors using global `--error-format=json`, with individual

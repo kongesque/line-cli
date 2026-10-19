@@ -72,7 +72,7 @@ func TestImageAndGenericFileRemainDistinct(t *testing.T) {
 		api := &imageSendAPI{}
 		a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 		a.Manager.NewClient = func(string) session.API { return api }
-		if err := a.Run([]string{"send", "id:u-peer", "--allow-plaintext", flag, path, "--json"}); err != nil {
+		if err := a.Run([]string{"send", "id:u-peer", flag, path, "--json"}); err != nil {
 			t.Fatal(err)
 		}
 		var result messaging.SendResult
@@ -98,7 +98,7 @@ func TestPlainImageUploadFailurePreservesJSONReceipt(t *testing.T) {
 	api := &imageSendAPI{err: errors.New("private raw body")}
 	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
 	a.Manager.NewClient = func(string) session.API { return api }
-	err := a.Run([]string{"--error-format=json", "send", "id:u-peer", "--allow-plaintext", "--image", path, "--json"})
+	err := a.Run([]string{"--error-format=json", "send", "id:u-peer", "--image", path, "--json"})
 	if err == nil || out.Len() != 0 || api.uploads != 1 {
 		t.Fatal("incorrect failed-upload result")
 	}

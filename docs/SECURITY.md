@@ -80,9 +80,8 @@ revisions and environments; they do not replace the next release's CI gates.
   media capability. Explicit non-E2EE capability permits HTTPS/TLS delivery.
 - CLI sends prefer Letter Sealing and automatically permit non-E2EE delivery
   only after an explicit account/server capability signal. `--require-e2ee`
-  blocks that mode before remote actions and takes precedence over compatibility
-  allow flags. Missing keys, transport failures, and the encrypted-image
-  restriction still stop sends. HTTPS/TLS protects non-E2EE transfers, but LINE
+  blocks that mode before remote actions. Missing keys, transport failures, and
+  the encrypted-image restriction still stop sends. HTTPS/TLS protects non-E2EE transfers, but LINE
   can read their content. Human receipts identify the mode; JSON reports
   `encrypted: false` without extra output or prompts.
 - The messaging API's zero-value `SendOptions` still requires E2EE. The CLI
@@ -197,8 +196,8 @@ encrypted file delivery and authenticated download remain unverified on flow 2;
 the earlier synthetic recipient roundtrip does not establish that live result.
 
 Authorized plaintext follow-up (2026-10-19): after separate explicit consent,
-one `line-security-test.txt` was sent with `--allow-plaintext`. The receipt and
-history both reported `encrypted=false`, no group key was registered, the
+one `line-security-test.txt` was sent with the then-supported `--allow-plaintext`
+option. The receipt and history both reported `encrypted=false`, no group key was registered, the
 filename matched, and the downloaded 28 bytes exactly matched the synthetic
 fixture. This verifies the plaintext path only; it is not an encrypted-file
 interoperability result.

@@ -54,7 +54,7 @@ func TestSignalInputHelper(t *testing.T) {
 		manager := session.NewManager(store)
 		manager.NewClient = func(string) session.API { return &cancelledSendAPI{cancel: func() {}, confirmed: true} }
 		a := &cli.App{Context: s.ctx, Out: os.Stdout, Err: os.Stderr, Manager: manager, Lock: func() (func(), error) { return func() {}, nil }}
-		err = a.Run([]string{"--error-format=json", "send", "id:c-group", "--allow-plaintext", "--text", "synthetic", "--json"})
+		err = a.Run([]string{"--error-format=json", "send", "id:c-group", "--text", "synthetic", "--json"})
 	case "poll":
 		io.WriteString(os.Stderr, "Waiting for scan\n")
 		<-s.ctx.Done()

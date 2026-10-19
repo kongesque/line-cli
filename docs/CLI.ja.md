@@ -343,8 +343,7 @@ Letter Sealingで送信できる場合だけ送るには、次を指定します
 line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-非対応の場合はリモート変更前に `encryption_required` で停止します。`--allow-non-e2ee` と `--allow-plaintext` は互換用オプションです
-（既定は `true`、`false` ならE2EEが必須）。`--require-e2ee` が優先されます。
+非対応の場合はリモート変更前に `encryption_required` で停止します。
 [LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)はTLS、Letter Sealing、新しい公式クライアントのメディアE2EE対応を説明しています。
 本CLIのメディア相互運用性は別途検証が必要です。ファイルとテキストでは暗号化への対応を個別に確認します。
 対応情報の欠落や不正、鍵の不足、不完全なメンバー情報、通信障害を理由にE2EEを無効にすることはありません。
@@ -852,7 +851,7 @@ Linuxでは、確認したセッションのパスを `$HOME/.config/line-cli` �
 | 症状 | 次に確認すること |
 | --- | --- |
 | ガイドのオプションが不明と表示される | `line version` と `line COMMAND --help` を実行し、該当タグのガイドと比較します。更新確認は `line update --check` です。 |
-| `encryption_required` | E2EE非対応のため厳格モードで停止しました。`--require-e2ee`（または `false` にした互換オプション）を外すとHTTPS/TLSで送信しますが、LINEは内容を読めます。 |
+| `encryption_required` | E2EE非対応のため厳格モードで停止しました。`--require-e2ee`を外すとHTTPS/TLSで送信しますが、LINEは内容を読めます。 |
 | `encrypted_image_unavailable` | 暗号化画像は無効です。元のバイト列には `--file` を使いますが、ファイルの対応状況の確認は必要です。 |
 | SSHやサービスでストレージにアクセスできない | 同じユーザーと環境で `line auth status --check --json` を実行し、[サービスの診断](#diagnose-a-headless-service)を確認します。回避のためにセッションファイルを削除しないでください。 |
 | 送信失敗、または最近の履歴に見つからない | 再実行前にLINEを確認します。[構造化エラー](#structured-errors)で確認済みか不明かを判断します。最近の履歴にないことは未配信の証拠ではありません。 |
