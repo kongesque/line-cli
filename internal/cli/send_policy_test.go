@@ -208,19 +208,27 @@ func TestSendScriptsUseAutomaticNonE2EEWithoutPrompt(t *testing.T) {
 }
 
 func TestSendStopsOnInvalidPreparation(t *testing.T) {
-	for _, change := range []string{"account", "invalidated", "missing-keys", "cancelled"} {
+	t.Run("account", func(t *testing.T) {
+		a, api, out, _, locked := guidedApp(t, "")
+		store := a.Manager.Store.(*testStore)
+		// Change the account after guided selection captures its identity.
+		a.In = checkedInput{t: t, locked: locked, Reader: strings.NewReader("1\nsynthetic\n"), onRead: func() {
+			store.state.Generation = "changed"
+		}}
+		if err := a.Run([]string{"send"}); err == nil {
+			t.Fatal("changed account allowed send")
+		}
+		if api.sends != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 || *locked {
+			t.Fatal("changed account caused mutation or retained lock")
+		}
+	})
+	for _, change := range []string{"invalidated", "missing-keys", "cancelled"} {
 		t.Run(change, func(t *testing.T) {
 			a, api, store, out, _, locked := consentFixture(t, "y\n")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			a.Context = ctx
 			switch change {
-			case "account":
-				// Exercise the account guard after guided selection has captured the
-				// original identity. App.Run clears prompt state at command start.
-				a.In = checkedInput{t: t, locked: locked, Reader: strings.NewReader("1\nsynthetic\n"), onRead: func() {
-					store.state.Generation = "changed"
-				}}
 			case "invalidated":
 				store.state.Invalidated = true
 			case "missing-keys":
@@ -229,11 +237,7 @@ func TestSendStopsOnInvalidPreparation(t *testing.T) {
 			case "cancelled":
 				cancel()
 			}
-			args := []string{"send", "id:u-peer", "--file", consentFile(t)}
-			if change == "account" {
-				args = []string{"send"}
-			}
-			if err := a.Run(args); err == nil {
+			if err := a.Run([]string{"send", "id:u-peer", "--file", consentFile(t)}); err == nil {
 				t.Fatal("changed preparation allowed send")
 			}
 			if api.sends != 0 || api.uploads != 0 || store.state.LastReqSeq != 0 || out.Len() != 0 || *locked {
