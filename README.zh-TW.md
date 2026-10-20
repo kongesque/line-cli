@@ -169,18 +169,19 @@ line watch --json > events.ndjson
 
 ## Letter Sealing 加密與工作階段安全性
 
-傳送會優先使用 Letter Sealing（端對端加密，E2EE）。只有 LINE 明確回報不支援時，
-才會直接透過 HTTPS/TLS 傳送，不再逐次詢問。傳輸仍有加密，但 LINE 可讀取內容。
-若要禁止非 E2EE 傳送，請加上 `--require-e2ee`。檔案與文字的加密支援會分開檢查；
-金鑰缺少或傳輸失敗時不會停用端對端加密。
+聊天室與訊息類型支援時，LINE CLI 會使用 LINE 的端對端加密功能 Letter Sealing。
+HTTPS/TLS 會保護傳輸中的訊息，即使 LINE 明確回報不支援 Letter Sealing 也一樣。
+Letter Sealing 會進一步保護訊息內容，讓 LINE 的伺服器也無法讀取。
+如果你需要每次傳送都採用端對端加密，請加上 `--require-e2ee`。
 
 詳見[傳送與加密](docs/CLI.zh-TW.md#send-messages-and-files)及
 [工作階段儲存](docs/CLI.zh-TW.md#where-your-session-is-stored)。
 
 ## 使用限制
 
-- LINE 回報不支援 E2EE 時，會透過 HTTPS/TLS 傳送，但 LINE 可讀取內容。
-  使用 `--require-e2ee` 可阻止這類傳送。詳見[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)。
+- Letter Sealing 的支援範圍會因聊天室與訊息類型而異。LINE 明確回報不支援時，
+  訊息仍會透過 HTTPS/TLS 加密傳輸。
+  詳見[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)。
 - 每頁最多 100 則訊息。使用 `--page --json` 與游標可讀取仍可取得的較舊歷史，
   但不保證完整歷史。讀取不會標為已讀；部分較舊的加密訊息可能無法讀取。
 - 檔案傳送與媒體下載上限為 20 MiB。`--file` 保留原始位元組，並顯示為一般檔案。

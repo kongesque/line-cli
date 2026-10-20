@@ -167,19 +167,19 @@ check LINE before repeating it.
 
 ## Letter Sealing encryption and session security
 
-Sends use Letter Sealing (end-to-end encryption, E2EE) whenever available. When
-LINE explicitly reports no E2EE support, the CLI sends over HTTPS/TLS without
-asking for confirmation. The transfer is encrypted, but LINE can read the content.
-Use `--require-e2ee` to block non-E2EE sends. File encryption support is checked
-separately from text; missing keys and transport failures never trigger a downgrade.
+LINE CLI uses Letter Sealing, LINE's end-to-end encryption, for supported chats
+and message types. HTTPS/TLS protects messages in transit, including when LINE
+explicitly reports that Letter Sealing is unavailable. Letter Sealing also keeps
+message content private from LINE's servers. Use `--require-e2ee` if you need
+end-to-end encryption for every send.
 
 See [sending and encryption](docs/CLI.md#send-messages-and-files) and
 [session storage](docs/CLI.md#where-your-session-is-stored).
 
 ## Limitations
 
-- When LINE reports no E2EE support, sends use HTTPS/TLS; LINE can read the
-  content. `--require-e2ee` blocks these sends. See
+- Letter Sealing coverage depends on the chat and content type. If LINE
+  explicitly reports no support, messages use HTTPS/TLS transport encryption. See
   [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/).
 - History contains up to 100 messages per page. Use `--page --json` and its cursor
   for older available history; full history is not guaranteed. Reading does not

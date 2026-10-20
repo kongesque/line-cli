@@ -173,18 +173,19 @@ line watch --json > events.ndjson
 
 ## Letter Sealingによる暗号化とセッションのセキュリティ
 
-送信時は、対応している限りLetter Sealing（エンドツーエンド暗号化、E2EE）を使います。
-LINEが非対応と明示した場合は、確認なしでHTTPS/TLSによる送信を行います。
-転送中のデータは暗号化されますが、LINEは内容を読めます。非E2EE送信を防ぐには `--require-e2ee` を指定します。
-ファイルとテキストでは暗号化への対応を個別に確認し、キーの欠落や通信失敗でE2EEを無効にすることはありません。
+トークとメッセージの種類が対応していれば、LINE CLIはLINEのエンドツーエンド暗号化「Letter Sealing」を使います。
+LINEがLetter Sealingに非対応と明示した場合も、HTTPS/TLSで転送中のメッセージを保護します。
+Letter Sealingを利用すると、LINEのサーバーもメッセージの内容を読み取れません。
+すべての送信でエンドツーエンド暗号化が必要な場合は、`--require-e2ee` を指定してください。
 
 [送信と暗号化](docs/CLI.ja.md#send-messages-and-files)・
 [セッションの保存](docs/CLI.ja.md#where-your-session-is-stored)を参照してください。
 
 ## 制限事項
 
-- LINEがE2EE非対応と明示した場合はHTTPS/TLSで送信しますが、LINEは内容を読めます。
-  `--require-e2ee` でこの送信を防げます。詳しくは[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)を参照してください。
+- Letter Sealingの対応範囲は、トークとメッセージの種類によって異なります。
+  LINEが非対応と明示した場合は、HTTPS/TLSで通信を暗号化して送信します。
+  詳しくは[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)を参照してください。
 - 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めますが、
   全履歴は保証しません。閲覧しても既読にはならず、古い暗号化メッセージの一部は読めない場合があります。
 - ファイル送信とメディアのダウンロードは最大20 MiBです。`--file` は元のバイト列を保持し、通常のファイルとして表示されます。
