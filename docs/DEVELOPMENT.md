@@ -327,9 +327,10 @@ and check:
 - `line` or `line.exe` is at the archive root with the expected target/architecture.
 - `SHA256SUMS` verifies the executable. Run `sha256sum -c SHA256SUMS` or
   `shasum -a 256 -c SHA256SUMS` inside the extracted directory.
-- `LICENSE`, all `README*.md`, `banner.png`, `CHANGELOG.md`, `AGENTS.md`, `CONTRIBUTING.md`, and
-  the complete `docs/` tree are included. Open the guide and follow its relative
-  links. Do not recreate removed documentation paths as duplicate copies.
+- `LICENSE`, all `README*.md`, `banner.png`, `CHANGELOG.md`, `AGENTS.md`,
+  `CONTRIBUTING.md`, `SECURITY.md`, and the complete `docs/` tree are included.
+  Open the guide and follow its relative links. Do not recreate removed
+  documentation paths as duplicate copies.
 - On matching native hosts, run the extracted binary's `version` and `help`.
   No LINE login is needed. Review source and binary scan results for every target.
 

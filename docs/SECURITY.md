@@ -1,5 +1,8 @@
 # Security model and validation
 
+For supported versions and private vulnerability reporting, see the
+[security policy](../SECURITY.md).
+
 Contributor reference for encryption behavior and recorded security checks.
 For sending, encryption policy, and user-visible restrictions, use the
 [send guide](CLI.md#send-messages-and-files). Storage format and refresh details
@@ -58,7 +61,7 @@ Mutations are never automatically replayed after an uncertain response. The
 
 ## Security change record
 
-For user-facing upgrade actions, see the [changelog](../CHANGELOG.md#unreleased).
+For user-facing upgrade actions, see the [changelog](../CHANGELOG.md).
 This record separates implementation changes, synthetic verification, and
 authorized live observations. The dated checks below apply to their recorded
 revisions and environments; they do not replace the next release's CI gates.
@@ -90,11 +93,14 @@ revisions and environments; they do not replace the next release's CI gates.
 There is no encryption confirmation or consent-based restart. Capability and key
 validation run under the normal session lock. Sends, uploads, and group-key
 registrations are attempted once, with no automatic mutation retry.
-The earlier confirmation flow passed synthetic checks on 2026-10-19. Those
-results apply to that flow, not the automatic send policy. For the switch to automatic
-sending, the native build, help output, and `go vet` passed; updated regression
-tests have not been run.
-No live sends were performed.
+The earlier confirmation flow passed synthetic checks on 2026-10-19 and was
+subsequently replaced. The automatic send policy passed the full
+[v0.5.0 CI suite](https://github.com/kongesque/line-cli/actions/runs/39240615793)
+at release revision `aeefb35`, including the updated regression tests. All six
+targets also passed the
+[release builds and vulnerability scans](https://github.com/kongesque/line-cli/actions/runs/39240615899).
+No live sends were performed as part of the automatic-policy change; earlier
+authorized live observations are recorded below.
 
 ### Protocol evidence
 

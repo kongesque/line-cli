@@ -20,6 +20,9 @@ test tiers, platform checks, and release procedures.
 
 ## Issues and pull requests
 
+For suspected vulnerabilities, follow the private reporting instructions in the
+[security policy](SECURITY.md).
+
 Use [GitHub Issues](https://github.com/kongesque/line-cli/issues) for bug reports
 and feature requests. For bugs, include `line version`, your OS, the command, and
 a redacted error. Omit passwords, tokens, QR login values, private messages,
