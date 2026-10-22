@@ -213,7 +213,7 @@ Homebrew 請使用 `brew upgrade line-cli`。其他安裝方式請參閱
 
 ## 建置與參與開發
 
-原始碼建置需要 **Go 1.27.2**；macOS 另需 Xcode Command Line Tools 與 CGO。
+原始碼建置需要 **Go 1.27.3**；macOS 另需 Xcode Command Line Tools 與 CGO。
 設定與開發檢查請參閱[原始碼建置](docs/CLI.zh-TW.md#build-from-source)及
 [參與開發指南](CONTRIBUTING.md)（英文）。
 

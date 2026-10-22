@@ -218,7 +218,7 @@ Homebrewでは `brew upgrade line-cli` を実行します。その他のイン�
 
 ## ビルドと開発への参加
 
-ソースからのビルドには **Go 1.27.2** が必要です。macOSではXcode Command Line ToolsとCGOも必要です。
+ソースからのビルドには **Go 1.27.3** が必要です。macOSではXcode Command Line ToolsとCGOも必要です。
 設定と開発時の検証は[ソースからのビルド](docs/CLI.ja.md#build-from-source)と
 [開発への参加](CONTRIBUTING.md)（英語）を参照してください。
 

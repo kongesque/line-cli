@@ -130,11 +130,11 @@ fail explicitly and may require a reviewed budget adjustment.
 
 ### Toolchain and vulnerability scans
 
-Builds select Go 1.27.2, including CI/release jobs. `build.sh` checks the actual
+Builds select Go 1.27.3, including CI/release jobs. `build.sh` checks the actual
 compiler selected by `GO`/`GOTOOLCHAIN`; older compilers and unreviewed versions
-fail before building. The minimum module directive is also Go 1.27.2. This
+fail before building. The minimum module directive is also Go 1.27.3. This
 replaces the earlier Go 1.26+ requirement. To select the reviewed compiler:
-`GOTOOLCHAIN=go1.27.2 ./build.sh`. Future toolchain updates should change the
+`GOTOOLCHAIN=go1.27.3 ./build.sh`. Future toolchain updates should change the
 module, CI pins, and compiler guard together after advisory review.
 
 Run `./scripts/security-check.sh ./bin/line` for source and binary scans using
@@ -142,6 +142,18 @@ pinned govulncheck v1.9.0. Release jobs scan each target before packaging.
 [GO-2026-6611](https://pkg.go.dev/vuln/GO-2026-6611) affects HTTP/2 clients;
 [Go 1.27.2](https://go.dev/doc/devel/release#go1.27.0) contains its fix. Scanner
 findings require applicability review; there is no standard-library exemption.
+
+Security update (2026-10-22): [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809),
+published on 2026-10-21, identifies compromised intermediate certificates that
+`crypto/x509` must reject. Go 1.27.3 adds the certificate denylist. The module,
+compiler guard, and CI/release jobs now select that patched toolchain. Existing
+binaries built with Go 1.27.2 need a new release build to receive the fix; the
+earlier scan results below describe checks performed before this advisory was
+published. No advisory suppression is used.
+
+After this update, source and macOS arm64 binary scans with govulncheck v1.9.0
+reported no reachable or imported-package vulnerabilities. Five module-only
+findings remain in code that the CLI does not call.
 
 Audit triage on 2026-10-18 with govulncheck v1.9.0 and Go 1.27.2: source scan
 reported no reachable or imported-package vulnerabilities. Module-only findings

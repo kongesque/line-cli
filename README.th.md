@@ -216,7 +216,7 @@ line update           # อัปเดตเมื่อรองรับ ห�
 
 ## บิลด์และร่วมพัฒนา
 
-การบิลด์จากซอร์สโค้ดต้องใช้ **Go 1.27.2** บน macOS ต้องมี Xcode Command Line Tools และ CGO ด้วย
+การบิลด์จากซอร์สโค้ดต้องใช้ **Go 1.27.3** บน macOS ต้องมี Xcode Command Line Tools และ CGO ด้วย
 ดูวิธีตั้งค่าและตรวจสอบใน[คู่มือบิลด์จากซอร์สโค้ด](docs/CLI.th.md#build-from-source) และ
 [คู่มือร่วมพัฒนา](CONTRIBUTING.md) (ภาษาอังกฤษ)
 

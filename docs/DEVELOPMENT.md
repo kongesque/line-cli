@@ -10,7 +10,7 @@ for everyday usage, see the [CLI guide](CLI.md).
 
 Tests live beside the packages they exercise. Ordinary tests use synthetic data,
 fake APIs, and temporary storage. They do not require a LINE login. Requirements
-are Go 1.27.2; macOS also needs CGO and Xcode Command Line Tools for Keychain.
+are Go 1.27.3; macOS also needs CGO and Xcode Command Line Tools for Keychain.
 Linux and Windows support `CGO_ENABLED=0`.
 
 ## Build and checks
@@ -230,7 +230,7 @@ The original eight audit probes now have permanent corrected-behavior coverage:
 
 ## Security regression and release checks
 
-Use `GOTOOLCHAIN=go1.27.2` when the host Go version differs. The build guard
+Use `GOTOOLCHAIN=go1.27.3` when the host Go version differs. The build guard
 checks the compiler selected by `GO`, and rejects an unreviewed toolchain.
 
 ```sh
@@ -277,7 +277,7 @@ the [changelog](../CHANGELOG.md) until a version and release date are chosen.
 - Check relative links and heading anchors, including inside the extracted
   release archive. Source/development references may link to GitHub.
 - Keep the Go module, compiler guard, build instructions, CI and release pins in
-  sync. The reviewed toolchain is currently **Go 1.27.2**, not a minimum-version
+  sync. The reviewed toolchain is currently **Go 1.27.3**, not a minimum-version
   claim that accepts every future compiler.
 - Review stdout/stderr, partial results, exit codes, and mutation outcomes in
   the [JSON reference](JSON.md). Existing legacy JSON shapes

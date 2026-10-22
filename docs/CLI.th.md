@@ -868,7 +868,7 @@ line send --help
 
 ### บิลด์จากซอร์สโค้ด
 
-ต้องมี Git และ Go 1.27.2 บน macOS ต้องมี Xcode Command Line Tools และ CGO เพื่อรองรับ Keychain ด้วย
+ต้องมี Git และ Go 1.27.3 บน macOS ต้องมี Xcode Command Line Tools และ CGO เพื่อรองรับ Keychain ด้วย
 
 บน macOS หรือ Linux:
 

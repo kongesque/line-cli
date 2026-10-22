@@ -148,7 +148,7 @@ fails, the client cannot guarantee recovering that unknown/uncommitted token.
 ### Historical token-audit validation
 
 Recorded on macOS with Go 1.27.1; this is historical evidence, not the current
-build requirement. Current builds require Go 1.27.2.
+build requirement. Current builds require Go 1.27.3.
 
 Checks recorded for that audit:
 

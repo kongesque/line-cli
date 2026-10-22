@@ -906,7 +906,7 @@ line send --help
 
 ### Build from source
 
-You need Git and Go 1.27.2. macOS also needs Xcode Command Line Tools
+You need Git and Go 1.27.3. macOS also needs Xcode Command Line Tools
 and CGO for Keychain support.
 
 On macOS or Linux:

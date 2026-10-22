@@ -6,6 +6,12 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+### Security
+
+- Require the reviewed Go 1.27.3 compiler for source, CI, and release builds to
+  address [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809) in certificate
+  verification. Existing binaries need a rebuilt release to receive this fix.
+
 ## [0.5.0] - 2026-10-19
 
 ### Upgrade notes
