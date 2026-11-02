@@ -47,6 +47,13 @@ func (e *LoginError) Error() string {
 		return "LINE approved login, but this device could not save the new session. Run line auth status --check for local storage diagnostics." + displaced
 	}
 	if e.Approved {
+		var metadata *line.QRMetadataError
+		if errors.As(e.cause, &metadata) {
+			// Diagnostic holds only fixed words and a count, never server text.
+			return "LINE approved login, but returned no usable Letter Sealing keys. The new session was not saved." + displaced +
+				" Retrying QR login can replace it again. If this account has an email and password, use line login --email you@example.com." +
+				" Diagnostic: qrCodeLoginV2 metadata (" + metadata.Diagnostic() + ")."
+		}
 		return "LINE approved login, but local setup failed. The new session was not saved." + displaced
 	}
 	if e.Dispatched {

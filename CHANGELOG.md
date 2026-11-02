@@ -6,6 +6,12 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+### Fixed
+
+- QR login now says when LINE approves a login but returns no usable Letter
+  Sealing keys, with next steps and a diagnostic that contains no server data,
+  instead of reporting a generic local setup failure. No session is saved.
+
 ### Security
 
 - Require the reviewed Go 1.27.3 compiler for source, CI, and release builds to

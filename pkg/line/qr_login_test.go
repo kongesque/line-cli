@@ -526,3 +526,43 @@ func TestQRMetadataErrorCodePresence(t *testing.T) {
 		})
 	}
 }
+
+func TestQRMetadataDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		metaData string // Raw JSON; empty omits the field.
+		want     QRMetadataError
+	}{
+		{"absent", ``, QRMetadataError{"absent", "absent", "absent", "absent", "absent", "absent", 0}},
+		{"null", `null`, QRMetadataError{"null", "absent", "absent", "absent", "absent", "absent", 0}},
+		{"no_fields", `{}`, QRMetadataError{"present", "absent", "absent", "absent", "absent", "absent", 0}},
+		{"empty_fields", `{"keyId":"","publicKey":"","encryptedKeyChain":"","e2eeVersion":""}`, QRMetadataError{"present", "absent", "empty", "empty", "empty", "empty", 0}},
+		{"null_fields", `{"keyId":null,"publicKey":null,"encryptedKeyChain":null,"e2eeVersion":null}`, QRMetadataError{"present", "absent", "null", "null", "null", "null", 0}},
+		{"success_without_keys", `{"errorCode":"SUCCESS"}`, QRMetadataError{"present", "SUCCESS", "absent", "absent", "absent", "absent", 0}},
+		{"error_code", `{"errorCode":"private-value"}`, QRMetadataError{"present", "other", "absent", "absent", "absent", "absent", 0}},
+		{"renamed_keys", `{"private-name":"private-value","private-other":"private-value"}`, QRMetadataError{"present", "absent", "absent", "absent", "absent", "absent", 2}},
+		{"malformed_keys", `{"keyId":"private-value","publicKey":"private-value","encryptedKeyChain":"private-value","e2eeVersion":"private-value"}`, QRMetadataError{"present", "absent", "present", "present", "present", "present", 0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := qrTestCompletion()
+			delete(data, "metaData")
+			if tc.metaData != "" {
+				data["metaData"] = json.RawMessage(tc.metaData)
+			}
+			body := qrTestEnvelope(t, data)
+			c := qrTestClient(func(*http.Request) (*http.Response, error) { return qrTestResponse(200, body), nil })
+			result, err := c.CompleteQRLogin(context.Background(), qrTestSession)
+			var completionErr *QRCompleteError
+			var metadataErr *QRMetadataError
+			if result != nil || !errors.As(err, &completionErr) || !completionErr.Approved || !completionErr.Dispatched || !errors.As(err, &metadataErr) {
+				t.Fatalf("metadata failure misclassified: %v", err)
+			}
+			if *metadataErr != tc.want {
+				t.Fatalf("diagnostic = %+v, want %+v", *metadataErr, tc.want)
+			}
+			if strings.Contains(err.Error(), "private") {
+				t.Fatal("server-supplied text reached the error")
+			}
+		})
+	}
+}

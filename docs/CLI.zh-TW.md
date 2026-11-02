@@ -118,6 +118,9 @@ line send
 - **憑證錯誤：** 已儲存的 QR 憑證遭拒時不會改用 PIN，未知憑證錯誤也會停止登入。
   若帳號已設定電子郵件，可改用該方式登入。`Diagnostic: verifyCertificate` 只包含數字代碼，
   不包含 QR 碼、PIN、憑證、權杖或伺服器原始回應。
+- **缺少 Letter Sealing 金鑰：** 若 LINE 核准登入但未傳回可用金鑰，CLI 不會儲存工作階段，也不會將帳號視為不支援 E2EE。
+  LINE 可能已取代原有的 Chrome 類型工作階段，重試可能會再次取代。若帳號已設定電子郵件，可改用該方式登入。
+  `Diagnostic: qrCodeLoginV2 metadata` 只包含固定的欄位狀態與數量，不包含金鑰、權杖或伺服器原始回應。
 
 <a id="saved-sessions-and-cancellation"></a>
 
