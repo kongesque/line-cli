@@ -120,6 +120,12 @@ and warnings go to stderr; the final success message goes to stdout.
   unknown certificate errors also stop login. Try email login if configured.
   `Diagnostic: verifyCertificate` contains numeric codes only, with no QR, PIN,
   certificate, token, or raw server response.
+- **Missing Letter Sealing keys:** if LINE approves login but returns no usable
+  keys, the CLI saves no session and does not treat the account as non-E2EE.
+  LINE may already have replaced the previous Chrome-style session, and retrying
+  can replace it again. Try email login if configured.
+  `Diagnostic: qrCodeLoginV2 metadata` contains fixed field states and a count
+  only, with no key, token, or raw server response.
 
 ### Saved sessions and cancellation
 

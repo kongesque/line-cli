@@ -128,6 +128,33 @@ func (e *QRCompleteError) Error() string {
 
 func (e *QRCompleteError) Unwrap() error { return e.err }
 
+// QRMetadataError reports unusable final-login metadata after LINE issued a
+// token. It never implies that Letter Sealing is disabled. Fields hold only
+// fixed words and a count, never server names or values: MetaData and the key
+// fields are absent, null, empty, or present, where present does not mean valid.
+// ErrorCode is absent, SUCCESS, or other.
+type QRMetadataError struct {
+	MetaData          string
+	ErrorCode         string
+	KeyID             string
+	PublicKey         string
+	EncryptedKeyChain string
+	E2EEVersion       string
+	// OtherFields counts unrecognized metaData fields, which can reveal renamed
+	// keys that would otherwise look absent.
+	OtherFields int
+}
+
+func (e *QRMetadataError) Error() string {
+	return fmt.Sprintf("QR final login returned unusable Letter Sealing metadata (%s)", e.Diagnostic())
+}
+
+// Diagnostic is safe to display because it contains no server-supplied text.
+func (e *QRMetadataError) Diagnostic() string {
+	return fmt.Sprintf("metaData %s, errorCode %s, keyId %s, publicKey %s, encryptedKeyChain %s, e2eeVersion %s, other fields %d",
+		e.MetaData, e.ErrorCode, e.KeyID, e.PublicKey, e.EncryptedKeyChain, e.E2EEVersion, e.OtherFields)
+}
+
 // QRChallenge contains sensitive, ephemeral login data. Orchestration appends
 // the public key, owns its lifetime, and must not log or persist this value.
 type QRChallenge struct {
@@ -324,14 +351,14 @@ func (c *Client) CompleteQRLogin(ctx context.Context, sessionID string) (*LoginR
 	approved = true
 	metadata := completion.MetaData
 	if metadata == nil || (metadata.ErrorCode.present && metadata.ErrorCode.value != "SUCCESS") {
-		return fail(dispatched, errors.New("QR final login returned unavailable Letter Sealing metadata"))
+		return fail(dispatched, newQRMetadataError(body))
 	}
 	publicKey, pubErr := base64.StdEncoding.DecodeString(metadata.PublicKey)
 	keyChain, chainErr := base64.StdEncoding.DecodeString(metadata.EncryptedKeyChain)
 	// Existing LoginUnwrapKeyChain also accepts a prefixed public key and
 	// normalizes its trailing 32 bytes; preserve that behavior here.
 	if pubErr != nil || len(publicKey) < 32 || chainErr != nil || len(keyChain) == 0 || metadata.KeyID == "" {
-		return fail(dispatched, errors.New("QR final login returned incomplete Letter Sealing keys"))
+		return fail(dispatched, newQRMetadataError(body))
 	}
 	return &LoginResult{
 		Certificate: completion.Certificate, Mid: completion.Mid,
@@ -340,6 +367,54 @@ func (c *Client) CompleteQRLogin(ctx context.Context, sessionID string) (*LoginR
 		EncryptedKeyChain:  metadata.EncryptedKeyChain, E2EEPublicKey: metadata.PublicKey,
 		E2EEVersion: metadata.E2EEVersion, E2EEKeyID: metadata.KeyID,
 	}, nil
+}
+
+// newQRMetadataError rereads a body parseQREnvelope already accepted, because
+// typed decoding cannot tell absent, null, and empty fields apart. Unlike that
+// decoding, metaData field names must match exactly; others count as unrecognized.
+func newQRMetadataError(body []byte) *QRMetadataError {
+	var envelope struct {
+		Data struct {
+			MetaData json.RawMessage `json:"metaData"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(body, &envelope)
+	// Absent or null metaData leaves no fields, so each one reports absent.
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(envelope.Data.MetaData, &fields)
+	errorCode := "other"
+	if raw, ok := fields["errorCode"]; !ok {
+		errorCode = "absent"
+	} else if string(raw) == `"SUCCESS"` {
+		errorCode = "SUCCESS"
+	}
+	other := len(fields)
+	for _, name := range []string{"errorCode", "keyId", "publicKey", "encryptedKeyChain", "e2eeVersion"} {
+		if _, ok := fields[name]; ok {
+			other--
+		}
+	}
+	return &QRMetadataError{
+		MetaData:          qrWireState(envelope.Data.MetaData),
+		ErrorCode:         errorCode,
+		KeyID:             qrWireState(fields["keyId"]),
+		PublicKey:         qrWireState(fields["publicKey"]),
+		EncryptedKeyChain: qrWireState(fields["encryptedKeyChain"]),
+		E2EEVersion:       qrWireState(fields["e2eeVersion"]),
+		OtherFields:       other,
+	}
+}
+
+func qrWireState(raw json.RawMessage) string {
+	switch {
+	case raw == nil:
+		return "absent"
+	case string(raw) == "null":
+		return "null"
+	case string(raw) == `""`:
+		return "empty"
+	}
+	return "present"
 }
 
 func (c *Client) qrCall(ctx context.Context, serviceRoot, method string, arg any, sessionID string, wait time.Duration, out any) error {

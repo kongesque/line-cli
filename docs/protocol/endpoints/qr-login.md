@@ -99,13 +99,21 @@ Response bodies are capped at 1 MiB. Errors retain numeric gateway/service/statu
 codes, never server messages, raw bodies, or transport error text. Context
 cancellation and deadline identity remain available through `errors.Is`.
 
+`QRMetadataError` reports each metadata field as absent, null, empty, or present,
+`errorCode` as absent, SUCCESS, or other, and a count of unrecognized fields.
+It holds fixed words only, and the CLI displays it with the login error.
+
 ## Unverified behavior
 
 - Other certificate rejection codes and rejection of saved certificates.
   Only the observed empty-certificate tuple above permits PIN fallback.
 - Actual outer HTTP statuses and wire envelopes for polling expiry.
 - Explicit QR LSOFF capability metadata. Missing/malformed keys and unknown
-  metadata errors fail closed; `NoE2EE` is never inferred.
+  metadata errors fail closed; `NoE2EE` is never inferred. An issued token with
+  no decoded key metadata was user-reported on 2026-11-02
+  ([issue 25](https://github.com/kongesque/line-cli/issues/25)). That report read
+  decoded strings, so it does not establish absent, null, empty, or renamed wire
+  fields, the `errorCode` value, the account state, or Chrome's behavior.
 - Exact refresh field representations and session displacement timing.
 
 Complete results retain token V3 refresh fields and normalize the evidenced key

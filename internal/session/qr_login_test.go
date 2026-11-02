@@ -103,6 +103,30 @@ func qrTestManager(t *testing.T) (*Manager, *memoryStore, *fakeQRAPI, *testQRKey
 
 func ignoreQREvent(QRLoginEvent) error { return nil }
 
+func TestQRLoginReportsMissingLetterSealingKeys(t *testing.T) {
+	m, s, f, key := qrTestManager(t)
+	f.completeErr = errors.Join(&line.QRCompleteError{Dispatched: true, Approved: true}, &line.QRMetadataError{
+		MetaData: "present", ErrorCode: "absent", KeyID: "absent", PublicKey: "absent", EncryptedKeyChain: "empty", E2EEVersion: "null", OtherFields: 2,
+	})
+	_, err := m.LoginQR(context.Background(), ignoreQREvent)
+	var outcome *LoginError
+	if !errors.As(err, &outcome) || !outcome.Approved || !outcome.Dispatched || outcome.Stage != LoginFinal || s.saves != 0 || key.closed != 1 {
+		t.Fatalf("unexpected outcome: %v", err)
+	}
+	message := err.Error()
+	for _, want := range []string{
+		"no usable Letter Sealing keys", "was not saved", "replaced the previous", "line login --email",
+		"metaData present, errorCode absent, keyId absent, publicKey absent, encryptedKeyChain empty, e2eeVersion null, other fields 2",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("missing %q in %q", want, message)
+		}
+	}
+	if strings.Contains(message, "local setup failed") {
+		t.Fatal(message)
+	}
+}
+
 func TestQRLoginPINOrchestration(t *testing.T) {
 	m, s, f, key := qrTestManager(t)
 	// Exercise the state-machine contract only. This sentinel deliberately has
