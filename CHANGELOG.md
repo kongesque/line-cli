@@ -6,6 +6,15 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+### Added
+
+- Read-only mode: `line --read-only COMMAND` or `LINE_CLI_READ_ONLY=1` refuses
+  sends, reactions, unsend, login, logout, storage migration, and update
+  installs before any prompt, lock, credential access, request sequence, or
+  network request. Reads, `watch`, and `update --check` keep working. Refusals
+  use the new JSON error code `read_only`. Unrecognized `LINE_CLI_READ_ONLY`
+  values fail every command instead of being ignored.
+
 ### Fixed
 
 - QR login now says when LINE approves a login but returns no usable Letter

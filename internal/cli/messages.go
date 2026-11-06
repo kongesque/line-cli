@@ -69,6 +69,11 @@ func (a *App) messageCommand(command string, args []string) error {
 		}
 		return errors.New("invalid options; run line " + command + " --help")
 	}
+	if command == "send" {
+		if err := a.refuseReadOnly("send"); err != nil {
+			return err
+		}
+	}
 	restore, err := a.commandDeadline(*timeout)
 	if err != nil {
 		return err

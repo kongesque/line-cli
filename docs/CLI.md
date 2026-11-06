@@ -575,7 +575,8 @@ chunks or raw server response bodies.
 
 Use `line --error-format=json COMMAND ... --json` to write one structured error
 to stderr while preserving success and partial-result JSON on stdout. Put the
-global option before the command; it disables prompts. It supports the core
+global option before the command (in any order with `--read-only`); it disables
+prompts. It supports the core
 commands and `auth status`. Login, logout, migration, watch, and update reject
 this option before doing work; use their normal diagnostics instead.
 
@@ -586,6 +587,31 @@ if its upload fails; a send remains confirmed if writing the result fails.
 Never automatically retry an `unknown` action, including after a network error:
 check LINE first. Storage and signal exit codes are unchanged.
 See the [error fields, codes, and examples](JSON.md#errors).
+
+### Read-only mode
+
+Put `--read-only` before the command, or set `LINE_CLI_READ_ONLY=1`, when a
+script or agent should only read:
+
+```sh
+line --read-only messages CHAT_ID --json
+LINE_CLI_READ_ONLY=1 line chats --json
+line --read-only --error-format=json send CHAT_ID --text "hi"   # refused
+```
+
+Read-only mode refuses `send`, `react`, `unsend`, `login`, `logout`,
+`auth migrate`, and `update` (installing). It stops before prompts, stdin,
+attachments, the session lock, credential storage, the network, or a request
+sequence. Reads, `watch` (its resume position is a local cursor), `download`,
+`auth status`, `update --check`, `help`, and `version` keep working, and reads
+may still refresh the access token.
+
+`LINE_CLI_READ_ONLY` accepts `1`/`true` (on) and `0`/`false` or unset (off).
+Any other value fails every command with `invalid_arguments`, so a typo never
+silently disables the guard. `--read-only=false` cannot turn off the
+environment switch. A refused command exits 1 with the JSON error code
+`read_only` (stage `preparation`); message actions report `attempted: false`
+and `outcome: "not_attempted"`. Command help still prints in read-only mode.
 
 ### JSON lookup results
 

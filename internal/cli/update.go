@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/internal/update"
 )
@@ -29,6 +30,10 @@ func (a *App) updateCommand(args []string) error {
 			return nil
 		}
 		return errors.New("invalid options; run line update --help")
+	}
+	if !*check && a.readOnly {
+		a.errorStage = "preparation"
+		return fault.New("read_only", "preparation", "Read-only mode is on (--read-only or LINE_CLI_READ_ONLY); update was not attempted. Run line update --check to only check.", session.ErrReadOnly)
 	}
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; run line update --help")

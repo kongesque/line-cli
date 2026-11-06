@@ -36,6 +36,9 @@ func (a *App) actionCommand(command string, args []string) error {
 		}
 		return errors.New("invalid options; run line " + command + " --help")
 	}
+	if err := a.refuseReadOnly(command); err != nil {
+		return err
+	}
 	restore, err := a.commandDeadline(*timeout)
 	if err != nil {
 		return err

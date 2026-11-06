@@ -30,20 +30,26 @@ func (a *App) Run(args []string) (err error) {
 	a.errorStage = "validation"
 	a.errorMutation = nil
 	a.JSONErrors = false
-	if len(args) > 0 && (args[0] == "--error-format" || strings.HasPrefix(args[0], "--error-format=")) {
-		value := strings.TrimPrefix(args[0], "--error-format=")
-		if args[0] == "--error-format" {
-			if len(args) < 2 {
-				return fault.New("invalid_arguments", "validation", "--error-format requires text or json", nil)
-			}
-			value, args = args[1], args[1:]
+	a.readOnly = false
+	options, args, formatValid, err := ParseGlobalOptions(args)
+	if err != nil {
+		// A malformed --error-format itself is always reported as text.
+		if formatValid && options.ErrorFormat == "json" {
+			return &MachineError{Detail: DescribeError(err, "validation", nil), cause: err}
 		}
-		args = args[1:]
-		if value != "text" && value != "json" {
-			return fault.New("invalid_arguments", "validation", "--error-format must be text or json", nil)
-		}
-		a.JSONErrors = value == "json"
+		return err
 	}
+	a.JSONErrors = options.ErrorFormat == "json"
+	envReadOnly := false
+	if a.Getenv != nil {
+		if envReadOnly, err = ParseReadOnlyEnv(a.Getenv(ReadOnlyEnv)); err != nil {
+			if a.JSONErrors {
+				return &MachineError{Detail: DescribeError(err, "validation", nil), cause: err}
+			}
+			return err
+		}
+	}
+	a.readOnly = options.ReadOnly || envReadOnly
 	command := ""
 	if len(args) > 0 {
 		command = args[0]
@@ -88,6 +94,13 @@ func (a *App) Run(args []string) (err error) {
 	}()
 	if command == "send" || command == "react" || command == "unsend" {
 		a.errorMutation = &fault.Mutation{Action: command, Outcome: fault.NotAttempted}
+	}
+	if a.readOnly && a.Manager != nil {
+		// Defense in depth: the session refuses mutations even if a command
+		// path forgets its own gate.
+		previous := a.Manager.ReadOnly
+		a.Manager.ReadOnly = true
+		defer func() { a.Manager.ReadOnly = previous }()
 	}
 	return a.run(args)
 }

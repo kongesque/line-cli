@@ -35,6 +35,9 @@ func (a *App) loginCommand(args []string) error {
 		}
 		return errors.New("invalid options; run line login --help. LINE was not contacted")
 	}
+	if err := a.refuseReadOnly("login"); err != nil {
+		return err
+	}
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; run line login --help. LINE was not contacted")
 	}

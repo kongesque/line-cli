@@ -19,7 +19,7 @@ import (
 
 const help = `LINE — your conversations from the terminal
 
-Usage: line [--error-format text|json] <command> [options]
+Usage: line [--error-format text|json] [--read-only] <command> [options]
 
 Everyday commands:
   login       Sign in by QR code (--email ADDRESS for email login)
@@ -51,12 +51,15 @@ Examples:
 whoami, contacts, chats, members, messages, send, download, react, and unsend accept --timeout.
 Use --error-format=json before a core command or auth status for JSON errors on stderr.
 This disables prompts and preserves stdout success/partial-result formats.
+Use --read-only before the command (or LINE_CLI_READ_ONLY=1) to block sends,
+reactions, unsend, login, logout, migration, and update installs. Reads still work.
 In a terminal, missing details are prompted for. Ctrl-C cancels.
 Use --show-ids for IDs, --json for scripts, or COMMAND --help for all options.
 `
 
 type App struct {
 	JSONErrors       bool
+	readOnly         bool
 	errorStage       string
 	errorMutation    *fault.Mutation
 	Interactive      bool
@@ -81,6 +84,8 @@ type App struct {
 	Updater          updater
 	NewHeadlessLogin func() (session.LoginStorage, error)
 	MigrateHeadless  func(bool) error
+	// Getenv reads LINE_CLI_READ_ONLY; nil ignores the environment (tests).
+	Getenv func(string) string
 }
 
 // Run validates command arguments before accessing Keychain or the network.
@@ -150,6 +155,11 @@ func (a *App) run(args []string) error {
 			return nil
 		}
 		return errors.New("invalid options; run line " + command + " --help")
+	}
+	if command == "logout" {
+		if err := a.refuseReadOnly("logout"); err != nil {
+			return err
+		}
 	}
 	restore, err := a.commandDeadline(timeout)
 	if err != nil {

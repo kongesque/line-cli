@@ -21,6 +21,9 @@ func (e *MutationAttemptError) Unwrap() error { return e.cause }
 func (m *Manager) mutateContext(ctx context.Context, call func(API) error) error {
 	attempted := false
 	outcome := fault.NotAttempted
+	if err := m.readOnly(""); err != nil {
+		return &MutationAttemptError{Attempted: false, Outcome: outcome, cause: err}
+	}
 	err := m.do(ctx, func(api API) error {
 		attempted = true
 		err := call(api)

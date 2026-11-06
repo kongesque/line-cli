@@ -96,6 +96,9 @@ func (a *App) migrateCommand(args []string) error {
 		}
 		return errors.New("invalid options; run line auth migrate --help")
 	}
+	if err := a.refuseReadOnly("storage migration"); err != nil {
+		return err
+	}
 	if fs.NArg() != 0 || *storage != "headless" {
 		return errors.New("use line auth migrate --storage=headless")
 	}

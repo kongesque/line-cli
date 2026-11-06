@@ -168,7 +168,10 @@ line --error-format=json messages CHAT_ID --json > history.json 2> error.json
 line --error-format=json auth status --json
 ```
 
-`--error-format json` is equivalent. The default is `text`. This option supports
+`--error-format json` is equivalent. The default is `text`. Global options
+come before the command and may appear in any order: `line --read-only
+--error-format=json send ...` and `line --error-format=json --read-only send ...`
+are the same. Each global option may appear once. This option supports
 `whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `react`, `unsend`,
 `auth status`, help, and version. Login, logout, migration, watch, and update keep
 their existing diagnostic contracts; requesting JSON errors for them fails
@@ -231,7 +234,8 @@ reports returned IDs before decryption without message text or encrypted data.
 
 | Code | Meaning |
 | --- | --- |
-| `invalid_arguments` | Invalid or missing options/input; validation stopped the command. |
+| `invalid_arguments` | Invalid or missing options/input, including an unrecognized `LINE_CLI_READ_ONLY` value; validation stopped the command. |
+| `read_only` | Read-only mode (`--read-only` or `LINE_CLI_READ_ONLY`) refused a remote change or credential change before any prompt, lock, storage access, request sequence, or network request. Stage `preparation`; message actions are `not_attempted`. |
 | `no_session` | No saved session. |
 | `invalid_session` | Invalidated session or unusable saved Letter Sealing keys. |
 | `session_changed` | Saved account changed during the command. |
