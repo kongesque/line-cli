@@ -32,6 +32,9 @@ and the documentation at your installed version's tag.
   Sealing keys (count only), clock skew against LINE, and the watcher. Every
   non-passing check has a next step. It changes nothing, exits 1 only when a
   check fails, and prints no tokens, keys, IDs, names, or messages.
+- `line completion bash|zsh|fish|powershell` prints a static completion script
+  for commands, subcommands, options, and fixed values. It reads no session
+  and makes no network requests.
 
 ### Fixed
 

@@ -62,7 +62,7 @@ func (a *App) Run(args []string) (err error) {
 			return &MachineError{Detail: DescribeError(err, "validation", nil), cause: err}
 		}
 		switch command {
-		case "", "help", "--help", "-h", "version", "--version", "whoami", "contacts", "chats", "members", "invites", "doctor", "messages", "send", "download", "read", "react", "unsend", "auth":
+		case "", "help", "--help", "-h", "version", "--version", "whoami", "contacts", "chats", "members", "invites", "doctor", "completion", "messages", "send", "download", "read", "react", "unsend", "auth":
 		default:
 			err = fault.New("invalid_arguments", "validation", "JSON errors are supported for core commands and auth status; run line help", nil)
 			return &MachineError{Detail: DescribeError(err, "validation", nil), cause: err}

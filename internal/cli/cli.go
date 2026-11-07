@@ -40,6 +40,7 @@ More commands:
   react       Add or remove a reaction
   unsend      Retract one of your own messages
   doctor      Check installation, storage, sign-in, keys, clock, and watcher
+  completion  Print shell completion (bash, zsh, fish, powershell)
   version     Show the installed version
   update      Update LINE CLI or show upgrade instructions (--check to preview)
   help        Show this help
@@ -131,6 +132,8 @@ func (a *App) run(args []string) error {
 		return a.invitesCommand(args[1:])
 	case "doctor":
 		return a.doctorCommand(args[1:])
+	case "completion":
+		return a.completionCommand(args[1:])
 	case "watch":
 		return a.watchCommand(args[1:])
 	case "members":

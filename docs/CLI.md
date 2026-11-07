@@ -1018,6 +1018,43 @@ line help
 line send --help
 ```
 
+### Shell completion
+
+`line completion SHELL` prints a static script that completes commands,
+subcommands, options, and fixed values such as reactions. It reads no session
+and makes no network requests. Regenerate it after upgrading LINE CLI.
+
+Bash (save once, then load it from `~/.bashrc`):
+
+```sh
+line completion bash > ~/.line-completion.bash
+echo 'source ~/.line-completion.bash' >> ~/.bashrc
+```
+
+Zsh (put the file on `fpath` before `compinit` runs in `~/.zshrc`):
+
+```sh
+mkdir -p ~/.zfunc
+line completion zsh > ~/.zfunc/_line
+# In ~/.zshrc, before compinit:  fpath=(~/.zfunc $fpath)
+```
+
+Fish:
+
+```sh
+line completion fish > ~/.config/fish/completions/line.fish
+```
+
+PowerShell (add to your `$PROFILE`):
+
+```powershell
+line completion powershell | Out-String | Invoke-Expression
+```
+
+Chat names, message IDs, and other account data are never completed, because
+that would require reading your session. Homebrew does not install these
+scripts yet.
+
 ### Build from source
 
 You need Git and Go 1.27.3. macOS also needs Xcode Command Line Tools
