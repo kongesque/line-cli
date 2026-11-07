@@ -19,6 +19,7 @@ diagnostics go to stderr. Use full chat IDs and keep message IDs as strings.
 | `line watch --json` | Existing NDJSON stream; no detailed-content envelope. |
 | `line invites --json` | Schema-1 object with `invitations`: `chat_id`, nullable `name`, `name_status` (`resolved` or `unavailable`). |
 | `line read`, `line invites accept\|reject` `--json` | One receipt object: `action`, `chat_id`, `request_sequence`, plus `message_id` for `read`. |
+| `line doctor --json` | Schema-1 report: `checks` with `id`, `status` (`pass`, `warn`, `fail`, `skipped`), `message`, optional `next_step` and string-valued `details`; plus `summary` counts. Exits 1 only when a check fails; with `--error-format=json` that failure is `operation_failed` at stage `completion`, after the report is written. |
 | `line --error-format=json COMMAND ... --json` | Usual success/partial output on stdout; one structured error on stderr when the supported command fails. |
 
 `--error-format=json` does not imply `--json`. It disables prompts, as do `--json`

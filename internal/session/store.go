@@ -13,6 +13,9 @@ var ErrNotFound = errors.New("no saved LINE session; run line login")
 var ErrSessionInvalidated = errors.New("LINE session was invalidated or replaced by another client; run line login")
 var ErrSessionChanged = errors.New("LINE login changed; restart the command")
 
+// ErrWatchBusy means another line watch holds the watcher lock.
+var ErrWatchBusy = errors.New("another line watch is already running")
+
 // State is secret material. Never print it or include it in diagnostic errors.
 // Passwords are deliberately absent: expired refresh credentials require login.
 type State struct {

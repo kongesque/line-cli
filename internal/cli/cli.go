@@ -39,6 +39,7 @@ More commands:
   read        Mark a chat as read (others see "Read")
   react       Add or remove a reaction
   unsend      Retract one of your own messages
+  doctor      Check installation, storage, sign-in, keys, clock, and watcher
   version     Show the installed version
   update      Update LINE CLI or show upgrade instructions (--check to preview)
   help        Show this help
@@ -90,8 +91,13 @@ type App struct {
 	Updater          updater
 	NewHeadlessLogin func() (session.LoginStorage, error)
 	MigrateHeadless  func(bool) error
-	// Getenv reads LINE_CLI_READ_ONLY; nil ignores the environment (tests).
+	// Getenv reads LINE_CLI_READ_ONLY, PATH, and HOME; nil ignores the
+	// environment (tests).
 	Getenv func(string) string
+	// Executable and LoadKeys default to os.Executable and the Letter Sealing
+	// runtime; tests replace them for line doctor.
+	Executable func() (string, error)
+	LoadKeys   func(map[string]string) error
 }
 
 // Run validates command arguments before accessing Keychain or the network.
@@ -123,6 +129,8 @@ func (a *App) run(args []string) error {
 		return a.readCommand(args[1:])
 	case "invites":
 		return a.invitesCommand(args[1:])
+	case "doctor":
+		return a.doctorCommand(args[1:])
 	case "watch":
 		return a.watchCommand(args[1:])
 	case "members":

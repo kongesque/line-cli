@@ -625,6 +625,7 @@ Ordinary CLI and network errors exit 1. Storage errors have
 | `invites accept`, `invites reject` | Action (`accept_invitation` or `reject_invitation`), chat ID, and sequence. |
 | `watch` | One JSON event per line. |
 | `update` | Installed/latest versions, status, installation method, and next step. Use `--check --json` to only check. |
+| `doctor` | `schema_version: 1`, `checks` (`id`, `status`, `message`, optional `next_step` and string `details`), and a `summary` count per status. |
 
 If some messages cannot be decrypted, `messages --json` still writes the full
 array with a status for each message, then exits 1. It never prints encrypted
@@ -663,7 +664,7 @@ Read-only mode refuses `send`, `read`, `react`, `unsend`, `invites accept`,
 `auth migrate`, and `update` (installing). It stops before prompts, stdin,
 attachments, the session lock, credential storage, the network, or a request
 sequence. Reads, `watch` (its resume position is a local cursor), `download`,
-`auth status`, `update --check`, `help`, and `version` keep working, and reads
+`auth status`, `doctor`, `update --check`, `help`, and `version` keep working, and reads
 may still refresh the access token.
 
 `LINE_CLI_READ_ONLY` accepts `1`/`true` (on) and `0`/`false` or unset (off).
@@ -973,16 +974,37 @@ when storage is unavailable, then return the matching nonzero code.
 
 ## Troubleshooting
 
+Start with `line doctor`. It checks the installed version and any other copies
+on `PATH`, local storage, the saved session, whether LINE accepts it, your
+Letter Sealing keys, clock skew, and the watcher, then suggests a next step for
+anything that isn't right. It changes nothing and works logged out and in
+`--read-only` mode:
+
+```sh
+line doctor
+line doctor --offline      # no network: skips the release, sign-in, and clock checks
+line doctor --json
+```
+
+Each check reports `pass`, `warn`, `fail`, or `skipped` with a stable ID:
+`version`, `install`, `storage`, `session`, `line_auth`, `e2ee_keys`, `clock`,
+and `watch`. The command exits 1 only when a check fails. The sign-in check is
+one profile read; it may refresh the access token like any read but never logs
+in again. The watcher check briefly tries the watcher lock and releases it at
+once. The report shows paths inside your home folder as `~/…` and never
+includes tokens, keys, user or chat IDs, names, email addresses, messages, or
+server responses, so you can paste it into a GitHub issue.
+
 | Symptom | What to check next |
 | --- | --- |
-| A documented option is unknown | Run `line version` and `line COMMAND --help`; compare with the docs at that release tag. Check for updates with `line update --check`. |
+| A documented option is unknown | Run `line version` and `line COMMAND --help`; compare with the docs at that release tag. Check for updates with `line update --check`. `line doctor` warns when several `line` copies are on `PATH`. |
 | `encryption_required` | LINE reports no E2EE support and strict mode blocked the send. Omit `--require-e2ee` to use HTTPS/TLS; LINE can read that content. |
 | `encrypted_image_unavailable` | Encrypted native images are disabled. Try `--file` for the original bytes; file support checks still apply. |
 | Login or an SSH service cannot access storage | Run `line auth status --check --json` as the same user and environment. Follow [headless diagnostics](#diagnose-a-headless-service); do not delete session files to bypass the error. |
 | A send fails or is absent from recent history | Inspect LINE before repeating it. Use [structured errors](#structured-errors) to distinguish a confirmed action from an unknown outcome. Recent history is not proof of non-delivery. |
 | A history page is short or partly unreadable | Continue with its cursor unless `exhausted` is true. Check each message status and the exit code; older keys/history may be unavailable. |
 
-For a bug report, include `line version`, OS, command, and a redacted error.
+For a bug report, include the `line doctor` output, the command, and a redacted error.
 Never include tokens, passwords, QR/PIN values, keys, or private messages.
 
 ## Reference

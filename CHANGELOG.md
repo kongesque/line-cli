@@ -27,6 +27,11 @@ and the documentation at your installed version's tag.
   persisted request sequence and is attempted once. Accepting never registers
   or fetches a group key. In a terminal, `line invites` lets you choose one to
   accept, reject, or skip.
+- `line doctor [--offline] [--json]` checks the version and other copies on
+  `PATH`, storage, the saved session, LINE sign-in (one profile read), Letter
+  Sealing keys (count only), clock skew against LINE, and the watcher. Every
+  non-passing check has a next step. It changes nothing, exits 1 only when a
+  check fails, and prints no tokens, keys, IDs, names, or messages.
 
 ### Fixed
 

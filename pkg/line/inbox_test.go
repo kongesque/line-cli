@@ -94,3 +94,20 @@ func TestGetAllChatMidsContextEnvelope(t *testing.T) {
 		}
 	}
 }
+
+func TestResponseClockRecordsGatewayDate(t *testing.T) {
+	c := NewClient("synthetic")
+	if _, _, ok := c.ResponseClock(); ok {
+		t.Fatal("clock before any response")
+	}
+	for _, date := range []string{"not a date", "Sat, 07 Nov 2026 12:00:00 GMT"} {
+		c.HTTPClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Header: http.Header{"Date": {date}}, Body: io.NopCloser(strings.NewReader(`{"code":0}`)), Request: r}, nil
+		})
+		_ = c.SendChatCheckedContext(context.Background(), 1, "u-peer", "1")
+	}
+	server, local, ok := c.ResponseClock()
+	if !ok || server.UTC().Format(http.TimeFormat) != "Sat, 07 Nov 2026 12:00:00 GMT" || local.IsZero() {
+		t.Fatalf("clock %v %v %v", server, local, ok)
+	}
+}

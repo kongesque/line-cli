@@ -210,8 +210,9 @@ Homebrew users should run `brew upgrade line-cli`. See the
 
 Read the [CLI guide](docs/CLI.md) or browse the [documentation index](docs/README.md).
 Report bugs and request features through [GitHub Issues](https://github.com/kongesque/line-cli/issues).
-Include `line version`, your OS, the command, and a redacted error.
-Omit passwords, tokens, QR login values, and private messages.
+Include the output of `line doctor` (it contains no tokens, keys, IDs, names, or
+messages), the command, and a redacted error. Omit passwords, tokens, QR login
+values, and private messages.
 
 ## Build and contribute
 

@@ -49,6 +49,29 @@ type Client struct {
 
 	channelTokenMu    sync.Mutex
 	channelTokenCache map[string]cachedChannelAccessToken
+
+	clockMu     sync.Mutex
+	serverClock time.Time
+	localClock  time.Time
+}
+
+// ResponseClock returns the Date header of the latest gateway response and
+// the local time it arrived, for clock-skew diagnostics. ok is false when no
+// response carried a valid Date header.
+func (c *Client) ResponseClock() (server, local time.Time, ok bool) {
+	c.clockMu.Lock()
+	defer c.clockMu.Unlock()
+	return c.serverClock, c.localClock, !c.serverClock.IsZero()
+}
+
+func (c *Client) recordClock(h http.Header) {
+	server, err := http.ParseTime(h.Get("Date"))
+	if err != nil {
+		return
+	}
+	c.clockMu.Lock()
+	c.serverClock, c.localClock = server, time.Now()
+	c.clockMu.Unlock()
 }
 
 type OBSDownloadOptions struct {
@@ -412,6 +435,7 @@ func (c *Client) callRPCWithBaseURLContext(ctx context.Context, baseURL, service
 	if err != nil {
 		return nil, requestFailure("transport", err)
 	}
+	c.recordClock(resp.Header)
 
 	respBody, err := readResponseBody(resp, maxRPCResponseBytes)
 	if err != nil {
