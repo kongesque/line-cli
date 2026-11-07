@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -18,23 +17,17 @@ func (a *App) downloadCommand(args []string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		chat, args = args[0], args[1:]
 	}
-	fs := flag.NewFlagSet("download", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet("download")
 	timeout := fs.Duration("timeout", 2*time.Minute, "command deadline including preparation, e.g. 30s; 0 disables it")
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line download CHAT --message ID --output PATH [--json]")
-		fmt.Fprintln(a.Err, "       line download CHAT --message ID --output - | COMMAND")
-		fmt.Fprintln(a.Err, "Download an image, video, audio, or file (up to 20 MiB).")
-		fs.PrintDefaults()
-	}
+	h := commandHelp{Command: "download", Usage: []string{"line download CHAT --message ID --output PATH [--json]", "line download CHAT --message ID --output - | COMMAND"},
+		About:    "Download an image, video, audio, or file (up to 20 MiB). Existing files are\nnever overwritten. Encrypted media is verified before the first byte is written.",
+		Groups:   []flagGroup{{"Target", []string{"message"}}, {"Output", []string{"output", "json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{`line download "Alice" --message MESSAGE_ID --output ./photo.jpg`, "line download CHAT_ID --message MESSAGE_ID --output - | consumer"}}
 	id := fs.String("message", "", "attachment message ID (lookup: up to 10 pages / 1000 records / 30s)")
 	output := fs.String("output", "", "destination path (never overwritten), or - for binary stdout")
 	jsonOutput := fs.Bool("json", false, "write JSON summary")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid download options")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	restore, err := a.commandDeadline(*timeout)
 	if err != nil {

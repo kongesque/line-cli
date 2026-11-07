@@ -6,6 +6,21 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- `--help`, `-h`, and `line help COMMAND` now print to stdout (exit 0). Scripts
+  that read help from stderr must read stdout instead. Error output is one line
+  on stderr, without the full usage dump.
+
+### Changed
+
+- Command help lists `--flag` spellings grouped by purpose, with examples, and
+  `line help COMMAND` shows one command's help. `logout` and `auth` help now
+  explain what they do.
+- Mistyped commands and options suggest the closest match, for example
+  `line chat` (did you mean `line chats`?) and `--limt` (did you mean
+  `--limit`?). Option values are never echoed in these errors.
+
 ### Added
 
 - Read-only mode: `line --read-only COMMAND` or `LINE_CLI_READ_ONLY=1` refuses

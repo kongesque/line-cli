@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 
@@ -35,19 +34,15 @@ func (a *App) invitesCommand(args []string) error {
 		chat, args = args[0], args[1:]
 	}
 	name := strings.TrimSpace("invites " + sub)
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet(name)
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	jsonOutput := fs.Bool("json", false, "write JSON")
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line invites [--json]\n       line invites accept GROUP_ID [--json]\n       line invites reject GROUP_ID [--json]\nList pending group invitations, or accept or reject one by full group ID.\nIn a terminal, line invites lets you choose one to accept, reject, or skip.\nAccepting joins the group; it never registers an encryption key.")
-		fs.PrintDefaults()
-	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line invites --help")
+	h := commandHelp{Command: name, Usage: []string{"line invites [options]", "line invites accept GROUP_ID [options]", "line invites reject GROUP_ID [options]"},
+		About:    "List pending group invitations, or accept or reject one by full group ID.\nIn a terminal, line invites lets you choose one to accept, reject, or skip.\nAccepting joins the group; it never registers an encryption key.",
+		Groups:   []flagGroup{{"Output", []string{"json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{"line invites", "line invites accept GROUP_ID", "line invites reject GROUP_ID --json"}}
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	if sub != "" {
 		if err := a.refuseReadOnly(sub + "ing an invitation"); err != nil {

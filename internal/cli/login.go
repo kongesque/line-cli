@@ -16,12 +16,11 @@ type loginOptions struct {
 }
 
 func (a *App) loginCommand(args []string) error {
-	fs := flag.NewFlagSet("login", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line login [--qr | --email ADDRESS] [--qr-url] [--force] [--headless]")
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("login")
+	h := commandHelp{Command: "login", Usage: []string{"line login [--qr | --email ADDRESS] [options]"},
+		About:    "Sign in by QR code (the default) or email and password, with approval on your\nphone. LINE allows one Chrome-style session, so signing in here may sign out\nLINE for Chrome or another Chrome-style client.",
+		Groups:   []flagGroup{{"Sign-in method", []string{"qr", "email", "qr-url"}}, {"Session", []string{"force", "headless"}}},
+		Examples: []string{"line login", "line login --email you@example.com", "line login --headless"}}
 	var options loginOptions
 	var qr bool
 	fs.StringVar(&options.email, "email", "", "use email/password login with this address")
@@ -29,11 +28,11 @@ func (a *App) loginCommand(args []string) error {
 	fs.BoolVar(&options.qrURL, "qr-url", false, "show the sensitive one-time URL instead of a terminal QR code")
 	fs.BoolVar(&options.force, "force", false, "skip saved-session replacement confirmation")
 	fs.BoolVar(&options.headless, "headless", false, "Linux: enroll headless host-key storage; preserve existing protection")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		if err != nil {
+			err = fmt.Errorf("%w. LINE was not contacted", err)
 		}
-		return errors.New("invalid options; run line login --help. LINE was not contacted")
+		return err
 	}
 	if err := a.refuseReadOnly("login"); err != nil {
 		return err

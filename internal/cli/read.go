@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 
@@ -16,21 +15,17 @@ func (a *App) readCommand(args []string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		chat, args = args[0], args[1:]
 	}
-	fs := flag.NewFlagSet("read", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet("read")
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line read CHAT [--message ID] [--json]\nMark a chat as read. Others in the chat will see \"Read\".\nCHAT is a full ID or unique exact name. Without --message, marks read up to the\nnewest message from someone else among the latest 50. No other command marks\nmessages as read.")
-		fs.PrintDefaults()
-	}
+	h := commandHelp{Command: "read", Usage: []string{"line read CHAT [--message ID] [options]"},
+		About:    "Mark a chat as read. Others in the chat will see \"Read\". CHAT is a full ID\nor unique exact name. Without --message, marks read up to the newest message\nfrom someone else among the latest 50. No other command marks messages read.",
+		Groups:   []flagGroup{{"Target", []string{"message"}}, {"Output", []string{"json", "show-ids"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{`line read "Alice"`, `line read CHAT_ID --message MESSAGE_ID --json`}}
 	id := fs.String("message", "", "mark read up to this message from someone else (lookup: up to 10 pages / 1000 records / 30s)")
 	jsonOutput := fs.Bool("json", false, "write JSON")
 	showIDs := fs.Bool("show-ids", false, "show the message ID in human output")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line read --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	if err := a.refuseReadOnly("read"); err != nil {
 		return err

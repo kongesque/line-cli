@@ -20,15 +20,18 @@ func (a *App) messageCommand(command string, args []string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		chat, args = args[0], args[1:]
 	}
-	fs := flag.NewFlagSet(command, flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet(command)
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
-	fs.Usage = func() {
-		fmt.Fprintf(a.Err, "Usage: line %s CHAT [options]\nCHAT is a full ID or unique exact name. Quote names with spaces.\n", command)
-		if command == "send" {
-			fmt.Fprintln(a.Err, "Uses Letter Sealing when available, otherwise HTTPS/TLS when LINE explicitly supports it.\nLINE can read non-E2EE content. Use --require-e2ee to block it.")
-		}
-		fs.PrintDefaults()
+	h := commandHelp{Command: "messages", Usage: []string{"line messages CHAT [options]"},
+		About:    "Read recent messages. CHAT is a full ID or unique exact name; quote names\nwith spaces. In a terminal, a missing or unclear CHAT opens a chooser.\nReading never sends read receipts; use line read for that.",
+		Groups:   []flagGroup{{"History", []string{"limit", "page", "cursor"}}, {"Output", []string{"json", "details", "resolve-names", "show-ids", "diagnostics"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{`line messages "Alice"`, `line messages CHAT_ID --json --limit 50`, `line messages CHAT_ID --page --json --cursor 'NEXT_CURSOR'`}}
+	if command == "send" {
+		h = commandHelp{Command: "send", Usage: []string{"line send CHAT (--text TEXT | --stdin | --file PATH | --image PATH) [options]"},
+			About: "Send one message, file, or image. CHAT is a full ID or unique exact name;\nquote names with spaces. Uses Letter Sealing when available, otherwise\nHTTPS/TLS when LINE explicitly reports no E2EE support; LINE can read\nnon-E2EE content. Use --require-e2ee to block it. Each send is attempted once.",
+			Groups: []flagGroup{{"Message", []string{"text", "stdin", "file", "image", "mentions"}}, {"Target", []string{"reply-to"}},
+				{"Delivery", []string{"require-e2ee", "timeout"}}, {"Output", []string{"json", "show-ids"}}},
+			Examples: []string{`line send "Alice" --text "Hello!"`, `line send "Alice" --file report.pdf`, `line send CHAT_ID --stdin --json < message.txt`}}
 	}
 	jsonOutput := fs.Bool("json", false, "write JSON to stdout")
 	limit := 20
@@ -63,11 +66,8 @@ func (a *App) messageCommand(command string, args []string) error {
 		fs.StringVar(&imagePath, "image", "", "send a native still image (JPEG/PNG, up to 20 MiB / 40 million pixels; converted to JPEG; no --reply-to)")
 		fs.StringVar(&replyTo, "reply-to", "", "reply to a verified message (lookup: up to 10 pages / 1000 records / 30s)")
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line " + command + " --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	if command == "send" {
 		if err := a.refuseReadOnly("send"); err != nil {

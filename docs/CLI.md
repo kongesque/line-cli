@@ -606,7 +606,8 @@ line messages CHAT_ID --json
 line send CHAT_ID --stdin --json < message.txt
 ```
 
-JSON goes to stdout; diagnostics go to stderr. Success and help exit 0.
+JSON goes to stdout; diagnostics go to stderr. Help also goes to stdout. Success
+and help exit 0.
 Ordinary CLI and network errors exit 1. Storage errors have
 [their own exit codes](#storage-exit-codes). SIGINT exits 130 and SIGTERM exits
 143. Empty result lists are `[]`.
@@ -1011,12 +1012,19 @@ Never include tokens, passwords, QR/PIN values, keys, or private messages.
 
 ### Command help
 
-The built-in help has the current option list:
+The built-in help has the current option list, grouped by purpose, with
+examples:
 
 ```sh
 line help
+line help send
 line send --help
 ```
+
+Help goes to stdout and exits 0, so `line send --help | less` works. A mistyped
+command or option prints one line with the closest match, such as
+`unknown option --limt; did you mean --limit?`, and exits 1. Global options
+(`--read-only`, `--error-format`) go before the command.
 
 ### Shell completion
 

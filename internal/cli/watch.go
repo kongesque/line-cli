@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 
 	"github.com/kongesque/line-cli/internal/events"
@@ -11,21 +10,17 @@ import (
 )
 
 func (a *App) watchCommand(args []string) error {
-	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line watch [--json] [--from-now] [--limit N] [--timeout DURATION]\nWrites one JSON event per line. Starts now on first use; resumes on later runs.")
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("watch")
+	h := commandHelp{Command: "watch", Usage: []string{"line watch [options]"},
+		About:    "Stream live events as one JSON object per line. Starts now on first use and\nresumes from the saved position on later runs. Never sends read receipts.",
+		Groups:   []flagGroup{{"Stream", []string{"from-now", "limit", "timeout"}}, {"Output", []string{"json"}}},
+		Examples: []string{"line watch", "line watch --limit 10 --timeout 5m"}}
 	jsonOutput := fs.Bool("json", true, "write newline-delimited JSON (the watch output format)")
 	fromNow := fs.Bool("from-now", false, "discard the saved resume position and start at the current revision")
 	limit := fs.Int("limit", 0, "stop after N emitted events; 0 watches continuously")
 	timeout := fs.Duration("timeout", 0, "stop after this duration, e.g. 30s; 0 watches continuously")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line watch --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	if fs.NArg() != 0 || *limit < 0 || *timeout < 0 || !*jsonOutput {
 		return errors.New("invalid watch arguments; run line watch --help")

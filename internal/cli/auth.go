@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 
@@ -11,25 +10,45 @@ import (
 
 func (a *App) authCommand(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		_, err := fmt.Fprintln(a.Out, "Usage: line auth status [--check] [--json]\n       line auth migrate --storage=headless\nInspect or migrate local storage without contacting LINE.")
+		_, err := fmt.Fprintln(a.Out, `Usage: line auth status [--check] [--json]
+       line auth migrate --storage=headless
+
+Inspect or migrate local session storage. Neither subcommand contacts LINE.
+
+Subcommands:
+  status    Show where the session is stored and whether it can be read.
+            Add --check to also test write readiness without replacing the
+            active session, or --json for a status object (also on errors).
+  migrate   Linux only: move an existing native session to headless storage.
+            Needs a terminal to accept host-only protection.
+
+Use line doctor to also check whether LINE still accepts the session.
+
+Examples:
+  line auth status
+  line auth status --check --json
+  line auth migrate --storage=headless`)
 		return err
 	}
 	if args[0] == "migrate" {
 		return a.migrateCommand(args[1:])
 	}
 	if args[0] != "status" {
+		if best := closest(args[0], []string{"status", "migrate"}); best != "" {
+			return fmt.Errorf("unknown auth command %q; did you mean line auth %s? Run line auth --help", safeWord(args[0]), best)
+		}
 		return errors.New("unknown auth command; run line auth --help")
 	}
-	fs := flag.NewFlagSet("auth status", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet("auth status")
 	var check, jsonOutput bool
 	fs.BoolVar(&check, "check", false, "check local write readiness without replacing the active session")
 	fs.BoolVar(&jsonOutput, "json", false, "write local status JSON")
-	if err := fs.Parse(args[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line auth status --help")
+	h := commandHelp{Command: "auth status", Usage: []string{"line auth status [--check] [--json]"},
+		About:    "Show where the session is stored and whether it can be read. Does not contact\nLINE or prove that the saved login still works; line doctor checks that.",
+		Groups:   []flagGroup{{"Checks", []string{"check"}}, {"Output", []string{"json"}}},
+		Examples: []string{"line auth status", "line auth status --check --json"}}
+	if shown, err := a.parseFlags(fs, h, args[1:]); shown || err != nil {
+		return err
 	}
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; run line auth status --help")
@@ -87,14 +106,14 @@ func (a *App) authCommand(args []string) error {
 }
 
 func (a *App) migrateCommand(args []string) error {
-	fs := flag.NewFlagSet("auth migrate", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet("auth migrate")
 	storage := fs.String("storage", "", "target storage (headless; Linux only)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line auth migrate --help")
+	h := commandHelp{Command: "auth migrate", Usage: []string{"line auth migrate --storage=headless"},
+		About:    "Linux only: move an accessible native session to headless storage, keeping\ntokens, keys, request sequence, and the watch position. Requires a terminal to\naccept host-only protection. Stop watchers and automation first.",
+		Groups:   []flagGroup{{"Storage", []string{"storage"}}},
+		Examples: []string{"line auth migrate --storage=headless"}}
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	if err := a.refuseReadOnly("storage migration"); err != nil {
 		return err

@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -62,7 +62,8 @@ read receipts, reactions, unsend, invitation changes, login, logout, migration,
 and update installs.
 Reads still work.
 In a terminal, missing details are prompted for. Ctrl-C cancels.
-Use --show-ids for IDs, --json for scripts, or COMMAND --help for all options.
+Use --show-ids for IDs, --json for scripts, or line help COMMAND for its options
+and examples.
 `
 
 type App struct {
@@ -144,38 +145,43 @@ func (a *App) run(args []string) error {
 		return a.chatCommand(args[1:])
 	case "messages", "send":
 		return a.messageCommand(command, args[1:])
-	case "help", "version":
-		if len(args) != 1 {
-			return errors.New("unexpected arguments; run line help")
-		}
-		if command == "version" {
-			_, err := fmt.Fprintln(a.Out, "line "+a.Version)
+	case "help":
+		return a.helpCommand(args[1:])
+	case "version":
+		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+			_, err := fmt.Fprintln(a.Out, "Usage: line version\n\nShow the installed version. line --version is the same.")
 			return err
 		}
-		_, err := io.WriteString(a.Out, help)
+		if len(args) != 1 {
+			return errors.New("unexpected arguments; run line version --help")
+		}
+		_, err := fmt.Fprintln(a.Out, "line "+a.Version)
 		return err
 	case "whoami", "logout":
 	default:
-		return errors.New("unknown command; run line help")
+		return unknownCommand(command)
 	}
-	fs := flag.NewFlagSet(command, flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet(command)
 	var timeout time.Duration
 	if command == "whoami" {
 		fs.DurationVar(&timeout, "timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	}
-	fs.Usage = func() { fmt.Fprintf(a.Err, "Usage: line %s [options]\n", command); fs.PrintDefaults() }
 	var jsonOutput bool
 	var showIDs bool
 	if command == "whoami" {
-		fs.BoolVar(&showIDs, "show-ids", false, "show full IDs")
+		fs.BoolVar(&showIDs, "show-ids", false, "show your account ID")
 		fs.BoolVar(&jsonOutput, "json", false, "write JSON to stdout")
 	}
-	if err := fs.Parse(args[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line " + command + " --help")
+	h := commandHelp{Command: "whoami", Usage: []string{"line whoami [options]"}, About: "Show the account this device is signed in to.",
+		Groups:   []flagGroup{{"Output", []string{"json", "show-ids"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{"line whoami", "line whoami --json"}}
+	if command == "logout" {
+		h = commandHelp{Command: "logout", Usage: []string{"line logout"},
+			About:    "Remove the saved LINE session from this device. This does not sign out\nyour phone or other devices, and your LINE account stays active. LINE's\nservers are not contacted, so the session is not revoked there; run\nline login to sign in here again.",
+			Examples: []string{"line logout"}}
+	}
+	if shown, err := a.parseFlags(fs, h, args[1:]); shown || err != nil {
+		return err
 	}
 	if command == "logout" {
 		if err := a.refuseReadOnly("logout"); err != nil {
@@ -360,4 +366,41 @@ func terminalText(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// helpCommand prints the overview, or one command's help: line help COMMAND.
+func (a *App) helpCommand(args []string) error {
+	if len(args) == 0 {
+		_, err := io.WriteString(a.Out, help)
+		return err
+	}
+	switch args[0] {
+	case "help", "--help", "-h":
+		if len(args) == 1 {
+			_, err := fmt.Fprintln(a.Out, "Usage: line help [COMMAND [SUBCOMMAND]]\n\nShow the command overview, or one command's options and examples.\n\nExamples:\n  line help\n  line help send\n  line help auth status")
+			return err
+		}
+	}
+	if len(args) > 2 || strings.HasPrefix(args[0], "-") {
+		return errors.New("unexpected arguments; use line help COMMAND")
+	}
+	name := args[0]
+	if !slices.Contains(commandNames(completionSpec()), name) {
+		return unknownCommand(name)
+	}
+	return a.run(append(append([]string{}, args...), "--help"))
+}
+
+func unknownCommand(command string) error {
+	if strings.HasPrefix(command, "-") {
+		name := strings.TrimLeft(command, "-")
+		if best := closest(name, []string{"error-format", "read-only", "help", "version"}); best != "" {
+			return fmt.Errorf("unknown global option %s; did you mean --%s? Run line help", safeWord(command), best)
+		}
+		return fmt.Errorf("unknown global option %s; global options are --error-format and --read-only. Run line help", safeWord(command))
+	}
+	if best := closest(command, commandNames(completionSpec())); best != "" {
+		return fmt.Errorf("unknown command %q; did you mean line %s? Run line help", safeWord(command), best)
+	}
+	return fmt.Errorf("unknown command %q; run line help", safeWord(command))
 }

@@ -93,8 +93,8 @@ func TestTimeoutValidationAndHelpDoNotOpenSession(t *testing.T) {
 				t.Fatal("accepted invalid timeout")
 			}
 		}
-		a, _, diagnostics := testApp(nil)
-		if err := a.Run([]string{cmd, "--help"}); err != nil || !strings.Contains(diagnostics.String(), "-timeout") {
+		a, out, diagnostics := testApp(nil)
+		if err := a.Run([]string{cmd, "--help"}); err != nil || !strings.Contains(out.String(), "--timeout DURATION") || diagnostics.Len() != 0 {
 			t.Fatalf("help %s: %v", cmd, err)
 		}
 	}

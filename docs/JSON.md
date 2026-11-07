@@ -189,7 +189,7 @@ locally before doing work. An invalid error-format option itself uses text.
 JSON error mode disables guided prompts and requires explicit command arguments.
 It does not imply `--json`: use both options for JSON success output. A failed
 command writes one JSON object followed by a newline to stderr, without the
-flag parser's human diagnostics. Success and help retain their usual output.
+flag parser's human diagnostics. Success output is unchanged; help goes to stdout.
 JSON error mode adds no wrapper to stdout. Partial legacy history and contact
 results remain arrays and still exit nonzero. Explicit `messages --page --json`
 uses its page object on stdout, including for partial decryption failures.

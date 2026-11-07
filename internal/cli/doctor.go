@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,20 +58,16 @@ type doctorState struct {
 }
 
 func (a *App) doctorCommand(args []string) error {
-	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line doctor [--offline] [--json] [--timeout DURATION]\nCheck the installation, local session storage, LINE sign-in, encryption keys,\nclock, and watcher. Changes nothing. The report contains no tokens, keys, IDs,\nnames, or messages, so you can paste it into a GitHub issue.\nExits 1 only when a check fails.")
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("doctor")
+	h := commandHelp{Command: "doctor", Usage: []string{"line doctor [options]"},
+		About:    "Check the installation, local session storage, LINE sign-in, encryption keys,\nclock, and watcher. Changes nothing. The report contains no tokens, keys, IDs,\nnames, or messages, so you can paste it into a GitHub issue. Exits 1 only when\na check fails.",
+		Groups:   []flagGroup{{"Checks", []string{"offline"}}, {"Output", []string{"json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{"line doctor", "line doctor --offline --json"}}
 	offline := fs.Bool("offline", false, "skip network checks (latest release, LINE sign-in, clock)")
 	jsonOutput := fs.Bool("json", false, "write the report as JSON")
 	timeout := fs.Duration("timeout", 30*time.Second, "command deadline for all checks; 0 disables it")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line doctor --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; run line doctor --help")

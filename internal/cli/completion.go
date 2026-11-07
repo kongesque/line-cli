@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -104,21 +103,16 @@ func dashed(flags []string) []string {
 }
 
 func (a *App) completionCommand(args []string) error {
-	fs := flag.NewFlagSet("completion", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line completion bash|zsh|fish|powershell\nPrint a static completion script for commands, subcommands, and options.\nIt reads no session or network. See the CLI guide for install steps.")
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("completion")
+	h := commandHelp{Command: "completion", Usage: []string{"line completion bash|zsh|fish|powershell"},
+		About:    "Print a static completion script for commands, subcommands, and options.\nIt reads no session and makes no network requests. Regenerate it after\nupgrading. See the CLI guide for install steps.",
+		Examples: []string{"line completion zsh > ~/.zfunc/_line", "line completion fish > ~/.config/fish/completions/line.fish"}}
 	var shell string
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		shell, args = args[0], args[1:]
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line completion --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	if fs.NArg() != 0 || shell == "" {
 		return errors.New("choose one shell: line completion bash|zsh|fish|powershell")

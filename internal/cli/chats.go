@@ -19,13 +19,12 @@ import (
 var errNoNames = errors.New("LINE returned no names")
 
 func (a *App) chatCommand(args []string) error {
-	fs := flag.NewFlagSet("chats", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet("chats")
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line chats [options]\nShows 20 active conversations, newest first. Search also includes inactive chats.\n--unread keeps chats whose reported unread count is above zero; unknown counts are excluded.")
-		fs.PrintDefaults()
-	}
+	h := commandHelp{Command: "chats", Usage: []string{"line chats [options]"},
+		About:    "Show 20 active conversations, newest first. Search also includes inactive\nchats. JSON output includes every chat unless you set a limit.",
+		Groups:   []flagGroup{{"Filter", []string{"search", "unread", "all"}}, {"Output", []string{"limit", "show-ids", "details", "json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{"line chats", "line chats --unread", `line chats --search "Family" --show-ids`}}
 	all := fs.Bool("all", false, "include inactive conversations")
 	search := fs.String("search", "", "find chat names containing this text (case-insensitive)")
 	limit := fs.Int("limit", 20, "maximum rows; 0 shows all")
@@ -33,11 +32,8 @@ func (a *App) chatCommand(args []string) error {
 	unread := fs.Bool("unread", false, "only chats with unread messages (reported count above zero; unknown counts excluded)")
 	details := fs.Bool("details", false, "include names, activity, and unread counts in a versioned envelope (requires --json)")
 	jsonOutput := fs.Bool("json", false, "write JSON (all chats, unlimited by default)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line chats --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	restore, err := a.commandDeadline(*timeout)
 	if err != nil {
