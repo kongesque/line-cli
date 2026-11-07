@@ -9,7 +9,7 @@
 
 [![CI](https://github.com/kongesque/line-cli/actions/workflows/cli.yml/badge.svg)](https://github.com/kongesque/line-cli/actions/workflows/cli.yml)
 [![Release](https://img.shields.io/github/v/release/kongesque/line-cli?filter=v*&label=release)](https://github.com/kongesque/line-cli/releases/latest)
-[![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](go.mod)
+[![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](https://github.com/kongesque/line-cli/blob/main/go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [インストール](#install-line-cli) · [クイックスタート](#quick-start-send-your-first-line-message) · [コマンド](#line-messaging-commands) · [自動化](#automate-line-with-json-and-shell-scripts) · [詳しいガイド](docs/CLI.ja.md)
