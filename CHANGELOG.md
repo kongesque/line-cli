@@ -19,6 +19,9 @@ and the documentation at your installed version's tag.
   sequence, and is attempted once. Without `--message` it marks up to the
   newest message from someone else. Guided mode lists unread chats first and
   asks for confirmation.
+- `line chats --unread` lists only chats whose reported unread count is above
+  zero. Chats with an unknown count are excluded. It works with `--search`,
+  `--limit`, `--all`, `--show-ids`, `--json`, and `--details`.
 
 ### Fixed
 

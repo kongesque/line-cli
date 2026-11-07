@@ -23,13 +23,14 @@ func (a *App) chatCommand(args []string) error {
 	fs.SetOutput(a.Err)
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line chats [options]\nShows 20 active conversations, newest first. Search also includes inactive chats.")
+		fmt.Fprintln(a.Err, "Usage: line chats [options]\nShows 20 active conversations, newest first. Search also includes inactive chats.\n--unread keeps chats whose reported unread count is above zero; unknown counts are excluded.")
 		fs.PrintDefaults()
 	}
 	all := fs.Bool("all", false, "include inactive conversations")
 	search := fs.String("search", "", "find chat names containing this text (case-insensitive)")
 	limit := fs.Int("limit", 20, "maximum rows; 0 shows all")
 	ids := fs.Bool("show-ids", false, "show full IDs below names")
+	unread := fs.Bool("unread", false, "only chats with unread messages (reported count above zero; unknown counts excluded)")
 	details := fs.Bool("details", false, "include names, activity, and unread counts in a versioned envelope (requires --json)")
 	jsonOutput := fs.Bool("json", false, "write JSON (all chats, unlimited by default)")
 	if err := fs.Parse(args); err != nil {
@@ -68,6 +69,10 @@ func (a *App) chatCommand(args []string) error {
 	chats, err := a.chatBoxes(!*all && !*jsonOutput && *search == "", !legacyJSON)
 	if err != nil {
 		return err
+	}
+	// Filter on the reported counts; the server's unreadOnly option is unverified.
+	if *unread {
+		chats = unreadChats(chats)
 	}
 	if legacyJSON {
 		if limitSet && *limit > 0 {
@@ -110,7 +115,11 @@ func (a *App) chatCommand(args []string) error {
 		return a.json(chats)
 	}
 	if len(chats) == 0 {
-		_, err := fmt.Fprintln(a.Out, "No conversations found. Try line chats --all or a different --search.")
+		message := "No conversations found. Try line chats --all or a different --search."
+		if *unread {
+			message = "No unread conversations found. Try line chats --unread --all to include inactive chats."
+		}
+		_, err := fmt.Fprintln(a.Out, message)
 		return err
 	}
 	if _, err := fmt.Fprintf(a.Out, "%-16s  %6s  %-7s  %s\n", "UPDATED", "UNREAD", "TYPE", "CHAT"); err != nil {
@@ -138,8 +147,24 @@ func (a *App) chatCommand(args []string) error {
 			}
 		}
 	}
-	_, err = fmt.Fprintf(a.Out, "\nShowing %d of %d conversations. Use --limit 0 for all rows, --search NAME to find a chat.\nRead: line messages \"Chat name\"   •   IDs: line chats --show-ids\n", len(chats), total)
+	kind := "conversations"
+	if *unread {
+		kind = "unread conversations"
+	}
+	_, err = fmt.Fprintf(a.Out, "\nShowing %d of %d %s. Use --limit 0 for all rows, --search NAME to find a chat.\nRead: line messages \"Chat name\"   •   IDs: line chats --show-ids\n", len(chats), total, kind)
 	return err
+}
+
+// unreadChats keeps chats with a known unread count above zero. A missing or
+// malformed count is not evidence of unread messages, so it is excluded.
+func unreadChats(chats []Chat) []Chat {
+	kept := make([]Chat, 0, len(chats))
+	for _, chat := range chats {
+		if n, err := chat.UnreadCount.Int64(); chat.UnreadKnown && err == nil && n > 0 {
+			kept = append(kept, chat)
+		}
+	}
+	return kept
 }
 
 func chatKind(id string) string {

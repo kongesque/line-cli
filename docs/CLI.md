@@ -183,6 +183,7 @@ move between pages, `q` to cancel, or Ctrl-C to stop. `--json`,
 ```sh
 line chats
 line chats --search "Family"
+line chats --unread
 line chats --all --limit 50
 line chats --show-ids
 line contacts
@@ -193,6 +194,12 @@ line contacts --search "Alice"
 results by default in human output. JSON output shows all matches unless you
 set `--limit`. Use `--limit 0` for every result in human output. `chats --all`
 includes inactive conversations.
+
+`chats --unread` keeps only chats whose unread count, as reported by LINE, is
+above zero. It combines with `--search`, `--limit`, `--all`, `--show-ids`,
+`--json`, and `--details`. A chat whose count LINE omits is left out, because a
+missing count is not proof of unread messages. Listing unread chats never marks
+anything as read; use [`line read`](#mark-a-chat-as-read) for that.
 
 Commands that take a `CHAT` accept a full contact, room, or group ID, or a
 unique exact name matched without case sensitivity. Quote names with spaces. If

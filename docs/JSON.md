@@ -85,6 +85,12 @@ their usual meanings. A name-search lookup failure remains fatal because a
 partial name search cannot establish which chats match. Missing activity is not
 proof a chat is inactive; a missing unread count is not zero.
 
+`chats --unread` filters on the client, after fetching, to rows whose reported
+`unread_count` is above zero; rows with a missing or malformed count are
+excluded. It applies to the legacy array (`chats --unread --json`), whose row
+shape is unchanged, and to the detailed envelope. `--limit` applies after the
+filter.
+
 ### Message envelope
 
 Detailed history returns `schema_version: 1`, `chat`, `order`, and `messages`.
