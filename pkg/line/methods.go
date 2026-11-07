@@ -476,10 +476,21 @@ func (c *Client) CancelReactionContext(ctx context.Context, reqSeq int64, messag
 	return mutationResponse(resp)
 }
 
-// SendChatChecked sends a read receipt for a message in a chat
-func (c *Client) SendChatChecked(chatMid, messageID string) error {
-	_, err := c.callRPC("TalkService", "sendChatChecked", 0, chatMid, messageID)
-	return err
+// SendChatChecked marks a chat read up to messageID. Callers pass a persisted
+// request sequence; see docs/protocol/endpoints/read-receipts.md.
+func (c *Client) SendChatChecked(reqSeq int64, chatMid, messageID string) error {
+	return c.SendChatCheckedContext(context.Background(), reqSeq, chatMid, messageID)
+}
+
+// SendChatCheckedContext sends Chrome's four positional arguments: request
+// sequence, chat MID, newest read message ID, and a literal 0. The void
+// response must carry an explicit success code.
+func (c *Client) SendChatCheckedContext(ctx context.Context, reqSeq int64, chatMid, messageID string) error {
+	resp, err := c.callRPCContext(ctx, "TalkService", "sendChatChecked", reqSeq, chatMid, messageID, 0)
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
 }
 
 // GetContactsV2 fetches contact details for a list of MIDs.
@@ -633,26 +644,35 @@ func (c *Client) GetOwnedProductSummaries(mid string) ([]OwnedProductSummary, er
 }
 
 func (c *Client) GetAllChatMids(withMemberChats, withInvitedChats bool) (*GetAllChatMidsResponse, error) {
+	return c.GetAllChatMidsContext(context.Background(), withMemberChats, withInvitedChats)
+}
+
+// GetAllChatMidsContext lists joined and/or invited group MIDs. It requires an
+// explicit success code and a data object; an omitted list is empty. Errors
+// never include the server message. See docs/protocol/endpoints/chat-invitations.md.
+func (c *Client) GetAllChatMidsContext(ctx context.Context, withMemberChats, withInvitedChats bool) (*GetAllChatMidsResponse, error) {
 	req := GetAllChatMidsRequest{
 		WithMemberChats:  withMemberChats,
 		WithInvitedChats: withInvitedChats,
 	}
-	resp, err := c.callRPC("TalkService", "getAllChatMids", req, 2)
+	resp, err := c.callRPCContext(ctx, "TalkService", "getAllChatMids", req, 2)
 	if err != nil {
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int                    `json:"code"`
-		Message string                 `json:"message"`
-		Data    GetAllChatMidsResponse `json:"data"`
+		Code *int                    `json:"code"`
+		Data *GetAllChatMidsResponse `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, err
+		return nil, errors.New("invalid getAllChatMids response")
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getAllChatMids failed: %s", wrapper.Message)
+	if wrapper.Code == nil || *wrapper.Code != 0 {
+		return nil, errors.New("getAllChatMids failed")
 	}
-	return &wrapper.Data, nil
+	if wrapper.Data == nil {
+		return nil, errors.New("missing getAllChatMids response")
+	}
+	return wrapper.Data, nil
 }
 
 func (c *Client) GetChats(mids []string, withMembers, withInvitees bool) (*GetChatsResponse, error) {
@@ -986,14 +1006,32 @@ type ChatInvitationRequest struct {
 // AcceptChatInvitation accepts a pending invitation into a LINE group chat (the account
 // joins the chat).
 func (c *Client) AcceptChatInvitation(reqSeq int64, chatMid string) error {
-	_, err := c.callRPC("TalkService", "acceptChatInvitation", ChatInvitationRequest{ReqSeq: reqSeq, ChatMid: chatMid})
-	return err
+	return c.AcceptChatInvitationContext(context.Background(), reqSeq, chatMid)
+}
+
+// AcceptChatInvitationContext joins a group with a persisted request sequence.
+// It never registers or fetches group keys; the void response needs code 0.
+func (c *Client) AcceptChatInvitationContext(ctx context.Context, reqSeq int64, chatMid string) error {
+	resp, err := c.callRPCContext(ctx, "TalkService", "acceptChatInvitation", ChatInvitationRequest{ReqSeq: reqSeq, ChatMid: chatMid})
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
 }
 
 // RejectChatInvitation declines a pending invitation into a LINE group chat.
 func (c *Client) RejectChatInvitation(reqSeq int64, chatMid string) error {
-	_, err := c.callRPC("TalkService", "rejectChatInvitation", ChatInvitationRequest{ReqSeq: reqSeq, ChatMid: chatMid})
-	return err
+	return c.RejectChatInvitationContext(context.Background(), reqSeq, chatMid)
+}
+
+// RejectChatInvitationContext declines a group invitation with a persisted
+// request sequence; the void response needs code 0.
+func (c *Client) RejectChatInvitationContext(ctx context.Context, reqSeq int64, chatMid string) error {
+	resp, err := c.callRPCContext(ctx, "TalkService", "rejectChatInvitation", ChatInvitationRequest{ReqSeq: reqSeq, ChatMid: chatMid})
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
 }
 
 // FindContactByUserid looks up a LINE user by their user ID (not MID).

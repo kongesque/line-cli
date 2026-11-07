@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 
@@ -15,12 +14,17 @@ func (a *App) actionCommand(command string, args []string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		chat, args = args[0], args[1:]
 	}
-	fs := flag.NewFlagSet(command, flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet(command)
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
-	fs.Usage = func() {
-		fmt.Fprintf(a.Err, "Usage: line %s CHAT --message ID [options]\n", command)
-		fs.PrintDefaults()
+	h := commandHelp{Command: "react", Usage: []string{"line react CHAT --message ID (--reaction REACTION | --remove) [options]"},
+		About:    "Add or remove your reaction on a message. The message must be in CHAT's\nrecent history (up to 10 pages). Each change is attempted once.",
+		Groups:   []flagGroup{{"Target", []string{"message"}}, {"Reaction", []string{"reaction", "remove"}}, {"Output", []string{"json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{`line react "Alice" --message MESSAGE_ID --reaction love`, `line react "Alice" --message MESSAGE_ID --remove`}}
+	if command == "unsend" {
+		h = commandHelp{Command: "unsend", Usage: []string{"line unsend CHAT --message ID [options]"},
+			About:    "Retract one of your own messages for everyone, subject to LINE's rules.\nIt is attempted once; check LINE before retrying an unknown outcome.",
+			Groups:   []flagGroup{{"Target", []string{"message"}}, {"Output", []string{"json"}}, {"Request", []string{"timeout"}}},
+			Examples: []string{`line unsend "Alice" --message MY_MESSAGE_ID`}}
 	}
 	id := fs.String("message", "", "target message ID (lookup: up to 10 pages / 1000 records / 30s)")
 	jsonOutput := fs.Bool("json", false, "write JSON")
@@ -30,11 +34,11 @@ func (a *App) actionCommand(command string, args []string) error {
 		fs.StringVar(&reaction, "reaction", "", "like, love, laugh, surprise, sad, angry, or matching emoji")
 		fs.BoolVar(&remove, "remove", false, "remove your reaction")
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line " + command + " --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
+	}
+	if err := a.refuseReadOnly(command); err != nil {
+		return err
 	}
 	restore, err := a.commandDeadline(*timeout)
 	if err != nil {
@@ -68,6 +72,11 @@ func (a *App) actionCommand(command string, args []string) error {
 		}
 	}
 	a.identifyMutation(chat, *id)
+	if guided && chat != "" {
+		if chat, _, err = a.chooseChat(chat); err != nil {
+			return err
+		}
+	}
 	if guided && (chat == "" || *id == "" || (command == "react" && reaction == "" && !remove)) {
 		var err error
 		chat, _, err = a.selectChat(chat)

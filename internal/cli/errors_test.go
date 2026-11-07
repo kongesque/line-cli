@@ -114,8 +114,8 @@ func TestStructuredClassificationAndWrapping(t *testing.T) {
 	}
 }
 func TestJSONErrorHelpAndAppReuse(t *testing.T) {
-	a, _, diagnostics := testApp(nil)
-	if err := a.Run([]string{"--error-format=json", "send", "--help"}); err != nil || !strings.Contains(diagnostics.String(), "Usage:") {
+	a, out, diagnostics := testApp(nil)
+	if err := a.Run([]string{"--error-format=json", "send", "--help"}); err != nil || !strings.Contains(out.String(), "Usage:") || diagnostics.Len() != 0 {
 		t.Fatal("missing help", err)
 	}
 	diagnostics.Reset()

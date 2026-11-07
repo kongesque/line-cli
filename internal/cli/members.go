@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"strings"
 
@@ -30,19 +29,15 @@ func (a *App) membersCommand(args []string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		chat, args = args[0], args[1:]
 	}
-	fs := flag.NewFlagSet("members", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line members CHAT [--json] [--timeout DURATION]\nList current group members and invitees separately, with completeness and names.\nCHAT is a group ID or unique exact name. Legacy rooms are unsupported.")
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("members")
+	h := commandHelp{Command: "members", Usage: []string{"line members CHAT [options]"},
+		About:    "List current group members and invitees separately, with completeness and\nnames. CHAT is a group ID or unique exact name. Legacy rooms are unsupported.",
+		Groups:   []flagGroup{{"Output", []string{"json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{`line members "Family group"`, "line members GROUP_ID --json"}}
 	jsonOutput := fs.Bool("json", false, "write a versioned membership snapshot as JSON")
 	timeout := fs.Duration("timeout", 0, "command deadline including name resolution; 0 disables it")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line members --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	restore, err := a.commandDeadline(*timeout)
 	if err != nil {
@@ -60,6 +55,11 @@ func (a *App) membersCommand(args []string) error {
 	// Reject known unsupported ID kinds before storage or name lookup.
 	if fullChatID.MatchString(chat) || strings.HasPrefix(chat, "id:") {
 		if err := messaging.ValidateMembershipChat(strings.TrimPrefix(chat, "id:")); err != nil {
+			return err
+		}
+	}
+	if a.Interactive && !*jsonOutput {
+		if chat, _, err = a.chooseChat(chat); err != nil {
 			return err
 		}
 	}

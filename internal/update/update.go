@@ -41,7 +41,9 @@ func New(current, distribution string) *Service {
 		goos: runtime.GOOS, arch: runtime.GOARCH, executable: os.Executable}
 }
 
-func (s *Service) Check(ctx context.Context) (Plan, error) {
+// Inspect reports the running version, executable, and installation method
+// without network access.
+func (s *Service) Inspect() (Plan, error) {
 	p := Plan{CurrentVersion: s.current}
 	path, err := s.executable()
 	if err != nil {
@@ -57,6 +59,15 @@ func (s *Service) Check(ctx context.Context) (Plan, error) {
 		return p, errors.New("could not inspect the installed executable")
 	}
 	p.Installation = s.installation(path)
+	return p, nil
+}
+
+func (s *Service) Check(ctx context.Context) (Plan, error) {
+	p, err := s.Inspect()
+	if err != nil {
+		return p, err
+	}
+	path := p.Executable
 	r, err := s.latest(ctx)
 	if err != nil {
 		return p, err

@@ -3,9 +3,9 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/internal/update"
 )
@@ -16,19 +16,19 @@ type updater interface {
 }
 
 func (a *App) updateCommand(args []string) error {
-	fs := flag.NewFlagSet("update", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
-	fs.Usage = func() {
-		fmt.Fprint(a.Err, "Usage: line update [--check] [--json]\nInstalls the latest stable release for supported standalone installations.\nOther installations show upgrade instructions. No LINE login is required.\nStop other LINE CLI commands and watchers before installing.\n\n")
-		fs.PrintDefaults()
-	}
+	fs := newFlagSet("update")
+	h := commandHelp{Command: "update", Usage: []string{"line update [--check] [--json]"},
+		About:    "Install the latest stable release for supported standalone installations.\nOther installations show upgrade instructions. No LINE login is required.\nStop other LINE CLI commands and watchers before installing.",
+		Groups:   []flagGroup{{"Mode", []string{"check"}}, {"Output", []string{"json"}}},
+		Examples: []string{"line update --check", "line update"}}
 	check := fs.Bool("check", false, "check versions and show the next step without changing files")
 	jsonOutput := fs.Bool("json", false, "write one JSON result; combine with --check to only check")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line update --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
+	}
+	if !*check && a.readOnly {
+		a.errorStage = "preparation"
+		return fault.New("read_only", "preparation", "Read-only mode is on (--read-only or LINE_CLI_READ_ONLY); update was not attempted. Run line update --check to only check.", session.ErrReadOnly)
 	}
 	if fs.NArg() != 0 {
 		return errors.New("unexpected arguments; run line update --help")

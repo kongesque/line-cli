@@ -70,6 +70,9 @@ func (m *Manager) LoginQR(ctx context.Context, notify func(QRLoginEvent) error) 
 			err = &LoginError{Stage: stage, Dispatched: dispatched, Approved: approved, cause: err}
 		}
 	}()
+	if err = m.readOnly("login"); err != nil {
+		return nil, err
+	}
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}

@@ -13,13 +13,12 @@ import (
 )
 
 func (a *App) contactsCommand(args []string) error {
-	fs := flag.NewFlagSet("contacts", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet("contacts")
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line contacts [options]\n       line contacts --mid MID [--mid MID ...] [--json]\nLists friends, or looks up supplied user IDs including non-friends.\nDirect lookup shows all requested IDs and names; unavailable contacts produce exit status 1.")
-		fs.PrintDefaults()
-	}
+	h := commandHelp{Command: "contacts", Usage: []string{"line contacts [options]", "line contacts --mid MID [--mid MID ...] [--json]"},
+		About:    "List friends, or look up user IDs, including people who aren't friends.\nDirect lookup shows every requested ID; unavailable profiles exit with status 1.",
+		Groups:   []flagGroup{{"Find", []string{"search", "mid"}}, {"Output", []string{"limit", "show-ids", "json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{`line contacts --search "Alice"`, "line contacts --mid USER_MID --json"}}
 	var jsonOutput, showIDs bool
 	var search string
 	var mids []string
@@ -32,11 +31,8 @@ func (a *App) contactsCommand(args []string) error {
 	})
 	fs.BoolVar(&showIDs, "show-ids", false, "show full IDs")
 	fs.BoolVar(&jsonOutput, "json", false, "write JSON to stdout")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line contacts --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	restore, err := a.commandDeadline(*timeout)
 	if err != nil {

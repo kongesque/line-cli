@@ -139,13 +139,19 @@ A successful send prints `Sent to … · end-to-end encrypted` or
 | Send a text message | `line send "Alice" --text "Hello!"` |
 | Send a file | `line send "Alice" --file ./report.pdf` |
 | Download photos, video, audio, or files | `line download` |
+| See chats with unread messages | `line chats --unread` |
+| Mark a chat as read | `line read "Alice"` |
+| Accept or reject group invitations | `line invites` |
 | Stream live events | `line watch` |
+| Check your setup | `line doctor` |
 
 Replace `Alice` with a full chat ID or a complete chat name that matches only
-one chat (case-insensitive). If names are duplicated, run
-`line chats --search "Alice" --show-ids` and use the full ID shown.
-Run `line COMMAND --help` for options; the
-[CLI guide](docs/CLI.md#daily-commands) covers replies, reactions, and pagination.
+one chat (case-insensitive). In a terminal, a partial or shared name opens a
+chooser; in scripts, use the full ID from `line chats --search "Alice" --show-ids`.
+Reading never sends read receipts; only `line read` does.
+Run `line help COMMAND` for options; the
+[CLI guide](docs/CLI.md#daily-commands) covers replies, reactions, pagination,
+and [shell completion](docs/CLI.md#shell-completion).
 
 ## Automate LINE with JSON and shell scripts
 
@@ -164,7 +170,16 @@ Get `CHAT_ID` from `line chats --json`. Watch output is NDJSON; consumers should
 deduplicate by revision. See the [JSON reference](docs/JSON.md) for fields and errors.
 
 Remote changes are attempted once. If a send or other action loses its response,
-check LINE before repeating it.
+check LINE before repeating it. To let a script or agent read without changing
+anything, put `--read-only` before the command or set `LINE_CLI_READ_ONLY=1`:
+
+```sh
+LINE_CLI_READ_ONLY=1 line messages CHAT_ID --json
+```
+
+Read-only mode refuses sends, read receipts, reactions, unsend, invitation
+changes, login, logout, migration, and update installs before contacting LINE.
+See [read-only mode](docs/CLI.md#read-only-mode).
 
 ## Letter Sealing encryption and session security
 
@@ -183,8 +198,9 @@ See [sending and encryption](docs/CLI.md#send-messages-and-files) and
   explicitly reports no support, messages use HTTPS/TLS transport encryption. See
   [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/).
 - History contains up to 100 messages per page. Use `--page --json` and its cursor
-  for older available history; full history is not guaranteed. Reading does not
-  mark messages as read; some older encrypted messages may be unavailable.
+  for older available history; full history is not guaranteed. Reading never
+  sends read receipts; use `line read`. Some older encrypted messages may be
+  unavailable.
 - File sending and media downloads are limited to 20 MiB. `--file` preserves
   original bytes and appears as an ordinary file. Encrypted native image sending
   is disabled; non-E2EE images require explicit LINE capability. Native
@@ -209,8 +225,9 @@ Homebrew users should run `brew upgrade line-cli`. See the
 
 Read the [CLI guide](docs/CLI.md) or browse the [documentation index](docs/README.md).
 Report bugs and request features through [GitHub Issues](https://github.com/kongesque/line-cli/issues).
-Include `line version`, your OS, the command, and a redacted error.
-Omit passwords, tokens, QR login values, and private messages.
+Include the output of `line doctor` (it contains no tokens, keys, IDs, names, or
+messages), the command, and a redacted error. Omit passwords, tokens, QR login
+values, and private messages.
 
 ## Build and contribute
 

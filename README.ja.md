@@ -143,11 +143,17 @@ Ctrl-Cでキャンセルできます。次の例のようにトーク名を直�
 | テキストメッセージを送信 | `line send "Alice" --text "Hello!"` |
 | ファイルを送信 | `line send "Alice" --file ./report.pdf` |
 | 写真、動画、音声、ファイルをダウンロード | `line download` |
+| 未読のあるトークを表示 | `line chats --unread` |
+| トークを既読にする | `line read "Alice"` |
+| グループ招待を承認・拒否 | `line invites` |
 | リアルタイムイベントを受信 | `line watch` |
+| 設定を診断 | `line doctor` |
 
 `Alice` は完全なトークID、または他と重複しないトーク名に置き換えてください。名前は全体を指定し、大文字と小文字は区別しません。
-同じ名前が複数ある場合は `line chats --search "Alice" --show-ids` を実行し、表示された完全なIDを使います。
-オプションは `line COMMAND --help`、返信やリアクション、ページ分割は
+ターミナルでは、部分一致や同名の場合に選択肢が表示されます。スクリプトでは
+`line chats --search "Alice" --show-ids` で表示される完全なIDを使います。
+閲覧では既読通知を送りません。既読にするのは `line read` だけです。
+オプションは `line help COMMAND`、返信やリアクション、ページ分割は
 [CLIガイド](docs/CLI.ja.md#daily-commands)で確認できます。
 
 <a id="automate-line-with-json-and-shell-scripts"></a>
@@ -169,7 +175,16 @@ line watch --json > events.ndjson
 フィールドとエラーの形式は[JSONリファレンス](docs/JSON.md)を参照してください。
 
 サーバーの状態を変更する操作は1回だけ試行します。送信などの応答を受け取れなかった場合は、
-繰り返す前にLINEで結果を確認してください。
+繰り返す前にLINEで結果を確認してください。スクリプトやエージェントに読み取りだけを許可するには、
+コマンドの前に `--read-only` を付けるか、`LINE_CLI_READ_ONLY=1` を設定します。
+
+```sh
+LINE_CLI_READ_ONLY=1 line messages CHAT_ID --json
+```
+
+読み取り専用モードでは、送信、既読通知、リアクション、取り消し、招待の変更、ログイン、ログアウト、
+移行、更新のインストールを、LINEに接続する前に拒否します。
+[読み取り専用モード](docs/CLI.ja.md#read-only-mode)を参照してください。
 
 ## Letter Sealingによる暗号化とセッションのセキュリティ
 
@@ -187,7 +202,7 @@ Letter Sealingを利用すると、LINEのサーバーもメッセージの内�
   LINEが非対応と明示した場合は、HTTPS/TLSで通信を暗号化して送信します。
   詳しくは[LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)を参照してください。
 - 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めますが、
-  全履歴は保証しません。閲覧しても既読にはならず、古い暗号化メッセージの一部は読めない場合があります。
+  全履歴は保証しません。閲覧では既読通知を送らず（既読にするには `line read`）、古い暗号化メッセージの一部は読めない場合があります。
 - ファイル送信とメディアのダウンロードは最大20 MiBです。`--file` は元のバイト列を保持し、通常のファイルとして表示されます。
   暗号化した画像メッセージの送信は無効です。非E2EE画像は、LINEが対応を明示した場合に限り送信できます。
   動画・音声の専用送信、スタンプ送信、外部メディアURLのダウンロードは非対応です。
@@ -211,7 +226,8 @@ Homebrewでは `brew upgrade line-cli` を実行します。その他のイン�
 
 [CLIガイド](docs/CLI.ja.md)または[ドキュメント一覧](docs/README.md)を参照してください（リファレンスは英語です）。
 不具合や機能要望は [GitHub Issues](https://github.com/kongesque/line-cli/issues) へ。
-不具合の報告には `line version`、OS、コマンド、機密情報を除いたエラーを添えてください。
+不具合の報告には `line doctor` の出力（トークン、鍵、ID、名前、メッセージは含みません）、コマンド、
+機密情報を除いたエラーを添えてください。
 パスワード、トークン、QRログインの値、私的なメッセージは含めないでください。
 
 <a id="build-and-contribute"></a>

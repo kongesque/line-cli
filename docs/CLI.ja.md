@@ -136,7 +136,8 @@ stdoutはリダイレクトできます。進行状況、QRコード、PIN、警
 | `--timeout DURATION` に対応するコマンド | デフォルトの制限時間 |
 | --- | --- |
 | `download` | `2m` |
-| `whoami`、`contacts`、`chats`、`members`、`messages`、`send`、`react`、`unsend` | `0`（コマンド全体の制限なし） |
+| `doctor` | `30s` |
+| `whoami`、`contacts`、`chats`、`members`、`invites`、`messages`、`send`、`read`、`react`、`unsend` | `0`（コマンド全体の制限なし） |
 
 例：`line send "Alice" --text "Hello" --timeout 30s`。オプション解析後から計測し、入力待ち、stdin、
 トークやメッセージの検索、認証の復旧、キーの準備、転送を含みます。
@@ -168,6 +169,8 @@ Ctrl-Cで入力待ち、QRのポーリング、通常のリクエストを中止
 line messages
 line send
 line download
+line read
+line invites
 line react
 line unsend
 ```
@@ -183,6 +186,7 @@ line unsend
 ```sh
 line chats
 line chats --search "Family"
+line chats --unread
 line chats --all --limit 50
 line chats --show-ids
 line contacts
@@ -193,10 +197,17 @@ line contacts --search "Alice"
 JSONでは `--limit` を指定しない限り、すべての一致結果を表示します。
 通常の表示で全件を出すには `--limit 0` を使います。`chats --all` は非アクティブなトークも含みます。
 
+`chats --unread` は、LINEが報告する未読数が1以上のトークだけを表示します。`--search`、`--limit`、
+`--all`、`--show-ids`、`--json`、`--details` と組み合わせられます。未読数が返されないトークは、
+未読がある証拠にならないため除外します。一覧を表示しても既読にはなりません。既読にするには
+[`line read`](#mark-a-chat-as-read) を使います。
+
 `CHAT` を取るコマンドには、連絡先・ルーム・グループの完全なID、または一意に完全一致する名前を指定できます。
 名前の大文字・小文字は区別しません。スペースのある名前は引用符で囲んでください。
-名前が見つからない場合や同名のトークが複数ある場合は、`line chats --search NAME --show-ids` で
-完全なIDを確認します。名前は変わることがあるため、スクリプトではIDを使うほうが確実です。
+ターミナルでは、完全一致する名前がない場合や同名が複数ある場合に、その名前を含むトークと連絡先の
+選択肢が表示されます。選ぶまで何も送信・変更しません。ターミナル以外（スクリプト、`--json`、`--stdin`）
+ではエラーになり、似た名前を最大5件、完全なIDとともに表示します。部分一致や似た名前は、
+自分で選ばない限り送信などの変更には使われません。名前は変わることがあるため、スクリプトではIDを使うほうが確実です。
 
 友だち一覧にないユーザーを調べるには、そのユーザーの完全なMID（LINEのユーザー識別子）を使います。
 例えば、`line messages CHAT_ID --json` のグループメッセージにある `from` は、送信者のMIDです。
@@ -231,7 +242,8 @@ line messages CHAT_ID --json
 `messages` は既定で直近20件を取得します。`--limit` は1〜100件を指定できます。
 通常の表示は古い順、通常の `--json` はサーバーの順序です。
 `--show-ids` で返信、リアクション、ダウンロード、送信取消に必要なIDを表示します。
-閲覧しても既読にはならず、本文をローカルに保存することもありません。
+閲覧しても既読通知は送信せず、本文をローカルに保存することもありません。既読にするには
+[`line read`](#mark-a-chat-as-read) を使います。
 元の端末の鍵をLINEから取得できない場合、古い暗号化メッセージの一部は読めません。
 
 本文を表示せず、復号や鍵の取得も行わずに、返されたIDを調べるには：
@@ -320,6 +332,30 @@ JSON は `schema_version:1`、`chat`、`members`、`invitees`、
 ```sh
 printf '%s' '😀 @Alex' | line send "Family group" --stdin --reply-to MESSAGE_ID --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]' --json
 ```
+
+<a id="accept-or-reject-group-invitations"></a>
+
+### グループ招待の承認・拒否
+
+```sh
+line invites
+line invites --json
+line invites accept GROUP_ID
+line invites reject GROUP_ID --json
+```
+
+`line invites` は保留中のグループ招待を、グループ名と完全なIDつきで一覧表示します。ターミナルでは
+続けて、承認・拒否・スキップする招待を選べます。`accept` と `reject` には完全なグループIDを
+指定します。招待中のグループはまだトークではないため、名前は使えません。変更の前に、そのIDが
+現在の保留中一覧にあるか確認し、なければ `invalid_arguments` で停止して何も送信しません。
+
+承認するとグループに参加します。暗号鍵の登録・取得や既読通知は行いません。そのグループで最初に
+`line send` したときに、通常どおりグループ鍵が登録されることがあります。各変更は保存済みの
+リクエスト連番を使い、1回だけ試行します。結果が不明な場合は、再試行の前に `line invites` で
+確認してください。`--read-only` は `accept` と `reject` を拒否しますが、一覧表示はできます。
+
+CLIが行うリクエストでは招待した人がわからないため、招待者は表示しません。グループ名を取得
+できない場合も招待は一覧に残り、`name: null`、`name_status: "unavailable"` となります。
 
 <a id="send-messages-and-files"></a>
 
@@ -426,6 +462,28 @@ line download CHAT_ID --message MESSAGE_ID --output - | consumer
 終了コードを確認し、`pipefail` を使ってください。ファイル保存には `--output PATH` を推奨します。
 シェルの `>` では、CLIが動く前に既存ファイルが切り詰められることがあります。
 
+<a id="mark-a-chat-as-read"></a>
+
+### トークを既読にする
+
+閲覧、イベントの受信、ダウンロードでは既読になりません。既読通知を送るには `line read` を
+実行します。相手には **既読** と表示されます。
+
+```sh
+line read "Alice"
+line read CHAT_ID --message MESSAGE_ID --json
+```
+
+`--message` を省略すると、最新50件のうち他の人からの最も新しいメッセージまで既読にします。
+該当がなければ何も送信せず、`message_not_found` で失敗します。`--message` を指定する場合、
+そのIDはそのトークにあり（リアクションと同じ範囲で検索）、他の人のメッセージである必要が
+あります。自分のメッセージは指定できません。ターミナルでトークを指定せずに `line read` を
+実行すると、未読のあるトークが先頭の一覧から選び、送信前に確認できます。
+
+ほかのリモート変更と同様、保存済みのリクエスト連番を使い、1回だけ試行します。結果が不明な
+場合は、再実行の前にLINEで確認してください。`--read-only` では拒否されます。JSONの結果は
+`action: "read"`、`chat_id`、`message_id`、`request_sequence` です。
+
 <a id="watch-new-events"></a>
 
 ### 新しいイベントを受信する
@@ -435,9 +493,25 @@ line watch
 line watch --timeout 30s
 line watch --limit 10
 line watch --from-now
+line watch --json | your-program
 ```
 
-`watch` はstdoutに1行1件のJSONイベントを、stderrに状態メッセージを出力します。
+ターミナルでは、`watch` はメッセージごとに読みやすい1行（時刻、トーク、送信者、本文または
+添付の種類）を表示します。
+
+```text
+14:05  Alice: See you at 7 ↵ bring snacks
+14:06  Family · Bob: Running late
+14:07  You → Alice: On my way
+```
+
+名前はトークや人ごとに1回だけ取得してキャッシュし、取得できない場合はIDを表示します。
+その他のイベントは `--verbose` を付けない限り表示しません。表示しないイベントも再開位置は
+進めますが、`--limit` には数えません。
+
+stdoutがターミナルでない場合（パイプやファイル）や `--json` 指定時は、これまでと同じく
+stdoutに1行1件のJSONイベントを、stderrに状態メッセージを出力します。ターミナルに接続した
+まま `watch` を使うスクリプトは `--json` を指定してください。
 初回はLINEの現在のrevisionから始まり、次回以降は保存済みチェックポイントから再開します。
 `--from-now` を指定するとチェックポイントを破棄し、新しいイベントから始めます。
 
@@ -538,9 +612,12 @@ JSONはstdout、診断情報はstderrに出力します。成功とヘルプは�
 | `messages` | ID、送信者、時刻、内容、暗号化情報、状態。 |
 | `send` | メッセージID、トークID、暗号化情報、グループ鍵登録、連番。 |
 | `download` | 保存先パス、バイト数、メッセージID。 |
-| `react`、`unsend` | 操作、トークID、メッセージID、連番。 |
+| `read`、`react`、`unsend` | 操作、トークID、メッセージID、連番。 |
+| `invites` | `schema_version: 1` と `invitations`（`chat_id`、null可の `name`、`name_status`）。 |
+| `invites accept`、`invites reject` | 操作（`accept_invitation` または `reject_invitation`）、トークID、連番。 |
 | `watch` | 1行に1件のJSONイベント。 |
 | `update` | インストール済み／最新バージョン、状態、インストール方法、次の手順。確認だけなら `--check --json`。 |
+| `doctor` | `schema_version: 1`、`checks`（`id`、`status`、`message`、任意の `next_step` と文字列の `details`）、状態ごとの件数 `summary`。 |
 
 一部を復号できない場合も、`messages --json` は各メッセージの状態を含む全配列を出力してから、
 終了コード1で終了します。暗号化チャンクや生のサーバー応答本文は表示しません。
@@ -557,6 +634,33 @@ stderrに構造化エラーを1件出力します。グローバルオプショ�
 操作を試行したかどうか、結果、準備やアップロードの各段階も報告します。アップロードが失敗しても、ファイルメッセージ自体は作成済みの場合があります。
 結果の出力に失敗しても、送信済みという結果は保持します。通信エラーを含め、`unknown` の操作を自動再試行しないでください。
 先にLINEで確認してください。ストレージとシグナルの終了コードは変わりません。[エラーのフィールド、コード、例](JSON.md#errors)を参照してください。
+
+<a id="read-only-mode"></a>
+
+### 読み取り専用モード
+
+スクリプトやエージェントに読み取りだけを許可するには、コマンドの前に `--read-only` を付けるか、
+`LINE_CLI_READ_ONLY=1` を設定します。
+
+```sh
+line --read-only messages CHAT_ID --json
+LINE_CLI_READ_ONLY=1 line chats --json
+line --read-only --error-format=json send CHAT_ID --text "hi"   # 拒否されます
+```
+
+読み取り専用モードでは `send`、`read`、`react`、`unsend`、`invites accept`、`invites reject`、
+`login`、`logout`、`auth migrate`、`update`（インストール）を拒否します。拒否は、プロンプト、
+標準入力、添付ファイル、セッションのロック、認証情報の保存先、ネットワーク、リクエスト連番の
+いずれよりも前に行われます。閲覧系のコマンド、`watch`（再開位置はローカルのカーソル）、
+`download`、`auth status`、`doctor`、`update --check`、`help`、`version` は使えます。
+閲覧時のアクセストークン更新も行われます。
+
+`LINE_CLI_READ_ONLY` は `1`/`true`（有効）と、`0`/`false` または未設定（無効）を受け付けます。
+それ以外の値ではすべてのコマンドが `invalid_arguments` で失敗するため、入力ミスでガードが
+外れることはありません。`--read-only=false` で環境変数を打ち消すことはできません。拒否された
+コマンドは終了コード1で終わり、JSONエラーコードは `read_only`（stage `preparation`）です。
+メッセージ操作は `attempted: false`、`outcome: "not_attempted"` になります。読み取り専用モード
+でもヘルプは表示できます。
 
 <a id="json-lookup-results"></a>
 
@@ -851,6 +955,25 @@ Linuxでは、確認したセッションのパスを `$HOME/.config/line-cli` �
 
 ## 問題の解決
 
+まず `line doctor` を実行してください。インストール済みのバージョンと `PATH` 上の他のコピー、
+ローカルの保存先、保存済みセッション、LINEがそれを受け付けるか、Letter Sealing鍵、時刻のずれ、
+watcherを確認し、問題があれば次の手順を示します。何も変更せず、ログアウト中や `--read-only`
+でも使えます。
+
+```sh
+line doctor
+line doctor --offline      # ネットワークなし：リリース、サインイン、時刻の確認を省略
+line doctor --json
+```
+
+各チェックは安定したID（`version`、`install`、`storage`、`session`、`line_auth`、`e2ee_keys`、
+`clock`、`watch`）と、`pass`、`warn`、`fail`、`skipped` のいずれかを報告します。終了コード1に
+なるのは、チェックが失敗した場合だけです。サインインの確認はプロフィールを1回読むだけで、
+通常の読み取りと同様にアクセストークンを更新することはありますが、再ログインはしません。
+watcherの確認ではロックを一瞬だけ試してすぐに解放します。レポートではホームフォルダ内のパスを
+`~/…` と表示し、トークン、鍵、ユーザーやトークのID、名前、メールアドレス、メッセージ、
+サーバーの応答は含まないため、GitHub Issueにそのまま貼り付けられます。
+
 | 症状 | 次に確認すること |
 | --- | --- |
 | ガイドのオプションが不明と表示される | `line version` と `line COMMAND --help` を実行し、該当タグのガイドと比較します。更新確認は `line update --check` です。 |
@@ -860,7 +983,7 @@ Linuxでは、確認したセッションのパスを `$HOME/.config/line-cli` �
 | 送信失敗、または最近の履歴に見つからない | 再実行前にLINEを確認します。[構造化エラー](#structured-errors)で確認済みか不明かを判断します。最近の履歴にないことは未配信の証拠ではありません。 |
 | 履歴ページが短い、または一部を復号できない | `exhausted` が真になるまでカーソルで続行できます。各状態と終了コードを確認してください。古い履歴や鍵は取得できない場合があります。 |
 
-不具合報告には `line version`、OS、コマンド、機密情報を除いたエラーを含めてください。
+不具合報告には `line doctor` の出力、コマンド、機密情報を除いたエラーを含めてください。
 トークン、パスワード、QR/PIN、鍵、私的なメッセージは含めないでください。
 
 <a id="reference"></a>
@@ -875,8 +998,52 @@ Linuxでは、確認したセッションのパスを `$HOME/.config/line-cli` �
 
 ```sh
 line help
+line help send
 line send --help
 ```
+
+ヘルプはstdoutに出力され終了コード0なので、`line send --help | less` も使えます。コマンドや
+オプションを打ち間違えると、`unknown option --limt; did you mean --limit?` のように最も近い
+候補を1行で示し、終了コード1で終わります。グローバルオプション（`--read-only`、
+`--error-format`）はコマンドの前に置きます。
+
+<a id="shell-completion"></a>
+
+### シェル補完
+
+`line completion SHELL` は、コマンド、サブコマンド、オプション、リアクションなどの固定値を
+補完する静的なスクリプトを出力します。セッションは読まず、ネットワークにも接続しません。
+LINE CLIを更新したら作り直してください。
+
+Bash（一度保存し、`~/.bashrc` から読み込む）：
+
+```sh
+line completion bash > ~/.line-completion.bash
+echo 'source ~/.line-completion.bash' >> ~/.bashrc
+```
+
+Zsh（`~/.zshrc` の `compinit` より前に `fpath` へ追加）：
+
+```sh
+mkdir -p ~/.zfunc
+line completion zsh > ~/.zfunc/_line
+# ~/.zshrc の compinit より前に:  fpath=(~/.zfunc $fpath)
+```
+
+Fish：
+
+```sh
+line completion fish > ~/.config/fish/completions/line.fish
+```
+
+PowerShell（`$PROFILE` に追加）：
+
+```powershell
+line completion powershell | Out-String | Invoke-Expression
+```
+
+トーク名やメッセージIDなどのアカウント情報は、セッションの読み取りが必要になるため補完しません。
+Homebrewはまだこれらのスクリプトをインストールしません。
 
 <a id="build-from-source"></a>
 
@@ -917,7 +1084,7 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 - 履歴は1ページ最大100件です。`--page --json` とカーソルで取得可能な古い履歴へ進めます。操作対象の検索は最大10ページ、30秒です。
 - 一般ファイルはLINEの対応状況を確認し、非E2EEの場合もHTTPS/TLSで送信します。暗号化画像は無効です。非E2EEのJPEG/PNG画像はLINEが対応を明示した場合だけ送信できます。動画・音声の専用送信、アニメーション画像、画像返信、スタンプ送信は非対応です。
 - 画像・動画・音声・ファイルのダウンロードは20 MiBまで。外部メディアURLには対応しません。
-- メッセージを読んでも既読にはなりません。
+- 閲覧では既読通知を送りません。既読にするには `line read` を使います。
 - リリース版バイナリは署名・公証されていません。
 - LINEのプロトコル変更で互換性に影響が出る場合があります。
 

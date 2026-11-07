@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -19,7 +19,7 @@ import (
 
 const help = `LINE — your conversations from the terminal
 
-Usage: line [--error-format text|json] <command> [options]
+Usage: line [--error-format text|json] [--read-only] <command> [options]
 
 Everyday commands:
   login       Sign in by QR code (--email ADDRESS for email login)
@@ -27,16 +27,20 @@ Everyday commands:
   contacts    Find friends (--search NAME) or look up people (--mid MID)
   chats       Browse recent conversations
   members     List group members and invitees
+  invites     List, accept, or reject group invitations
   messages    Choose a chat and read messages
   send        Choose a recipient and write a message
   logout      Sign out on this device
 
 More commands:
   auth        Inspect local session storage (auth status)
-  watch       Stream live events (--json)
+  watch       Stream new messages and events (--json for scripts)
   download    Save an image, video, audio, or file attachment
+  read        Mark a chat as read (others see "Read")
   react       Add or remove a reaction
   unsend      Retract one of your own messages
+  doctor      Check installation, storage, sign-in, keys, clock, and watcher
+  completion  Print shell completion (bash, zsh, fish, powershell)
   version     Show the installed version
   update      Update LINE CLI or show upgrade instructions (--check to preview)
   help        Show this help
@@ -46,17 +50,26 @@ Examples:
   line send "Alice" --text "Hello!"
   line send "Alice" --file report.pdf
   line send "Alice" --image screenshot.png
-  line chats --search "Family"
+  line chats --unread
+  line --read-only messages CHAT_ID --json
 
-whoami, contacts, chats, members, messages, send, download, react, and unsend accept --timeout.
+whoami, contacts, chats, members, invites, messages, send, download, read, react,
+unsend, and doctor accept --timeout.
+Reading messages never sends read receipts; only line read does.
 Use --error-format=json before a core command or auth status for JSON errors on stderr.
 This disables prompts and preserves stdout success/partial-result formats.
+Use --read-only before the command (or LINE_CLI_READ_ONLY=1) to block sends,
+read receipts, reactions, unsend, invitation changes, login, logout, migration,
+and update installs.
+Reads still work.
 In a terminal, missing details are prompted for. Ctrl-C cancels.
-Use --show-ids for IDs, --json for scripts, or COMMAND --help for all options.
+Use --show-ids for IDs, --json for scripts, or line help COMMAND for its options
+and examples.
 `
 
 type App struct {
 	JSONErrors       bool
+	readOnly         bool
 	errorStage       string
 	errorMutation    *fault.Mutation
 	Interactive      bool
@@ -81,6 +94,13 @@ type App struct {
 	Updater          updater
 	NewHeadlessLogin func() (session.LoginStorage, error)
 	MigrateHeadless  func(bool) error
+	// Getenv reads LINE_CLI_READ_ONLY, PATH, and HOME; nil ignores the
+	// environment (tests).
+	Getenv func(string) string
+	// Executable and LoadKeys default to os.Executable and the Letter Sealing
+	// runtime; tests replace them for line doctor.
+	Executable func() (string, error)
+	LoadKeys   func(map[string]string) error
 }
 
 // Run validates command arguments before accessing Keychain or the network.
@@ -108,6 +128,14 @@ func (a *App) run(args []string) error {
 		return a.downloadCommand(args[1:])
 	case "react", "unsend":
 		return a.actionCommand(command, args[1:])
+	case "read":
+		return a.readCommand(args[1:])
+	case "invites":
+		return a.invitesCommand(args[1:])
+	case "doctor":
+		return a.doctorCommand(args[1:])
+	case "completion":
+		return a.completionCommand(args[1:])
 	case "watch":
 		return a.watchCommand(args[1:])
 	case "members":
@@ -118,38 +146,48 @@ func (a *App) run(args []string) error {
 		return a.chatCommand(args[1:])
 	case "messages", "send":
 		return a.messageCommand(command, args[1:])
-	case "help", "version":
-		if len(args) != 1 {
-			return errors.New("unexpected arguments; run line help")
-		}
-		if command == "version" {
-			_, err := fmt.Fprintln(a.Out, "line "+a.Version)
+	case "help":
+		return a.helpCommand(args[1:])
+	case "version":
+		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+			_, err := fmt.Fprintln(a.Out, "Usage: line version\n\nShow the installed version. line --version is the same.")
 			return err
 		}
-		_, err := io.WriteString(a.Out, help)
+		if len(args) != 1 {
+			return errors.New("unexpected arguments; run line version --help")
+		}
+		_, err := fmt.Fprintln(a.Out, "line "+a.Version)
 		return err
 	case "whoami", "logout":
 	default:
-		return errors.New("unknown command; run line help")
+		return unknownCommand(command)
 	}
-	fs := flag.NewFlagSet(command, flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet(command)
 	var timeout time.Duration
 	if command == "whoami" {
 		fs.DurationVar(&timeout, "timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 	}
-	fs.Usage = func() { fmt.Fprintf(a.Err, "Usage: line %s [options]\n", command); fs.PrintDefaults() }
 	var jsonOutput bool
 	var showIDs bool
 	if command == "whoami" {
-		fs.BoolVar(&showIDs, "show-ids", false, "show full IDs")
+		fs.BoolVar(&showIDs, "show-ids", false, "show your account ID")
 		fs.BoolVar(&jsonOutput, "json", false, "write JSON to stdout")
 	}
-	if err := fs.Parse(args[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
+	h := commandHelp{Command: "whoami", Usage: []string{"line whoami [options]"}, About: "Show the account this device is signed in to.",
+		Groups:   []flagGroup{{"Output", []string{"json", "show-ids"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{"line whoami", "line whoami --json"}}
+	if command == "logout" {
+		h = commandHelp{Command: "logout", Usage: []string{"line logout"},
+			About:    "Remove the saved LINE session from this device. This does not sign out\nyour phone or other devices, and your LINE account stays active. LINE's\nservers are not contacted, so the session is not revoked there; run\nline login to sign in here again.",
+			Examples: []string{"line logout"}}
+	}
+	if shown, err := a.parseFlags(fs, h, args[1:]); shown || err != nil {
+		return err
+	}
+	if command == "logout" {
+		if err := a.refuseReadOnly("logout"); err != nil {
+			return err
 		}
-		return errors.New("invalid options; run line " + command + " --help")
 	}
 	restore, err := a.commandDeadline(timeout)
 	if err != nil {
@@ -329,4 +367,41 @@ func terminalText(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// helpCommand prints the overview, or one command's help: line help COMMAND.
+func (a *App) helpCommand(args []string) error {
+	if len(args) == 0 {
+		_, err := io.WriteString(a.Out, help)
+		return err
+	}
+	switch args[0] {
+	case "help", "--help", "-h":
+		if len(args) == 1 {
+			_, err := fmt.Fprintln(a.Out, "Usage: line help [COMMAND [SUBCOMMAND]]\n\nShow the command overview, or one command's options and examples.\n\nExamples:\n  line help\n  line help send\n  line help auth status")
+			return err
+		}
+	}
+	if len(args) > 2 || strings.HasPrefix(args[0], "-") {
+		return errors.New("unexpected arguments; use line help COMMAND")
+	}
+	name := args[0]
+	if !slices.Contains(commandNames(completionSpec()), name) {
+		return unknownCommand(name)
+	}
+	return a.run(append(append([]string{}, args...), "--help"))
+}
+
+func unknownCommand(command string) error {
+	if strings.HasPrefix(command, "-") {
+		name := strings.TrimLeft(command, "-")
+		if best := closest(name, []string{"error-format", "read-only", "help", "version"}); best != "" {
+			return fmt.Errorf("unknown global option %s; did you mean --%s? Run line help", safeWord(command), best)
+		}
+		return fmt.Errorf("unknown global option %s; global options are --error-format and --read-only. Run line help", safeWord(command))
+	}
+	if best := closest(command, commandNames(completionSpec())); best != "" {
+		return fmt.Errorf("unknown command %q; did you mean line %s? Run line help", safeWord(command), best)
+	}
+	return fmt.Errorf("unknown command %q; run line help", safeWord(command))
 }

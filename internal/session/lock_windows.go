@@ -14,7 +14,7 @@ func Lock() (func(), error) { return namedLock("session.lock") }
 func WatchLock() (func(), error) {
 	u, err := namedLock("watch.lock")
 	if errors.Is(err, ErrBusy) {
-		return nil, errors.New("another line watch is already running")
+		return nil, ErrWatchBusy
 	}
 	return u, err
 }

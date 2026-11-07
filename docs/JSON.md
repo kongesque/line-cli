@@ -16,7 +16,10 @@ diagnostics go to stderr. Use full chat IDs and keep message IDs as strings.
 | `line messages CHAT_ID --details --json` | Schema-1 envelope with `chat`, safe decoded content, and server order. Add `--page` for a newest-first detailed page. |
 | `line chats --json` | Legacy chat array. |
 | `line chats --details --json` | Schema-1 `chats` envelope with explicit unknown values. |
-| `line watch --json` | Existing NDJSON stream; no detailed-content envelope. |
+| `line watch --json` | Existing NDJSON stream; no detailed-content envelope. Also the output whenever stdout is not a terminal. Without `--json`, a terminal gets readable lines instead. |
+| `line invites --json` | Schema-1 object with `invitations`: `chat_id`, nullable `name`, `name_status` (`resolved` or `unavailable`). |
+| `line read`, `line invites accept\|reject` `--json` | One receipt object: `action`, `chat_id`, `request_sequence`, plus `message_id` for `read`. |
+| `line doctor --json` | Schema-1 report: `checks` with `id`, `status` (`pass`, `warn`, `fail`, `skipped`), `message`, optional `next_step` and string-valued `details`; plus `summary` counts. Exits 1 only when a check fails; with `--error-format=json` that failure is `operation_failed` at stage `completion`, after the report is written. |
 | `line --error-format=json COMMAND ... --json` | Usual success/partial output on stdout; one structured error on stderr when the supported command fails. |
 
 `--error-format=json` does not imply `--json`. It disables prompts, as do `--json`
@@ -63,7 +66,7 @@ requires `--details --json`; it batches unique sender IDs, at most 100 per read.
 These validations run before session access. The command timeout includes name
 resolution. Missing profiles and remote name-lookup failures produce explicit
 unavailable names. Cancellation, local storage failures, and invalidated sessions
-remain errors. Reads never mark messages read, register group keys, download
+remain errors. Reads never mark messages read (only `line read` does), register group keys, download
 objects, or execute/follow links.
 
 ### Chat envelope
@@ -84,6 +87,12 @@ includes all chats and has no default row limit. `--limit` and `--search` retain
 their usual meanings. A name-search lookup failure remains fatal because a
 partial name search cannot establish which chats match. Missing activity is not
 proof a chat is inactive; a missing unread count is not zero.
+
+`chats --unread` filters on the client, after fetching, to rows whose reported
+`unread_count` is above zero; rows with a missing or malformed count are
+excluded. It applies to the legacy array (`chats --unread --json`), whose row
+shape is unchanged, and to the detailed envelope. `--limit` applies after the
+filter.
 
 ### Message envelope
 
@@ -168,8 +177,11 @@ line --error-format=json messages CHAT_ID --json > history.json 2> error.json
 line --error-format=json auth status --json
 ```
 
-`--error-format json` is equivalent. The default is `text`. This option supports
-`whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `react`, `unsend`,
+`--error-format json` is equivalent. The default is `text`. Global options
+come before the command and may appear in any order: `line --read-only
+--error-format=json send ...` and `line --error-format=json --read-only send ...`
+are the same. Each global option may appear once. This option supports
+`whoami`, `contacts`, `chats`, `members`, `invites`, `messages`, `send`, `download`, `read`, `react`, `unsend`,
 `auth status`, help, and version. Login, logout, migration, watch, and update keep
 their existing diagnostic contracts; requesting JSON errors for them fails
 locally before doing work. An invalid error-format option itself uses text.
@@ -177,7 +189,7 @@ locally before doing work. An invalid error-format option itself uses text.
 JSON error mode disables guided prompts and requires explicit command arguments.
 It does not imply `--json`: use both options for JSON success output. A failed
 command writes one JSON object followed by a newline to stderr, without the
-flag parser's human diagnostics. Success and help retain their usual output.
+flag parser's human diagnostics. Success output is unchanged; help goes to stdout.
 JSON error mode adds no wrapper to stdout. Partial legacy history and contact
 results remain arrays and still exit nonzero. Explicit `messages --page --json`
 uses its page object on stdout, including for partial decryption failures.
@@ -231,7 +243,8 @@ reports returned IDs before decryption without message text or encrypted data.
 
 | Code | Meaning |
 | --- | --- |
-| `invalid_arguments` | Invalid or missing options/input; validation stopped the command. |
+| `invalid_arguments` | Invalid or missing options/input, including an unrecognized `LINE_CLI_READ_ONLY` value; validation stopped the command. |
+| `read_only` | Read-only mode (`--read-only` or `LINE_CLI_READ_ONLY`) refused a remote change or credential change before any prompt, lock, storage access, request sequence, or network request. Stage `preparation`; message actions are `not_attempted`. |
 | `no_session` | No saved session. |
 | `invalid_session` | Invalidated session or unusable saved Letter Sealing keys. |
 | `session_changed` | Saved account changed during the command. |
@@ -239,7 +252,7 @@ reports returned IDs before decryption without message text or encrypted data.
 | `authentication_failed` | Authentication failed; inspect the mutation outcome independently. |
 | `invalid_cursor` | Malformed/unsupported history cursor or cursor bound to another chat. |
 | `history_invalid` | History has invalid identity/order/data or no valid delivered-time continuation anchor. |
-| `message_not_found` | Target absent from available history in the selected chat; older history may be unavailable. |
+| `message_not_found` | Target absent from available history in the selected chat; older history may be unavailable. For `read` without `--message`: no message from someone else among the latest 50, so nothing was sent. |
 | `lookup_incomplete` | The 10-page lookup budget was reached before finding the target. |
 | `unsupported_content` | Requested download content is unsupported. |
 | `decryption_failed` | History contains failed decryptions, or an attachment could not be decrypted/authenticated. |
@@ -256,7 +269,8 @@ reports returned IDs before decryption without message text or encrypted data.
 
 Stages identify where work stopped: `validation`, `lock`, `storage`,
 `preparation`, `lookup`, `decode`, `persist_sequence`, `group_key_registration`,
-`attachment_upload`, `preview_upload`, `send`, `react`, `remove_reaction`, `unsend`, `output`, or
+`attachment_upload`, `preview_upload`, `send`, `read`, `react`, `remove_reaction`, `unsend`,
+`accept_invitation`, `reject_invitation`, `output`, or
 `completion` (a signal after the command completed).
 
 Exit codes are unchanged: ordinary errors are 1, storage errors retain
@@ -269,8 +283,9 @@ strings, and input message text are excluded from machine errors.
 
 ### Interpret each remote step separately
 
-The top-level `mutation` describes the requested message action (`send`, `react`,
-`remove_reaction`, or `unsend`). `steps` describes the ordered mutation stages,
+The top-level `mutation` describes the requested action (`send`, `read`,
+`react`, `remove_reaction`, `unsend`, `accept_invitation`, or
+`reject_invitation`). Invitation changes have no `message_id`. `steps` describes the ordered mutation stages,
 including preparation side effects. Reads and credential recovery are not listed
 as message mutation steps. `attempted` means the command handed the operation to
 the mutation API; it does not prove a packet reached LINE.

@@ -158,8 +158,8 @@ func TestContactLookupHelpDoesNotOpenSession(t *testing.T) {
 	if err := a.Run([]string{"contacts", "--help"}); err != nil {
 		t.Fatal(err)
 	}
-	if out.Len() != 0 || !strings.Contains(diagnostics.String(), "--mid MID") || !strings.Contains(diagnostics.String(), "non-friends") {
-		t.Fatal("lookup help missing")
+	if diagnostics.Len() != 0 || !strings.Contains(out.String(), "--mid MID") || !strings.Contains(out.String(), "aren't friends") {
+		t.Fatal("lookup help missing from stdout")
 	}
 }
 

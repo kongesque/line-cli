@@ -116,13 +116,13 @@ func TestDefaultSendDoesNotBypassMissingKeys(t *testing.T) {
 }
 
 func TestSendHelpDescribesNonE2EETransport(t *testing.T) {
-	a, _, diagnostics := testApp(nil)
+	a, out, _ := testApp(nil)
 	a.Lock = func() (func(), error) { t.Fatal("help accessed session"); return nil, nil }
 	if err := a.Run([]string{"send", "--help"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"-require-e2ee", "HTTPS/TLS", "end-to-end encryption", "LINE can read"} {
-		if !strings.Contains(diagnostics.String(), text) {
+	for _, text := range []string{"--require-e2ee", "HTTPS/TLS", "end-to-end encryption", "LINE can read"} {
+		if !strings.Contains(out.String(), text) {
 			t.Fatalf("help is missing %q", text)
 		}
 	}

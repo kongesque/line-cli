@@ -137,7 +137,8 @@ protocol errors.
 | Commands accepting `--timeout DURATION` | Default deadline |
 | --- | --- |
 | `download` | `2m` |
-| `whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `react`, `unsend` | `0` (no command deadline) |
+| `doctor` | `30s` |
+| `whoami`, `contacts`, `chats`, `members`, `invites`, `messages`, `send`, `read`, `react`, `unsend` | `0` (no command deadline) |
 
 For example: `line send "Alice" --text "Hello" --timeout 30s`. The deadline starts
 after option parsing and covers prompts/stdin, name and message lookup,
@@ -170,6 +171,8 @@ In an interactive terminal, you can omit some details:
 line messages
 line send
 line download
+line read
+line invites
 line react
 line unsend
 ```
@@ -183,6 +186,7 @@ move between pages, `q` to cancel, or Ctrl-C to stop. `--json`,
 ```sh
 line chats
 line chats --search "Family"
+line chats --unread
 line chats --all --limit 50
 line chats --show-ids
 line contacts
@@ -194,11 +198,20 @@ results by default in human output. JSON output shows all matches unless you
 set `--limit`. Use `--limit 0` for every result in human output. `chats --all`
 includes inactive conversations.
 
+`chats --unread` keeps only chats whose unread count, as reported by LINE, is
+above zero. It combines with `--search`, `--limit`, `--all`, `--show-ids`,
+`--json`, and `--details`. A chat whose count LINE omits is left out, because a
+missing count is not proof of unread messages. Listing unread chats never marks
+anything as read; use [`line read`](#mark-a-chat-as-read) for that.
+
 Commands that take a `CHAT` accept a full contact, room, or group ID, or a
-unique exact name matched without case sensitivity. Quote names with spaces. If
-a name is missing or shared by several chats, use
-`line chats --search NAME --show-ids` and choose the full ID. IDs are more
-reliable in scripts because names can change.
+unique exact name matched without case sensitivity. Quote names with spaces.
+In a terminal, a name that matches no chat exactly, or several, opens a chooser
+of chats and contacts whose names contain it; nothing is sent or changed until
+you pick one. Without a terminal (scripts, `--json`, `--stdin`), the command
+fails instead and lists up to five similar names with full IDs. A partial or
+similar name is never used for a send or other change unless you chose it.
+IDs are more reliable in scripts because names can change.
 
 To look up someone who is not in your friend list, use their full user MID
 (LINE's user ID). For example, a group message's `from` field in
@@ -234,7 +247,8 @@ line messages CHAT_ID --json
 `messages` reads 20 recent messages by default; `--limit` accepts 1–100.
 Human output shows the oldest first; ordinary `--json` preserves server order.
 `--show-ids` includes IDs for replies, reactions, downloads, and unsend.
-Reading never marks messages as read or saves their text locally. Some older
+Reading never sends read receipts or saves message text locally; use
+[`line read`](#mark-a-chat-as-read) to mark a chat as read. Some older
 encrypted messages may be unreadable if LINE no longer provides their device keys.
 
 To inspect returned IDs before decryption, without message content or key lookups:
@@ -327,6 +341,32 @@ For a script, keep offsets aligned with the unmodified stdin content:
 ```sh
 printf '%s' '😀 @Alex' | line send "Family group" --stdin --reply-to MESSAGE_ID --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]' --json
 ```
+
+### Accept or reject group invitations
+
+```sh
+line invites
+line invites --json
+line invites accept GROUP_ID
+line invites reject GROUP_ID --json
+```
+
+`line invites` lists pending group invitations with each group's name and full
+ID. In a terminal, it then lets you choose one to accept, reject, or skip.
+`accept` and `reject` take a full group ID; invited groups are not chats yet, so
+names are not accepted. Before changing anything, the CLI checks that the ID is
+in your current pending list; otherwise it stops with `invalid_arguments` and
+nothing is sent.
+
+Accepting joins the group. It never registers or fetches an encryption key and
+never sends a read receipt; your first `line send` there may register a group
+key, as usual. Each change uses a saved request sequence and is attempted once.
+If the outcome is unknown, run `line invites` to check before trying again.
+`--read-only` blocks `accept` and `reject` but still lists invitations.
+
+LINE doesn't say who invited you in any request the CLI makes, so the inviter
+isn't shown. If group names can't be loaded, invitations are still listed with
+`name: null` and `name_status: "unavailable"`.
 
 ### Send messages and files
 
@@ -449,6 +489,29 @@ cancellation after output begins can leave partial output, so check the exit
 status and use `pipefail`. For files, prefer `--output PATH`: shell redirection
 with `>` can truncate an existing file before the CLI runs.
 
+### Mark a chat as read
+
+Reading, watching, and downloading never mark messages as read. To send a read
+receipt, run `line read`. Others in the chat will see **Read**:
+
+```sh
+line read "Alice"
+line read CHAT_ID --message MESSAGE_ID --json
+```
+
+Without `--message`, the CLI marks the chat read up to the newest message from
+someone else among the latest 50. If there is none, nothing is sent and the
+command fails with `message_not_found`. With `--message`, the ID must belong to
+that chat (the same bounded lookup as reactions) and be from someone else; your
+own messages can't be marked. Run `line read` in a terminal without a chat to
+choose one: chats with unread messages are listed first, and you confirm before
+anything is sent.
+
+Like other remote changes, the receipt uses a saved request sequence and is
+attempted once. If the outcome is unknown, check LINE before running it again.
+`--read-only` blocks it. The JSON result has `action: "read"`, `chat_id`,
+`message_id`, and `request_sequence`.
+
 ### Watch new events
 
 ```sh
@@ -456,12 +519,28 @@ line watch
 line watch --timeout 30s
 line watch --limit 10
 line watch --from-now
+line watch --json | your-program
 ```
 
-`watch` writes one JSON event per line to stdout and status messages to stderr.
-The first run starts at LINE's current revision. Later runs continue from a
-saved checkpoint. `--from-now` discards that checkpoint and starts with new
-events.
+In a terminal, `watch` prints one readable line per message, with the time,
+chat, sender, and text or attachment type:
+
+```text
+14:05  Alice: See you at 7 ↵ bring snacks
+14:06  Family · Bob: Running late
+14:07  You → Alice: On my way
+```
+
+Names are looked up once per chat or person and cached; if a lookup fails, the
+ID is shown. Other events are hidden unless you add `--verbose`. A hidden event
+still advances the saved position but does not count toward `--limit`.
+
+When stdout is not a terminal (a pipe or file), or with `--json`, `watch` writes
+one JSON event per line to stdout, unchanged from earlier releases. Status
+messages go to stderr. Scripts that run `watch` attached to a terminal should
+pass `--json`. The first run starts at LINE's current revision. Later runs
+continue from a saved checkpoint. `--from-now` discards that checkpoint and
+starts with new events.
 
 | Event | Meaning |
 | --- | --- |
@@ -549,7 +628,8 @@ line messages CHAT_ID --json
 line send CHAT_ID --stdin --json < message.txt
 ```
 
-JSON goes to stdout; diagnostics go to stderr. Success and help exit 0.
+JSON goes to stdout; diagnostics go to stderr. Help also goes to stdout. Success
+and help exit 0.
 Ordinary CLI and network errors exit 1. Storage errors have
 [their own exit codes](#storage-exit-codes). SIGINT exits 130 and SIGTERM exits
 143. Empty result lists are `[]`.
@@ -563,9 +643,12 @@ Ordinary CLI and network errors exit 1. Storage errors have
 | `messages` | ID, sender, time, content, encryption, and status. |
 | `send` | Message ID, chat ID, encryption, group-key registration, and sequence. |
 | `download` | Output path, byte count, and message ID. |
-| `react`, `unsend` | Action, chat ID, message ID, and sequence. |
+| `read`, `react`, `unsend` | Action, chat ID, message ID, and sequence. |
+| `invites` | `schema_version: 1` and `invitations` (`chat_id`, nullable `name`, `name_status`). |
+| `invites accept`, `invites reject` | Action (`accept_invitation` or `reject_invitation`), chat ID, and sequence. |
 | `watch` | One JSON event per line. |
 | `update` | Installed/latest versions, status, installation method, and next step. Use `--check --json` to only check. |
+| `doctor` | `schema_version: 1`, `checks` (`id`, `status`, `message`, optional `next_step` and string `details`), and a `summary` count per status. |
 
 If some messages cannot be decrypted, `messages --json` still writes the full
 array with a status for each message, then exits 1. It never prints encrypted
@@ -575,7 +658,8 @@ chunks or raw server response bodies.
 
 Use `line --error-format=json COMMAND ... --json` to write one structured error
 to stderr while preserving success and partial-result JSON on stdout. Put the
-global option before the command; it disables prompts. It supports the core
+global option before the command (in any order with `--read-only`); it disables
+prompts. It supports the core
 commands and `auth status`. Login, logout, migration, watch, and update reject
 this option before doing work; use their normal diagnostics instead.
 
@@ -586,6 +670,32 @@ if its upload fails; a send remains confirmed if writing the result fails.
 Never automatically retry an `unknown` action, including after a network error:
 check LINE first. Storage and signal exit codes are unchanged.
 See the [error fields, codes, and examples](JSON.md#errors).
+
+### Read-only mode
+
+Put `--read-only` before the command, or set `LINE_CLI_READ_ONLY=1`, when a
+script or agent should only read:
+
+```sh
+line --read-only messages CHAT_ID --json
+LINE_CLI_READ_ONLY=1 line chats --json
+line --read-only --error-format=json send CHAT_ID --text "hi"   # refused
+```
+
+Read-only mode refuses `send`, `read`, `react`, `unsend`, `invites accept`,
+`invites reject`, `login`, `logout`,
+`auth migrate`, and `update` (installing). It stops before prompts, stdin,
+attachments, the session lock, credential storage, the network, or a request
+sequence. Reads, `watch` (its resume position is a local cursor), `download`,
+`auth status`, `doctor`, `update --check`, `help`, and `version` keep working, and reads
+may still refresh the access token.
+
+`LINE_CLI_READ_ONLY` accepts `1`/`true` (on) and `0`/`false` or unset (off).
+Any other value fails every command with `invalid_arguments`, so a typo never
+silently disables the guard. `--read-only=false` cannot turn off the
+environment switch. A refused command exits 1 with the JSON error code
+`read_only` (stage `preparation`); message actions report `attempted: false`
+and `outcome: "not_attempted"`. Command help still prints in read-only mode.
 
 ### JSON lookup results
 
@@ -887,28 +997,93 @@ when storage is unavailable, then return the matching nonzero code.
 
 ## Troubleshooting
 
+Start with `line doctor`. It checks the installed version and any other copies
+on `PATH`, local storage, the saved session, whether LINE accepts it, your
+Letter Sealing keys, clock skew, and the watcher, then suggests a next step for
+anything that isn't right. It changes nothing and works logged out and in
+`--read-only` mode:
+
+```sh
+line doctor
+line doctor --offline      # no network: skips the release, sign-in, and clock checks
+line doctor --json
+```
+
+Each check reports `pass`, `warn`, `fail`, or `skipped` with a stable ID:
+`version`, `install`, `storage`, `session`, `line_auth`, `e2ee_keys`, `clock`,
+and `watch`. The command exits 1 only when a check fails. The sign-in check is
+one profile read; it may refresh the access token like any read but never logs
+in again. The watcher check briefly tries the watcher lock and releases it at
+once. The report shows paths inside your home folder as `~/…` and never
+includes tokens, keys, user or chat IDs, names, email addresses, messages, or
+server responses, so you can paste it into a GitHub issue.
+
 | Symptom | What to check next |
 | --- | --- |
-| A documented option is unknown | Run `line version` and `line COMMAND --help`; compare with the docs at that release tag. Check for updates with `line update --check`. |
+| A documented option is unknown | Run `line version` and `line COMMAND --help`; compare with the docs at that release tag. Check for updates with `line update --check`. `line doctor` warns when several `line` copies are on `PATH`. |
 | `encryption_required` | LINE reports no E2EE support and strict mode blocked the send. Omit `--require-e2ee` to use HTTPS/TLS; LINE can read that content. |
 | `encrypted_image_unavailable` | Encrypted native images are disabled. Try `--file` for the original bytes; file support checks still apply. |
 | Login or an SSH service cannot access storage | Run `line auth status --check --json` as the same user and environment. Follow [headless diagnostics](#diagnose-a-headless-service); do not delete session files to bypass the error. |
 | A send fails or is absent from recent history | Inspect LINE before repeating it. Use [structured errors](#structured-errors) to distinguish a confirmed action from an unknown outcome. Recent history is not proof of non-delivery. |
 | A history page is short or partly unreadable | Continue with its cursor unless `exhausted` is true. Check each message status and the exit code; older keys/history may be unavailable. |
 
-For a bug report, include `line version`, OS, command, and a redacted error.
+For a bug report, include the `line doctor` output, the command, and a redacted error.
 Never include tokens, passwords, QR/PIN values, keys, or private messages.
 
 ## Reference
 
 ### Command help
 
-The built-in help has the current option list:
+The built-in help has the current option list, grouped by purpose, with
+examples:
 
 ```sh
 line help
+line help send
 line send --help
 ```
+
+Help goes to stdout and exits 0, so `line send --help | less` works. A mistyped
+command or option prints one line with the closest match, such as
+`unknown option --limt; did you mean --limit?`, and exits 1. Global options
+(`--read-only`, `--error-format`) go before the command.
+
+### Shell completion
+
+`line completion SHELL` prints a static script that completes commands,
+subcommands, options, and fixed values such as reactions. It reads no session
+and makes no network requests. Regenerate it after upgrading LINE CLI.
+
+Bash (save once, then load it from `~/.bashrc`):
+
+```sh
+line completion bash > ~/.line-completion.bash
+echo 'source ~/.line-completion.bash' >> ~/.bashrc
+```
+
+Zsh (put the file on `fpath` before `compinit` runs in `~/.zshrc`):
+
+```sh
+mkdir -p ~/.zfunc
+line completion zsh > ~/.zfunc/_line
+# In ~/.zshrc, before compinit:  fpath=(~/.zfunc $fpath)
+```
+
+Fish:
+
+```sh
+line completion fish > ~/.config/fish/completions/line.fish
+```
+
+PowerShell (add to your `$PROFILE`):
+
+```powershell
+line completion powershell | Out-String | Invoke-Expression
+```
+
+Chat names, message IDs, and other account data are never completed, because
+that would require reading your session. Homebrew does not install these
+scripts yet.
 
 ### Build from source
 
@@ -951,7 +1126,7 @@ and fake APIs; live LINE tests require explicit authorization.
   sticker sends are unsupported.
 - Downloads support images, video, audio, and files up to 20 MiB; external
   media URLs are unsupported.
-- Reading messages does not mark them as read.
+- Reading never sends read receipts; use `line read`.
 - Release binaries are not signed or notarized.
 - LINE protocol changes may affect compatibility.
 

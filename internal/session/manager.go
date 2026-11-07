@@ -54,6 +54,10 @@ type API interface {
 	CancelReactionContext(context.Context, int64, string) error
 	UnsendMessage(int64, string) error
 	UnsendMessageContext(context.Context, int64, string) error
+	SendChatCheckedContext(context.Context, int64, string, string) error
+	GetAllChatMidsContext(context.Context, bool, bool) (*line.GetAllChatMidsResponse, error)
+	AcceptChatInvitationContext(context.Context, int64, string) error
+	RejectChatInvitationContext(context.Context, int64, string) error
 	UploadOBSWithSID([]byte, string) (string, error)
 	UploadOBSWithSIDContext(context.Context, []byte, string) (string, error)
 	DetermineMediaMessageFlowContext(context.Context, string) (*line.MediaMessageFlowResponse, error)
@@ -67,6 +71,11 @@ type Manager struct {
 	// Commands also hold the process lock. This serializes callers sharing a manager.
 	mu   sync.Mutex
 	Wait func(context.Context, time.Duration) error
+
+	// ReadOnly refuses mutations, sequence reservations, and logins even if a
+	// command forgets its own gate. Reads, token refresh, and local watch
+	// checkpoints remain available.
+	ReadOnly bool
 
 	Store      Store
 	Storage    StoragePreparer
@@ -113,6 +122,9 @@ func (m *Manager) Login(email, password string, notify Notify) (*line.Profile, e
 // cancellable; the legacy email authentication requests themselves are not yet.
 // The caller holds the command lock (see PrepareLogin).
 func (m *Manager) LoginContext(ctx context.Context, email, password string, notify Notify) (*line.Profile, error) {
+	if err := m.readOnly("login"); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -459,6 +471,9 @@ func ProtocolError(err error) error {
 // ReserveSequence writes before the network send and is never rolled back.
 // Caller must hold Lock. Keep request IDs in LINE's signed 32-bit range.
 func (m *Manager) ReserveSequence() (int64, error) {
+	if err := m.readOnly(""); err != nil {
+		return 0, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, err := m.Store.Load()

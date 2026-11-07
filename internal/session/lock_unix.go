@@ -22,7 +22,7 @@ func Lock() (func(), error) { return platformSessionLock() }
 func WatchLock() (func(), error) {
 	unlock, err := namedLock("watch.lock")
 	if errors.Is(err, ErrBusy) {
-		return nil, errors.New("another line watch is already running")
+		return nil, ErrWatchBusy
 	}
 	return unlock, err
 }

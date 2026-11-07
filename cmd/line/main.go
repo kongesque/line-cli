@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"strings"
 
 	"golang.org/x/term"
 
@@ -25,12 +24,8 @@ func run() int {
 	signals := newCommandSignals()
 	defer signals.close()
 	ctx := signals.ctx
-	commandArgs := os.Args[1:]
-	if len(commandArgs) > 1 && commandArgs[0] == "--error-format" {
-		commandArgs = commandArgs[2:]
-	} else if len(commandArgs) > 0 && strings.HasPrefix(commandArgs[0], "--error-format=") {
-		commandArgs = commandArgs[1:]
-	}
+	// Global options precede the command; App.Run reports any parsing error.
+	_, commandArgs, _, _ := cli.ParseGlobalOptions(os.Args[1:])
 	loggingIn := len(commandArgs) > 0 && commandArgs[0] == "login"
 	stdinFD := int(os.Stdin.Fd())
 	source, closeInput := commandInput(ctx, stdinFD)
@@ -42,7 +37,7 @@ func run() int {
 	app := &cli.App{
 		Interactive:      term.IsTerminal(stdinFD) && (loggingIn || term.IsTerminal(int(os.Stdout.Fd()))),
 		StdoutIsTerminal: term.IsTerminal(int(os.Stdout.Fd())),
-		Context:          ctx, WatchLock: session.WatchLock,
+		Context:          ctx, WatchLock: session.WatchLock, Getenv: os.Getenv,
 		In:  in,
 		Out: os.Stdout, Err: os.Stderr, Version: version, Distribution: distribution,
 		Manager: session.NewManager(session.KeychainStore{}), Lock: session.Lock,

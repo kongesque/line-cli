@@ -77,6 +77,17 @@ Windows CI uses the same package list without `-race`:
 go test ./internal/... ./cmd/line ./pkg/line/... ./pkg/e2ee
 ```
 
+Read-only tests run every mutating command, explicit and guided, against hooks
+that fail on any lock, prompt, credential access, network client, or sequence
+reservation, and check the session-level guard separately. `line read` tests
+cover Chrome's argument order, persisted sequences, outcomes, and an AST scan
+that only `line read` reaches `sendChatChecked`. Invitation tests prove that
+accepting never registers or fetches group keys. Doctor tests check every state
+and that no token, key, MID, email, name, or home path leaks. Completion drift
+tests compare every command's `--help` with the generated scripts, and run the
+bash and zsh scripts where those shells exist. Watch tests pin the unchanged
+NDJSON stream for pipes and `--json`.
+
 Structured error tests cover stderr envelopes, unchanged stdout arrays, storage
 and signal exit codes, large message IDs, redaction, and failures after confirmed
 delivery. Mutation tests cover pre-dispatch cancellation, sequence persistence,
@@ -263,8 +274,10 @@ the [changelog](../CHANGELOG.md) until a version and release date are chosen.
 - Use a minor version for new commands/options or behavior changes, and a patch
   version for compatible fixes. Do not promise live interoperability based only
   on synthetic tests or static protocol evidence.
-- For this candidate, call out automatic non-E2EE delivery, `--require-e2ee`,
-  file capabilities, disabled encrypted native images, and stopping watchers
+- For this candidate (0.6.0), call out `--read-only`/`LINE_CLI_READ_ONLY`
+  (including that invalid values now fail every command), explicit read
+  receipts through `line read`, readable `watch` output in a terminal (scripts
+  attached to a terminal need `--json`), help on stdout, and stopping watchers
   before upgrading.
 - Keep detailed evidence in [SECURITY.md](SECURITY.md#security-change-record); release notes
   should explain the effect on users and link to that record.

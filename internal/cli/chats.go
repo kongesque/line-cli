@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
@@ -19,24 +20,21 @@ import (
 var errNoNames = errors.New("LINE returned no names")
 
 func (a *App) chatCommand(args []string) error {
-	fs := flag.NewFlagSet("chats", flag.ContinueOnError)
-	fs.SetOutput(a.Err)
+	fs := newFlagSet("chats")
 	timeout := fs.Duration("timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
-	fs.Usage = func() {
-		fmt.Fprintln(a.Err, "Usage: line chats [options]\nShows 20 active conversations, newest first. Search also includes inactive chats.")
-		fs.PrintDefaults()
-	}
+	h := commandHelp{Command: "chats", Usage: []string{"line chats [options]"},
+		About:    "Show 20 active conversations, newest first. Search also includes inactive\nchats. JSON output includes every chat unless you set a limit.",
+		Groups:   []flagGroup{{"Filter", []string{"search", "unread", "all"}}, {"Output", []string{"limit", "show-ids", "details", "json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{"line chats", "line chats --unread", `line chats --search "Family" --show-ids`}}
 	all := fs.Bool("all", false, "include inactive conversations")
 	search := fs.String("search", "", "find chat names containing this text (case-insensitive)")
 	limit := fs.Int("limit", 20, "maximum rows; 0 shows all")
 	ids := fs.Bool("show-ids", false, "show full IDs below names")
+	unread := fs.Bool("unread", false, "only chats with unread messages (reported count above zero; unknown counts excluded)")
 	details := fs.Bool("details", false, "include names, activity, and unread counts in a versioned envelope (requires --json)")
 	jsonOutput := fs.Bool("json", false, "write JSON (all chats, unlimited by default)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return errors.New("invalid options; run line chats --help")
+	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
+		return err
 	}
 	restore, err := a.commandDeadline(*timeout)
 	if err != nil {
@@ -68,6 +66,10 @@ func (a *App) chatCommand(args []string) error {
 	chats, err := a.chatBoxes(!*all && !*jsonOutput && *search == "", !legacyJSON)
 	if err != nil {
 		return err
+	}
+	// Filter on the reported counts; the server's unreadOnly option is unverified.
+	if *unread {
+		chats = unreadChats(chats)
 	}
 	if legacyJSON {
 		if limitSet && *limit > 0 {
@@ -110,7 +112,11 @@ func (a *App) chatCommand(args []string) error {
 		return a.json(chats)
 	}
 	if len(chats) == 0 {
-		_, err := fmt.Fprintln(a.Out, "No conversations found. Try line chats --all or a different --search.")
+		message := "No conversations found. Try line chats --all or a different --search."
+		if *unread {
+			message = "No unread conversations found. Try line chats --unread --all to include inactive chats."
+		}
+		_, err := fmt.Fprintln(a.Out, message)
 		return err
 	}
 	if _, err := fmt.Fprintf(a.Out, "%-16s  %6s  %-7s  %s\n", "UPDATED", "UNREAD", "TYPE", "CHAT"); err != nil {
@@ -138,8 +144,24 @@ func (a *App) chatCommand(args []string) error {
 			}
 		}
 	}
-	_, err = fmt.Fprintf(a.Out, "\nShowing %d of %d conversations. Use --limit 0 for all rows, --search NAME to find a chat.\nRead: line messages \"Chat name\"   •   IDs: line chats --show-ids\n", len(chats), total)
+	kind := "conversations"
+	if *unread {
+		kind = "unread conversations"
+	}
+	_, err = fmt.Fprintf(a.Out, "\nShowing %d of %d %s. Use --limit 0 for all rows, --search NAME to find a chat.\nRead: line messages \"Chat name\"   •   IDs: line chats --show-ids\n", len(chats), total, kind)
 	return err
+}
+
+// unreadChats keeps chats with a known unread count above zero. A missing or
+// malformed count is not evidence of unread messages, so it is excluded.
+func unreadChats(chats []Chat) []Chat {
+	kept := make([]Chat, 0, len(chats))
+	for _, chat := range chats {
+		if n, err := chat.UnreadCount.Int64(); chat.UnreadKnown && err == nil && n > 0 {
+			kept = append(kept, chat)
+		}
+	}
+	return kept
 }
 
 func chatKind(id string) string {
@@ -235,30 +257,86 @@ func (a *App) resolveChat(selector string) (string, error) {
 	if err := a.nameChats(chats); err != nil {
 		return "", err
 	}
-	var matches []string
+	// Only a unique exact (case-insensitive) name resolves. Similar names are
+	// collected for the chooser or the error, never selected automatically.
+	match := &chatMatchError{query: selector}
 	seen := make(map[string]bool)
-	for _, chat := range chats {
-		if strings.EqualFold(chat.Name, selector) {
-			matches = append(matches, chat.ID)
-			seen[chat.ID] = true
+	consider := func(id, name string) {
+		if seen[id] || strings.TrimSpace(name) == "" {
+			return
 		}
+		switch {
+		case strings.EqualFold(name, selector):
+			match.exact = append(match.exact, chatCandidate{id, name})
+		case strings.Contains(strings.ToLower(name), strings.ToLower(selector)):
+			match.similar = append(match.similar, chatCandidate{id, name})
+		default:
+			return
+		}
+		seen[id] = true
+	}
+	for _, chat := range chats {
+		consider(chat.ID, chat.Name)
 	}
 	contacts, err := a.contacts()
 	if err != nil {
 		return "", err
 	}
 	for _, contact := range contacts {
-		if strings.EqualFold(contact.EffectiveDisplayName(), selector) && !seen[contact.Mid] {
-			matches = append(matches, contact.Mid)
-			seen[contact.Mid] = true
+		consider(contact.Mid, contact.EffectiveDisplayName())
+	}
+	if len(match.exact) == 1 {
+		return match.exact[0].id, nil
+	}
+	return "", match
+}
+
+type chatCandidate struct{ id, name string }
+
+// chatMatchError means a name matched no chat exactly, or several. It lists up
+// to five candidates with full IDs; the code stays operation_failed.
+type chatMatchError struct {
+	query          string
+	exact, similar []chatCandidate
+}
+
+func (e *chatMatchError) candidates() []chatCandidate {
+	return append(append([]chatCandidate(nil), e.exact...), e.similar...)
+}
+
+func (e *chatMatchError) Error() string {
+	query := safeWord(e.query)
+	var b strings.Builder
+	if len(e.exact) > 1 {
+		fmt.Fprintf(&b, "%d chats or contacts are named %q", len(e.exact), query)
+	} else {
+		fmt.Fprintf(&b, "no chat or contact is named %q", query)
+	}
+	candidates := e.candidates()
+	if len(candidates) == 0 {
+		b.WriteString("; use line chats --search NAME or line contacts --search NAME --show-ids")
+		return b.String()
+	}
+	if len(e.exact) > 1 {
+		b.WriteString(": ")
+	} else {
+		b.WriteString("; similar: ")
+	}
+	for i, c := range candidates[:min(5, len(candidates))] {
+		if i > 0 {
+			b.WriteString(", ")
 		}
+		fmt.Fprintf(&b, "%s (%s %s)", safeWord(c.name), chatKind(c.id), c.id)
 	}
-	switch len(matches) {
-	case 0:
-		return "", errors.New("no chat or contact has that exact name; use line chats --search NAME or line contacts --search NAME --show-ids")
-	case 1:
-		return matches[0], nil
-	default:
-		return "", fmt.Errorf("%d chats or contacts have that name; use --show-ids with line chats or line contacts and choose a full ID", len(matches))
+	if len(candidates) > 5 {
+		fmt.Fprintf(&b, ", and %d more", len(candidates)-5)
 	}
+	b.WriteString(". Use a full ID")
+	return b.String()
+}
+
+// Unwrap exposes a typed fault so JSON errors carry this message, which holds
+// only names and IDs the CLI already prints.
+func (e *chatMatchError) Unwrap() error {
+	return fault.New("operation_failed", "preparation", e.Error(), nil)
 }
