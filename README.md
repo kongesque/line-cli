@@ -9,7 +9,7 @@ No bot account or LINE Messaging API setup is required.
 
 [![CI](https://github.com/kongesque/line-cli/actions/workflows/cli.yml/badge.svg)](https://github.com/kongesque/line-cli/actions/workflows/cli.yml)
 [![Release](https://img.shields.io/github/v/release/kongesque/line-cli?filter=v*&label=release)](https://github.com/kongesque/line-cli/releases/latest)
-[![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](go.mod)
+[![Go](https://img.shields.io/github/go-mod/go-version/kongesque/line-cli)](https://github.com/kongesque/line-cli/blob/main/go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [Install](#install-line-cli) · [Quick start](#quick-start-send-your-first-line-message) · [Commands](#line-messaging-commands) · [Automation](#automate-line-with-json-and-shell-scripts) · [Full guide](docs/CLI.md)
