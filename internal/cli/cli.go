@@ -35,6 +35,7 @@ More commands:
   auth        Inspect local session storage (auth status)
   watch       Stream live events (--json)
   download    Save an image, video, audio, or file attachment
+  read        Mark a chat as read (others see "Read")
   react       Add or remove a reaction
   unsend      Retract one of your own messages
   version     Show the installed version
@@ -48,11 +49,13 @@ Examples:
   line send "Alice" --image screenshot.png
   line chats --search "Family"
 
-whoami, contacts, chats, members, messages, send, download, react, and unsend accept --timeout.
+whoami, contacts, chats, members, messages, send, download, read, react, and unsend accept --timeout.
+Reading messages never sends read receipts; only line read does.
 Use --error-format=json before a core command or auth status for JSON errors on stderr.
 This disables prompts and preserves stdout success/partial-result formats.
 Use --read-only before the command (or LINE_CLI_READ_ONLY=1) to block sends,
-reactions, unsend, login, logout, migration, and update installs. Reads still work.
+read receipts, reactions, unsend, login, logout, migration, and update installs.
+Reads still work.
 In a terminal, missing details are prompted for. Ctrl-C cancels.
 Use --show-ids for IDs, --json for scripts, or COMMAND --help for all options.
 `
@@ -113,6 +116,8 @@ func (a *App) run(args []string) error {
 		return a.downloadCommand(args[1:])
 	case "react", "unsend":
 		return a.actionCommand(command, args[1:])
+	case "read":
+		return a.readCommand(args[1:])
 	case "watch":
 		return a.watchCommand(args[1:])
 	case "members":

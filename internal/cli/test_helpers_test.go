@@ -231,6 +231,16 @@ func (f *messageAPI) SendMessageContext(_ context.Context, arg0 int64, msg *line
 type guidedAPI struct {
 	chatAPI
 	sends, reactions, removals, unsends, logins int
+	reads                                       int
+	readChat, readMessage                       string
+	readSeq                                     int64
+	readErr                                     error
+}
+
+func (f *guidedAPI) SendChatCheckedContext(_ context.Context, seq int64, chat, message string) error {
+	f.reads++
+	f.readSeq, f.readChat, f.readMessage = seq, chat, message
+	return f.readErr
 }
 
 func (f *guidedAPI) GetAllContactIds() ([]string, error) { return []string{"u-alice", "u-new"}, nil }

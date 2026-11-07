@@ -81,6 +81,7 @@ func TestCommandRPCsPropagateCancellation(t *testing.T) {
 		},
 		"remove reaction": func(c *Client, ctx context.Context) error { return c.CancelReactionContext(ctx, 1, "123") },
 		"unsend":          func(c *Client, ctx context.Context) error { return c.UnsendMessageContext(ctx, 1, "123") },
+		"read receipt":    func(c *Client, ctx context.Context) error { return c.SendChatCheckedContext(ctx, 1, "u-peer", "123") },
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {

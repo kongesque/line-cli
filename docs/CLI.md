@@ -234,7 +234,8 @@ line messages CHAT_ID --json
 `messages` reads 20 recent messages by default; `--limit` accepts 1–100.
 Human output shows the oldest first; ordinary `--json` preserves server order.
 `--show-ids` includes IDs for replies, reactions, downloads, and unsend.
-Reading never marks messages as read or saves their text locally. Some older
+Reading never sends read receipts or saves message text locally; use
+[`line read`](#mark-a-chat-as-read) to mark a chat as read. Some older
 encrypted messages may be unreadable if LINE no longer provides their device keys.
 
 To inspect returned IDs before decryption, without message content or key lookups:
@@ -449,6 +450,29 @@ cancellation after output begins can leave partial output, so check the exit
 status and use `pipefail`. For files, prefer `--output PATH`: shell redirection
 with `>` can truncate an existing file before the CLI runs.
 
+### Mark a chat as read
+
+Reading, watching, and downloading never mark messages as read. To send a read
+receipt, run `line read`. Others in the chat will see **Read**:
+
+```sh
+line read "Alice"
+line read CHAT_ID --message MESSAGE_ID --json
+```
+
+Without `--message`, the CLI marks the chat read up to the newest message from
+someone else among the latest 50. If there is none, nothing is sent and the
+command fails with `message_not_found`. With `--message`, the ID must belong to
+that chat (the same bounded lookup as reactions) and be from someone else; your
+own messages can't be marked. Run `line read` in a terminal without a chat to
+choose one: chats with unread messages are listed first, and you confirm before
+anything is sent.
+
+Like other remote changes, the receipt uses a saved request sequence and is
+attempted once. If the outcome is unknown, check LINE before running it again.
+`--read-only` blocks it. The JSON result has `action: "read"`, `chat_id`,
+`message_id`, and `request_sequence`.
+
 ### Watch new events
 
 ```sh
@@ -563,7 +587,7 @@ Ordinary CLI and network errors exit 1. Storage errors have
 | `messages` | ID, sender, time, content, encryption, and status. |
 | `send` | Message ID, chat ID, encryption, group-key registration, and sequence. |
 | `download` | Output path, byte count, and message ID. |
-| `react`, `unsend` | Action, chat ID, message ID, and sequence. |
+| `read`, `react`, `unsend` | Action, chat ID, message ID, and sequence. |
 | `watch` | One JSON event per line. |
 | `update` | Installed/latest versions, status, installation method, and next step. Use `--check --json` to only check. |
 
@@ -599,7 +623,7 @@ LINE_CLI_READ_ONLY=1 line chats --json
 line --read-only --error-format=json send CHAT_ID --text "hi"   # refused
 ```
 
-Read-only mode refuses `send`, `react`, `unsend`, `login`, `logout`,
+Read-only mode refuses `send`, `read`, `react`, `unsend`, `login`, `logout`,
 `auth migrate`, and `update` (installing). It stops before prompts, stdin,
 attachments, the session lock, credential storage, the network, or a request
 sequence. Reads, `watch` (its resume position is a local cursor), `download`,
@@ -977,7 +1001,7 @@ and fake APIs; live LINE tests require explicit authorization.
   sticker sends are unsupported.
 - Downloads support images, video, audio, and files up to 20 MiB; external
   media URLs are unsupported.
-- Reading messages does not mark them as read.
+- Reading never sends read receipts; use `line read`.
 - Release binaries are not signed or notarized.
 - LINE protocol changes may affect compatibility.
 

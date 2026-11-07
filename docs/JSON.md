@@ -63,7 +63,7 @@ requires `--details --json`; it batches unique sender IDs, at most 100 per read.
 These validations run before session access. The command timeout includes name
 resolution. Missing profiles and remote name-lookup failures produce explicit
 unavailable names. Cancellation, local storage failures, and invalidated sessions
-remain errors. Reads never mark messages read, register group keys, download
+remain errors. Reads never mark messages read (only `line read` does), register group keys, download
 objects, or execute/follow links.
 
 ### Chat envelope
@@ -172,7 +172,7 @@ line --error-format=json auth status --json
 come before the command and may appear in any order: `line --read-only
 --error-format=json send ...` and `line --error-format=json --read-only send ...`
 are the same. Each global option may appear once. This option supports
-`whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `react`, `unsend`,
+`whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `read`, `react`, `unsend`,
 `auth status`, help, and version. Login, logout, migration, watch, and update keep
 their existing diagnostic contracts; requesting JSON errors for them fails
 locally before doing work. An invalid error-format option itself uses text.
@@ -243,7 +243,7 @@ reports returned IDs before decryption without message text or encrypted data.
 | `authentication_failed` | Authentication failed; inspect the mutation outcome independently. |
 | `invalid_cursor` | Malformed/unsupported history cursor or cursor bound to another chat. |
 | `history_invalid` | History has invalid identity/order/data or no valid delivered-time continuation anchor. |
-| `message_not_found` | Target absent from available history in the selected chat; older history may be unavailable. |
+| `message_not_found` | Target absent from available history in the selected chat; older history may be unavailable. For `read` without `--message`: no message from someone else among the latest 50, so nothing was sent. |
 | `lookup_incomplete` | The 10-page lookup budget was reached before finding the target. |
 | `unsupported_content` | Requested download content is unsupported. |
 | `decryption_failed` | History contains failed decryptions, or an attachment could not be decrypted/authenticated. |
@@ -260,7 +260,7 @@ reports returned IDs before decryption without message text or encrypted data.
 
 Stages identify where work stopped: `validation`, `lock`, `storage`,
 `preparation`, `lookup`, `decode`, `persist_sequence`, `group_key_registration`,
-`attachment_upload`, `preview_upload`, `send`, `react`, `remove_reaction`, `unsend`, `output`, or
+`attachment_upload`, `preview_upload`, `send`, `read`, `react`, `remove_reaction`, `unsend`, `output`, or
 `completion` (a signal after the command completed).
 
 Exit codes are unchanged: ordinary errors are 1, storage errors retain
@@ -273,8 +273,8 @@ strings, and input message text are excluded from machine errors.
 
 ### Interpret each remote step separately
 
-The top-level `mutation` describes the requested message action (`send`, `react`,
-`remove_reaction`, or `unsend`). `steps` describes the ordered mutation stages,
+The top-level `mutation` describes the requested message action (`send`, `read`,
+`react`, `remove_reaction`, or `unsend`). `steps` describes the ordered mutation stages,
 including preparation side effects. Reads and credential recovery are not listed
 as message mutation steps. `attempted` means the command handed the operation to
 the mutation API; it does not prove a packet reached LINE.

@@ -150,6 +150,11 @@ func (a *App) choose(title string, options []choice, search bool) (string, error
 }
 
 func (a *App) selectChat(selector string) (string, string, error) {
+	return a.selectChatWith(selector, false)
+}
+
+// selectChatWith optionally lists chats with unread messages first.
+func (a *App) selectChatWith(selector string, unreadFirst bool) (string, string, error) {
 	unlock, err := a.lock()
 	if err != nil {
 		return "", "", err
@@ -195,7 +200,14 @@ func (a *App) selectChat(selector string) (string, string, error) {
 	if len(chats) == 0 {
 		return "", "", errors.New("no chats or contacts found")
 	}
-	sort.SliceStable(chats, func(i, j int) bool { return chats[i].UpdatedAt > chats[j].UpdatedAt })
+	sort.SliceStable(chats, func(i, j int) bool {
+		if unreadFirst {
+			if ui, uj := hasUnread(chats[i]), hasUnread(chats[j]); ui != uj {
+				return ui
+			}
+		}
+		return chats[i].UpdatedAt > chats[j].UpdatedAt
+	})
 	counts := make(map[string]int)
 	for _, c := range chats {
 		counts[strings.ToLower(c.Name)]++
@@ -281,4 +293,9 @@ func (a *App) selectMessage(chat, command string) (string, error) {
 		return "", errors.New("no eligible messages among the latest 100")
 	}
 	return a.choose("Choose a message to "+command, options, true)
+}
+
+// hasUnread reports a known positive unread count.
+func hasUnread(c Chat) bool {
+	return c.UnreadKnown && c.UnreadCount != "" && c.UnreadCount != "0"
 }

@@ -183,8 +183,9 @@ See [sending and encryption](docs/CLI.md#send-messages-and-files) and
   explicitly reports no support, messages use HTTPS/TLS transport encryption. See
   [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/).
 - History contains up to 100 messages per page. Use `--page --json` and its cursor
-  for older available history; full history is not guaranteed. Reading does not
-  mark messages as read; some older encrypted messages may be unavailable.
+  for older available history; full history is not guaranteed. Reading never
+  sends read receipts; use `line read`. Some older encrypted messages may be
+  unavailable.
 - File sending and media downloads are limited to 20 MiB. `--file` preserves
   original bytes and appears as an ordinary file. Encrypted native image sending
   is disabled; non-E2EE images require explicit LINE capability. Native

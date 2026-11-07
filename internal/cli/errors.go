@@ -62,7 +62,7 @@ func (a *App) Run(args []string) (err error) {
 			return &MachineError{Detail: DescribeError(err, "validation", nil), cause: err}
 		}
 		switch command {
-		case "", "help", "--help", "-h", "version", "--version", "whoami", "contacts", "chats", "members", "messages", "send", "download", "react", "unsend", "auth":
+		case "", "help", "--help", "-h", "version", "--version", "whoami", "contacts", "chats", "members", "messages", "send", "download", "read", "react", "unsend", "auth":
 		default:
 			err = fault.New("invalid_arguments", "validation", "JSON errors are supported for core commands and auth status; run line help", nil)
 			return &MachineError{Detail: DescribeError(err, "validation", nil), cause: err}
@@ -92,7 +92,7 @@ func (a *App) Run(args []string) (err error) {
 			}
 		}
 	}()
-	if command == "send" || command == "react" || command == "unsend" {
+	if command == "send" || command == "read" || command == "react" || command == "unsend" {
 		a.errorMutation = &fault.Mutation{Action: command, Outcome: fault.NotAttempted}
 	}
 	if a.readOnly && a.Manager != nil {

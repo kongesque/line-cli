@@ -476,10 +476,21 @@ func (c *Client) CancelReactionContext(ctx context.Context, reqSeq int64, messag
 	return mutationResponse(resp)
 }
 
-// SendChatChecked sends a read receipt for a message in a chat
-func (c *Client) SendChatChecked(chatMid, messageID string) error {
-	_, err := c.callRPC("TalkService", "sendChatChecked", 0, chatMid, messageID)
-	return err
+// SendChatChecked marks a chat read up to messageID. Callers pass a persisted
+// request sequence; see docs/protocol/endpoints/read-receipts.md.
+func (c *Client) SendChatChecked(reqSeq int64, chatMid, messageID string) error {
+	return c.SendChatCheckedContext(context.Background(), reqSeq, chatMid, messageID)
+}
+
+// SendChatCheckedContext sends Chrome's four positional arguments: request
+// sequence, chat MID, newest read message ID, and a literal 0. The void
+// response must carry an explicit success code.
+func (c *Client) SendChatCheckedContext(ctx context.Context, reqSeq int64, chatMid, messageID string) error {
+	resp, err := c.callRPCContext(ctx, "TalkService", "sendChatChecked", reqSeq, chatMid, messageID, 0)
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
 }
 
 // GetContactsV2 fetches contact details for a list of MIDs.

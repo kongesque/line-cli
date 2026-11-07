@@ -14,6 +14,11 @@ and the documentation at your installed version's tag.
   network request. Reads, `watch`, and `update --check` keep working. Refusals
   use the new JSON error code `read_only`. Unrecognized `LINE_CLI_READ_ONLY`
   values fail every command instead of being ignored.
+- `line read CHAT [--message ID]` marks a chat as read; others see "Read". It
+  is the only command that sends read receipts, uses a persisted request
+  sequence, and is attempted once. Without `--message` it marks up to the
+  newest message from someone else. Guided mode lists unread chats first and
+  asks for confirmation.
 
 ### Fixed
 

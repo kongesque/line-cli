@@ -54,6 +54,7 @@ type API interface {
 	CancelReactionContext(context.Context, int64, string) error
 	UnsendMessage(int64, string) error
 	UnsendMessageContext(context.Context, int64, string) error
+	SendChatCheckedContext(context.Context, int64, string, string) error
 	UploadOBSWithSID([]byte, string) (string, error)
 	UploadOBSWithSIDContext(context.Context, []byte, string) (string, error)
 	DetermineMediaMessageFlowContext(context.Context, string) (*line.MediaMessageFlowResponse, error)
