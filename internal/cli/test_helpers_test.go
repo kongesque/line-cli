@@ -235,6 +235,9 @@ type guidedAPI struct {
 	readChat, readMessage                       string
 	readSeq                                     int64
 	readErr                                     error
+	invited, accepts, rejects                   []string
+	inviteSeqs                                  []int64
+	inviteErr, listErr                          error
 }
 
 func (f *guidedAPI) SendChatCheckedContext(_ context.Context, seq int64, chat, message string) error {

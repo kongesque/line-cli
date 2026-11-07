@@ -51,3 +51,46 @@ func TestSendChatCheckedRequiresExplicitSuccess(t *testing.T) {
 		}
 	}
 }
+
+func TestChatInvitationRequestsMatchChrome(t *testing.T) {
+	for name, call := range map[string]func(*Client) error{
+		"acceptChatInvitation": func(c *Client) error { return c.AcceptChatInvitationContext(context.Background(), 42, "c-group") },
+		"rejectChatInvitation": func(c *Client) error { return c.RejectChatInvitationContext(context.Background(), 42, "c-group") },
+	} {
+		c, path, payload := inboxClient(t, 200, `{"code":0,"message":"OK","data":{}}`)
+		if err := call(c); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(*path, "/TalkService/"+name) || *payload != `[{"reqSeq":42,"chatMid":"c-group"}]` {
+			t.Fatalf("%s request %s %s", name, *path, *payload)
+		}
+		for _, body := range []string{`{"message":"OK"}`, `{"code":10,"message":"synthetic"}`, `[]`} {
+			c, _, _ := inboxClient(t, 200, body)
+			if err := call(c); err == nil {
+				t.Fatalf("%s accepted %s", name, body)
+			}
+		}
+	}
+}
+
+func TestGetAllChatMidsContextEnvelope(t *testing.T) {
+	c, path, payload := inboxClient(t, 200, `{"code":0,"data":{"invitedChatMids":["c-one","c-two"]}}`)
+	result, err := c.GetAllChatMidsContext(context.Background(), false, true)
+	if err != nil || len(result.InvitedChatMids) != 2 || result.MemberChatMids != nil {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	if !strings.HasSuffix(*path, "/TalkService/getAllChatMids") || *payload != `[{"withMemberChats":false,"withInvitedChats":true},2]` {
+		t.Fatalf("request %s %s", *path, *payload)
+	}
+	c, _, _ = inboxClient(t, 200, `{"code":0,"data":{}}`)
+	if result, err := c.GetAllChatMidsContext(context.Background(), false, true); err != nil || len(result.InvitedChatMids) != 0 {
+		t.Fatalf("omitted list: %+v %v", result, err)
+	}
+	for _, body := range []string{`{"code":0}`, `{"data":{}}`, `{"code":1,"message":"private detail","data":{}}`, `nope`} {
+		c, _, _ := inboxClient(t, 200, body)
+		_, err := c.GetAllChatMidsContext(context.Background(), false, true)
+		if err == nil || strings.Contains(err.Error(), "private") {
+			t.Fatalf("accepted or leaked %s: %v", body, err)
+		}
+	}
+}

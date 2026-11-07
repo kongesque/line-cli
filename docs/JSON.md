@@ -17,6 +17,8 @@ diagnostics go to stderr. Use full chat IDs and keep message IDs as strings.
 | `line chats --json` | Legacy chat array. |
 | `line chats --details --json` | Schema-1 `chats` envelope with explicit unknown values. |
 | `line watch --json` | Existing NDJSON stream; no detailed-content envelope. |
+| `line invites --json` | Schema-1 object with `invitations`: `chat_id`, nullable `name`, `name_status` (`resolved` or `unavailable`). |
+| `line read`, `line invites accept\|reject` `--json` | One receipt object: `action`, `chat_id`, `request_sequence`, plus `message_id` for `read`. |
 | `line --error-format=json COMMAND ... --json` | Usual success/partial output on stdout; one structured error on stderr when the supported command fails. |
 
 `--error-format=json` does not imply `--json`. It disables prompts, as do `--json`
@@ -178,7 +180,7 @@ line --error-format=json auth status --json
 come before the command and may appear in any order: `line --read-only
 --error-format=json send ...` and `line --error-format=json --read-only send ...`
 are the same. Each global option may appear once. This option supports
-`whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `download`, `read`, `react`, `unsend`,
+`whoami`, `contacts`, `chats`, `members`, `invites`, `messages`, `send`, `download`, `read`, `react`, `unsend`,
 `auth status`, help, and version. Login, logout, migration, watch, and update keep
 their existing diagnostic contracts; requesting JSON errors for them fails
 locally before doing work. An invalid error-format option itself uses text.
@@ -266,7 +268,8 @@ reports returned IDs before decryption without message text or encrypted data.
 
 Stages identify where work stopped: `validation`, `lock`, `storage`,
 `preparation`, `lookup`, `decode`, `persist_sequence`, `group_key_registration`,
-`attachment_upload`, `preview_upload`, `send`, `read`, `react`, `remove_reaction`, `unsend`, `output`, or
+`attachment_upload`, `preview_upload`, `send`, `read`, `react`, `remove_reaction`, `unsend`,
+`accept_invitation`, `reject_invitation`, `output`, or
 `completion` (a signal after the command completed).
 
 Exit codes are unchanged: ordinary errors are 1, storage errors retain
@@ -279,8 +282,9 @@ strings, and input message text are excluded from machine errors.
 
 ### Interpret each remote step separately
 
-The top-level `mutation` describes the requested message action (`send`, `read`,
-`react`, `remove_reaction`, or `unsend`). `steps` describes the ordered mutation stages,
+The top-level `mutation` describes the requested action (`send`, `read`,
+`react`, `remove_reaction`, `unsend`, `accept_invitation`, or
+`reject_invitation`). Invitation changes have no `message_id`. `steps` describes the ordered mutation stages,
 including preparation side effects. Reads and credential recovery are not listed
 as message mutation steps. `attempted` means the command handed the operation to
 the mutation API; it does not prove a packet reached LINE.

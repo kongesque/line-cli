@@ -46,10 +46,16 @@ local state; operation 131 `REJECT_CHAT_INVITATION` (handler `NS`) removes it.
 
 ## CLI interpretation
 
-- `line invites` calls `getAllChatMids` with `withInvitedChats: true` and looks
-  up names with `getChats` (batches of 20, the CLI's validated group lookup
-  size). A name lookup failure leaves names unavailable rather than hiding
-  invitations. The inviter is not reported, because no request returns it.
+- `line invites` calls `getAllChatMids` with `withMemberChats: false` and
+  `withInvitedChats: true`. It requires `code: 0` and a `data` object; an
+  omitted `invitedChatMids` list means no invitations. Malformed and duplicate
+  IDs are dropped.
+- Names come from `getChats` with `withMembers` and `withInvitees` false, in
+  batches of 20 (the CLI's validated group lookup size). Chrome asks for
+  members and invitees too; whether LINE returns names for invited groups
+  without them is unverified. A missing name or a remote lookup failure leaves
+  the name unavailable rather than hiding the invitation. The inviter is not
+  reported, because no request returns it.
 - Accept and reject take a full group ID (or a guided choice) and confirm it is
   in the current pending list before reserving a request sequence. Each is
   attempted once with the persisted sequence and never retried.

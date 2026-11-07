@@ -82,6 +82,12 @@ func TestCommandRPCsPropagateCancellation(t *testing.T) {
 		"remove reaction": func(c *Client, ctx context.Context) error { return c.CancelReactionContext(ctx, 1, "123") },
 		"unsend":          func(c *Client, ctx context.Context) error { return c.UnsendMessageContext(ctx, 1, "123") },
 		"read receipt":    func(c *Client, ctx context.Context) error { return c.SendChatCheckedContext(ctx, 1, "u-peer", "123") },
+		"invited chats": func(c *Client, ctx context.Context) error {
+			_, e := c.GetAllChatMidsContext(ctx, false, true)
+			return e
+		},
+		"accept invitation": func(c *Client, ctx context.Context) error { return c.AcceptChatInvitationContext(ctx, 1, "c-group") },
+		"reject invitation": func(c *Client, ctx context.Context) error { return c.RejectChatInvitationContext(ctx, 1, "c-group") },
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {

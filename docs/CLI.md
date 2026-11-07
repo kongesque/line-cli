@@ -336,6 +336,32 @@ For a script, keep offsets aligned with the unmodified stdin content:
 printf '%s' '😀 @Alex' | line send "Family group" --stdin --reply-to MESSAGE_ID --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]' --json
 ```
 
+### Accept or reject group invitations
+
+```sh
+line invites
+line invites --json
+line invites accept GROUP_ID
+line invites reject GROUP_ID --json
+```
+
+`line invites` lists pending group invitations with each group's name and full
+ID. In a terminal, it then lets you choose one to accept, reject, or skip.
+`accept` and `reject` take a full group ID; invited groups are not chats yet, so
+names are not accepted. Before changing anything, the CLI checks that the ID is
+in your current pending list; otherwise it stops with `invalid_arguments` and
+nothing is sent.
+
+Accepting joins the group. It never registers or fetches an encryption key and
+never sends a read receipt; your first `line send` there may register a group
+key, as usual. Each change uses a saved request sequence and is attempted once.
+If the outcome is unknown, run `line invites` to check before trying again.
+`--read-only` blocks `accept` and `reject` but still lists invitations.
+
+LINE doesn't say who invited you in any request the CLI makes, so the inviter
+isn't shown. If group names can't be loaded, invitations are still listed with
+`name: null` and `name_status: "unavailable"`.
+
 ### Send messages and files
 
 ```sh
@@ -595,6 +621,8 @@ Ordinary CLI and network errors exit 1. Storage errors have
 | `send` | Message ID, chat ID, encryption, group-key registration, and sequence. |
 | `download` | Output path, byte count, and message ID. |
 | `read`, `react`, `unsend` | Action, chat ID, message ID, and sequence. |
+| `invites` | `schema_version: 1` and `invitations` (`chat_id`, nullable `name`, `name_status`). |
+| `invites accept`, `invites reject` | Action (`accept_invitation` or `reject_invitation`), chat ID, and sequence. |
 | `watch` | One JSON event per line. |
 | `update` | Installed/latest versions, status, installation method, and next step. Use `--check --json` to only check. |
 
@@ -630,7 +658,8 @@ LINE_CLI_READ_ONLY=1 line chats --json
 line --read-only --error-format=json send CHAT_ID --text "hi"   # refused
 ```
 
-Read-only mode refuses `send`, `read`, `react`, `unsend`, `login`, `logout`,
+Read-only mode refuses `send`, `read`, `react`, `unsend`, `invites accept`,
+`invites reject`, `login`, `logout`,
 `auth migrate`, and `update` (installing). It stops before prompts, stdin,
 attachments, the session lock, credential storage, the network, or a request
 sequence. Reads, `watch` (its resume position is a local cursor), `download`,

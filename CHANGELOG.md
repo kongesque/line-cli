@@ -22,6 +22,11 @@ and the documentation at your installed version's tag.
 - `line chats --unread` lists only chats whose reported unread count is above
   zero. Chats with an unknown count are excluded. It works with `--search`,
   `--limit`, `--all`, `--show-ids`, `--json`, and `--details`.
+- `line invites` lists pending group invitations; `line invites accept|reject
+  GROUP_ID` changes one after confirming it is pending. Each change uses a
+  persisted request sequence and is attempted once. Accepting never registers
+  or fetches a group key. In a terminal, `line invites` lets you choose one to
+  accept, reject, or skip.
 
 ### Fixed
 
