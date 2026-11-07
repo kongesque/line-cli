@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/pkg/line"
@@ -116,14 +117,35 @@ func TestReadMachineErrors(t *testing.T) {
 	}
 }
 
+// Deadlines are made deterministic: timer resolution varies by platform
+// (Windows is coarse), so never rely on a tiny --timeout firing in time.
 func TestReadDeadlineStopsBeforeReceipt(t *testing.T) {
+	// An already-expired command context stops before any lookup or receipt.
 	a, f, _, _, _ := guidedApp(t, "")
 	a.Interactive = false
-	var typed *fault.Error
-	err := a.Run([]string{"--error-format=json", "read", "id:u-alice", "--timeout", "1ns"})
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	a.Context = ctx
+	err := a.Run([]string{"--error-format=json", "read", "id:u-alice"})
 	var machine *MachineError
 	if !errors.As(err, &machine) || machine.Detail.Code != "deadline_exceeded" || f.reads != 0 {
-		t.Fatalf("deadline: %v %v", err, typed)
+		t.Fatalf("expired context: %v reads=%d", err, f.reads)
+	}
+
+	// --timeout is wired to the command: the lock waits until it has fired.
+	a, f, _, _, _ = guidedApp(t, "")
+	a.Interactive = false
+	a.Lock = func() (func(), error) {
+		select {
+		case <-a.Context.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("--timeout did not set a command deadline")
+		}
+		return func() {}, nil
+	}
+	err = a.Run([]string{"--error-format=json", "read", "id:u-alice", "--timeout", "20ms"})
+	if !errors.As(err, &machine) || machine.Detail.Code != "deadline_exceeded" || f.reads != 0 {
+		t.Fatalf("--timeout: %v reads=%d", err, f.reads)
 	}
 }
 
