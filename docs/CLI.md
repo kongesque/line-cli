@@ -202,10 +202,13 @@ missing count is not proof of unread messages. Listing unread chats never marks
 anything as read; use [`line read`](#mark-a-chat-as-read) for that.
 
 Commands that take a `CHAT` accept a full contact, room, or group ID, or a
-unique exact name matched without case sensitivity. Quote names with spaces. If
-a name is missing or shared by several chats, use
-`line chats --search NAME --show-ids` and choose the full ID. IDs are more
-reliable in scripts because names can change.
+unique exact name matched without case sensitivity. Quote names with spaces.
+In a terminal, a name that matches no chat exactly, or several, opens a chooser
+of chats and contacts whose names contain it; nothing is sent or changed until
+you pick one. Without a terminal (scripts, `--json`, `--stdin`), the command
+fails instead and lists up to five similar names with full IDs. A partial or
+similar name is never used for a send or other change unless you chose it.
+IDs are more reliable in scripts because names can change.
 
 To look up someone who is not in your friend list, use their full user MID
 (LINE's user ID). For example, a group message's `from` field in

@@ -58,6 +58,11 @@ func (a *App) membersCommand(args []string) error {
 			return err
 		}
 	}
+	if a.Interactive && !*jsonOutput {
+		if chat, _, err = a.chooseChat(chat); err != nil {
+			return err
+		}
+	}
 	unlock, err := a.lock()
 	if err != nil {
 		return err

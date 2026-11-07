@@ -72,6 +72,11 @@ func (a *App) actionCommand(command string, args []string) error {
 		}
 	}
 	a.identifyMutation(chat, *id)
+	if guided && chat != "" {
+		if chat, _, err = a.chooseChat(chat); err != nil {
+			return err
+		}
+	}
 	if guided && (chat == "" || *id == "" || (command == "react" && reaction == "" && !remove)) {
 		var err error
 		chat, _, err = a.selectChat(chat)

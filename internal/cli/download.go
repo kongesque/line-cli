@@ -56,6 +56,11 @@ func (a *App) downloadCommand(args []string) error {
 	if *output == "" && !guided {
 		return errors.New("download requires --output PATH")
 	}
+	if guided && chat != "" {
+		if chat, _, err = a.chooseChat(chat); err != nil {
+			return err
+		}
+	}
 	if guided && (chat == "" || *id == "" || *output == "") {
 		var err error
 		chat, _, err = a.selectChat(chat)

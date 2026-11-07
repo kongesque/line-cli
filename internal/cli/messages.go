@@ -235,11 +235,18 @@ func (a *App) messageCommand(command string, args []string) error {
 	}
 	a.identifyMutation(chat, "")
 	displayChat := strings.TrimPrefix(chat, "id:")
-	if guided && (chat == "" || promptText) {
-		var err error
-		chat, displayChat, err = a.selectChat(chat)
-		if err != nil {
+	if guided && chat != "" {
+		if chat, displayChat, err = a.chooseChat(chat); err != nil {
 			return err
+		}
+	}
+	if guided && (chat == "" || promptText) {
+		if chat == "" {
+			var err error
+			chat, displayChat, err = a.selectChat("")
+			if err != nil {
+				return err
+			}
 		}
 		if promptText {
 			fmt.Fprintln(a.Err, "To: "+terminalText(displayChat))

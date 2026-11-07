@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/messaging"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
@@ -256,30 +257,86 @@ func (a *App) resolveChat(selector string) (string, error) {
 	if err := a.nameChats(chats); err != nil {
 		return "", err
 	}
-	var matches []string
+	// Only a unique exact (case-insensitive) name resolves. Similar names are
+	// collected for the chooser or the error, never selected automatically.
+	match := &chatMatchError{query: selector}
 	seen := make(map[string]bool)
-	for _, chat := range chats {
-		if strings.EqualFold(chat.Name, selector) {
-			matches = append(matches, chat.ID)
-			seen[chat.ID] = true
+	consider := func(id, name string) {
+		if seen[id] || strings.TrimSpace(name) == "" {
+			return
 		}
+		switch {
+		case strings.EqualFold(name, selector):
+			match.exact = append(match.exact, chatCandidate{id, name})
+		case strings.Contains(strings.ToLower(name), strings.ToLower(selector)):
+			match.similar = append(match.similar, chatCandidate{id, name})
+		default:
+			return
+		}
+		seen[id] = true
+	}
+	for _, chat := range chats {
+		consider(chat.ID, chat.Name)
 	}
 	contacts, err := a.contacts()
 	if err != nil {
 		return "", err
 	}
 	for _, contact := range contacts {
-		if strings.EqualFold(contact.EffectiveDisplayName(), selector) && !seen[contact.Mid] {
-			matches = append(matches, contact.Mid)
-			seen[contact.Mid] = true
+		consider(contact.Mid, contact.EffectiveDisplayName())
+	}
+	if len(match.exact) == 1 {
+		return match.exact[0].id, nil
+	}
+	return "", match
+}
+
+type chatCandidate struct{ id, name string }
+
+// chatMatchError means a name matched no chat exactly, or several. It lists up
+// to five candidates with full IDs; the code stays operation_failed.
+type chatMatchError struct {
+	query          string
+	exact, similar []chatCandidate
+}
+
+func (e *chatMatchError) candidates() []chatCandidate {
+	return append(append([]chatCandidate(nil), e.exact...), e.similar...)
+}
+
+func (e *chatMatchError) Error() string {
+	query := safeWord(e.query)
+	var b strings.Builder
+	if len(e.exact) > 1 {
+		fmt.Fprintf(&b, "%d chats or contacts are named %q", len(e.exact), query)
+	} else {
+		fmt.Fprintf(&b, "no chat or contact is named %q", query)
+	}
+	candidates := e.candidates()
+	if len(candidates) == 0 {
+		b.WriteString("; use line chats --search NAME or line contacts --search NAME --show-ids")
+		return b.String()
+	}
+	if len(e.exact) > 1 {
+		b.WriteString(": ")
+	} else {
+		b.WriteString("; similar: ")
+	}
+	for i, c := range candidates[:min(5, len(candidates))] {
+		if i > 0 {
+			b.WriteString(", ")
 		}
+		fmt.Fprintf(&b, "%s (%s %s)", safeWord(c.name), chatKind(c.id), c.id)
 	}
-	switch len(matches) {
-	case 0:
-		return "", errors.New("no chat or contact has that exact name; use line chats --search NAME or line contacts --search NAME --show-ids")
-	case 1:
-		return matches[0], nil
-	default:
-		return "", fmt.Errorf("%d chats or contacts have that name; use --show-ids with line chats or line contacts and choose a full ID", len(matches))
+	if len(candidates) > 5 {
+		fmt.Fprintf(&b, ", and %d more", len(candidates)-5)
 	}
+	b.WriteString(". Use a full ID")
+	return b.String()
+}
+
+// Unwrap exposes a typed fault so JSON errors carry this message, which holds
+// only names and IDs the CLI already prints.
+func (e *chatMatchError) Unwrap() error {
+	return fault.New("operation_failed", "preparation", e.Error(), nil)
 }

@@ -153,6 +153,52 @@ func (a *App) selectChat(selector string) (string, string, error) {
 	return a.selectChatWith(selector, false)
 }
 
+// chooseChat resolves a chat name before the command takes its lock. In a
+// terminal, a name that matches no chat exactly, or several, opens a chooser
+// of similar chats and contacts; that choice is the user's explicit selection.
+// Full IDs and id: selectors return unchanged without any lookup.
+func (a *App) chooseChat(selector string) (string, string, error) {
+	if selector == "" || strings.HasPrefix(selector, "id:") || fullChatID.MatchString(selector) {
+		return selector, strings.TrimPrefix(selector, "id:"), nil
+	}
+	unlock, err := a.lock()
+	if err != nil {
+		return "", "", err
+	}
+	if err := a.rememberAccount(); err != nil {
+		unlock()
+		return "", "", err
+	}
+	id, err := a.resolveChat(selector)
+	unlock()
+	if err == nil {
+		return "id:" + id, selector, nil
+	}
+	var match *chatMatchError
+	if !errors.As(err, &match) || len(match.candidates()) == 0 {
+		return "", "", err
+	}
+	title := fmt.Sprintf("No chat or contact is named %q. Choose one", terminalText(selector))
+	if len(match.exact) > 1 {
+		title = fmt.Sprintf("%d chats or contacts are named %q. Choose one", len(match.exact), terminalText(selector))
+	}
+	candidates := match.candidates()
+	options := make([]choice, 0, len(candidates))
+	for _, c := range candidates {
+		options = append(options, choice{c.id, c.name + " · " + chatKind(c.id) + " · " + c.id})
+	}
+	id, err = a.choose(title, options, false)
+	if err != nil {
+		return "", "", err
+	}
+	for _, c := range candidates {
+		if c.id == id {
+			return "id:" + id, c.name, nil
+		}
+	}
+	return "", "", ErrCancelled
+}
+
 // selectChatWith optionally lists chats with unread messages first.
 func (a *App) selectChatWith(selector string, unreadFirst bool) (string, string, error) {
 	unlock, err := a.lock()
@@ -164,9 +210,8 @@ func (a *App) selectChatWith(selector string, unreadFirst bool) (string, string,
 		return "", "", err
 	}
 	if selector != "" {
-		id, err := a.resolveChat(selector)
 		unlock()
-		return "id:" + id, selector, err
+		return a.chooseChat(selector)
 	}
 	chats, err := a.chatBoxes(false, true)
 	if err == nil {

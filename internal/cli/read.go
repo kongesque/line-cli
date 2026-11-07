@@ -53,6 +53,11 @@ func (a *App) readCommand(args []string) error {
 	}
 	a.identifyMutation(chat, *id)
 	displayChat := strings.TrimPrefix(chat, "id:")
+	if guided && chat != "" {
+		if chat, displayChat, err = a.chooseChat(chat); err != nil {
+			return err
+		}
+	}
 	if guided && chat == "" {
 		chat, displayChat, err = a.selectChatWith("", true)
 		if err != nil {

@@ -20,6 +20,10 @@ and the documentation at your installed version's tag.
 - Mistyped commands and options suggest the closest match, for example
   `line chat` (did you mean `line chats`?) and `--limt` (did you mean
   `--limit`?). Option values are never echoed in these errors.
+- In a terminal, a chat name that matches no chat exactly, or several, opens a
+  chooser of similar chats and contacts instead of failing. Without a terminal,
+  the error lists up to five similar names with full IDs (JSON code unchanged).
+  A partial or similar name is never used for a change unless you chose it.
 
 ### Added
 
