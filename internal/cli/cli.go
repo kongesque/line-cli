@@ -34,7 +34,7 @@ Everyday commands:
 
 More commands:
   auth        Inspect local session storage (auth status)
-  watch       Stream live events (--json)
+  watch       Stream new messages and events (--json for scripts)
   download    Save an image, video, audio, or file attachment
   read        Mark a chat as read (others see "Read")
   react       Add or remove a reaction
@@ -50,10 +50,11 @@ Examples:
   line send "Alice" --text "Hello!"
   line send "Alice" --file report.pdf
   line send "Alice" --image screenshot.png
-  line chats --search "Family"
+  line chats --unread
+  line --read-only messages CHAT_ID --json
 
 whoami, contacts, chats, members, invites, messages, send, download, read, react,
-and unsend accept --timeout.
+unsend, and doctor accept --timeout.
 Reading messages never sends read receipts; only line read does.
 Use --error-format=json before a core command or auth status for JSON errors on stderr.
 This disables prompts and preserves stdout success/partial-result formats.

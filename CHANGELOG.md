@@ -6,8 +6,22 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-07
+
+Inbox control and agent safety: mark chats read on purpose, filter unread
+chats, handle group invitations, diagnose problems, and give scripts and
+agents a read-only switch.
+
 ### Upgrade notes
 
+- Reading never sends read receipts; that is unchanged. To mark a chat read,
+  run the new `line read` explicitly. Others in the chat will see "Read".
+- Use `--read-only` (before the command) or `LINE_CLI_READ_ONLY=1` when a
+  script or agent should only read. Any `LINE_CLI_READ_ONLY` value other than
+  `1`, `true`, `0`, or `false` now makes every command fail, so check that the
+  variable is not already set to something else in your environment.
+- Stop commands, watchers, and services that restart watchers before
+  upgrading. Running old and new versions concurrently is unsupported.
 - `line watch` attached to a terminal now prints readable lines instead of
   JSON. Piped or redirected output, and `--json`, keep the unchanged NDJSON
   stream. Scripts that run `watch` attached to a terminal must pass `--json`.
@@ -34,8 +48,8 @@ and the documentation at your installed version's tag.
 ### Added
 
 - Read-only mode: `line --read-only COMMAND` or `LINE_CLI_READ_ONLY=1` refuses
-  sends, reactions, unsend, login, logout, storage migration, and update
-  installs before any prompt, lock, credential access, request sequence, or
+  sends, read receipts, reactions, unsend, invitation changes, login, logout,
+  storage migration, and update installs before any prompt, lock, credential access, request sequence, or
   network request. Reads, `watch`, and `update --check` keep working. Refusals
   use the new JSON error code `read_only`. Unrecognized `LINE_CLI_READ_ONLY`
   values fail every command instead of being ignored.
@@ -140,6 +154,7 @@ and the documentation at your installed version's tag.
 
 For earlier versions, see [GitHub Releases](https://github.com/kongesque/line-cli/releases).
 
-[Unreleased]: https://github.com/kongesque/line-cli/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kongesque/line-cli/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kongesque/line-cli/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kongesque/line-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kongesque/line-cli/releases/tag/v0.4.0

@@ -132,7 +132,8 @@ line send
 | 支援 `--timeout DURATION` 的指令 | 預設期限 |
 | --- | --- |
 | `download` | `2m` |
-| `whoami`、`contacts`、`chats`、`members`、`messages`、`send`、`react`、`unsend` | `0`（不設指令期限） |
+| `doctor` | `30s` |
+| `whoami`、`contacts`、`chats`、`members`、`invites`、`messages`、`send`、`read`、`react`、`unsend` | `0`（不設指令期限） |
 
 例如：`line send "Alice" --text "Hello" --timeout 30s`。期限從參數解析後開始，
 涵蓋提示、stdin、聊天室與訊息查找、登入狀態復原、金鑰準備及傳輸。
@@ -164,6 +165,8 @@ CLI 不會自動重試登入。若儲存結果不確定，請執行 `line auth s
 line messages
 line send
 line download
+line read
+line invites
 line react
 line unsend
 ```
@@ -178,6 +181,7 @@ Ctrl-C 可中止。`--json`、`--error-format=json` 與 `--stdin` 會停用提�
 ```sh
 line chats
 line chats --search "Family"
+line chats --unread
 line chats --all --limit 50
 line chats --show-ids
 line contacts
@@ -188,9 +192,15 @@ line contacts --search "Alice"
 JSON 輸出則顯示所有符合項目，除非指定 `--limit`。一般輸出可用 `--limit 0` 顯示全部。
 `chats --all` 也會列出非活躍聊天室。
 
+`chats --unread` 只列出 LINE 回報的未讀數大於零的聊天室，可搭配 `--search`、`--limit`、`--all`、
+`--show-ids`、`--json` 與 `--details`。LINE 未提供未讀數的聊天室會被排除，因為缺少數字不代表
+有未讀訊息。列出未讀聊天室不會標為已讀；要標為已讀請用 [`line read`](#mark-a-chat-as-read)。
+
 接受 `CHAT` 的指令可使用完整的聯絡人、多人聊天室或群組 ID，也可使用唯一且完全符合的名稱，
-比對時不區分大小寫。含空白的名稱請加引號。找不到名稱或有多個同名聊天室時，
-請執行 `line chats --search NAME --show-ids`，再選擇完整 ID。
+比對時不區分大小寫。含空白的名稱請加引號。
+在終端機中，若沒有完全符合的名稱或有多個同名項目，會列出名稱包含該文字的聊天室與聯絡人供您選擇；
+選擇前不會傳送或變更任何內容。非終端機環境（指令稿、`--json`、`--stdin`）則會失敗，並列出最多
+五個相似名稱及完整 ID。部分或相似的名稱除非由您親自選擇，否則不會用於傳送或其他變更。
 名稱可能改變，指令稿使用 ID 比較可靠。
 
 查詢不在好友名單中的使用者，請使用完整的使用者 MID（LINE 的使用者識別碼）。
@@ -226,7 +236,7 @@ line messages CHAT_ID --json
 `messages` 預設取得最近 20 則訊息，`--limit` 可指定 1–100 則。
 一般文字輸出由舊到新排列；一般 `--json` 保留伺服器順序。
 `--show-ids` 會顯示回覆、表情回應、下載與收回所需的 ID。
-讀取不會標為已讀，也不會在本機儲存文字。若 LINE 不再提供原裝置金鑰，部分較舊的加密訊息可能無法讀取。
+讀取不會傳送已讀回條，也不會在本機儲存文字；要標為已讀請用 [`line read`](#mark-a-chat-as-read)。若 LINE 不再提供原裝置金鑰，部分較舊的加密訊息可能無法讀取。
 
 若要在解密前查看回傳的 ID，不顯示訊息內容，也不查詢金鑰：
 
@@ -310,6 +320,28 @@ JSON 包含 `schema_version:1`、`chat`、`members`、`invitees`、
 ```sh
 printf '%s' '😀 @Alex' | line send "Family group" --stdin --reply-to MESSAGE_ID --mentions '[{"start":3,"end":8,"mid":"USER_MID"}]' --json
 ```
+
+<a id="accept-or-reject-group-invitations"></a>
+
+### 接受或拒絕群組邀請
+
+```sh
+line invites
+line invites --json
+line invites accept GROUP_ID
+line invites reject GROUP_ID --json
+```
+
+`line invites` 會列出待處理的群組邀請，並顯示群組名稱與完整 ID。在終端機中，接著可選擇要接受、
+拒絕或略過的邀請。`accept` 與 `reject` 需使用完整群組 ID；受邀的群組還不是聊天室，因此不能用名稱。
+變更前，CLI 會確認該 ID 在目前的待處理清單中；若不在，會以 `invalid_arguments` 停止，不傳送任何內容。
+
+接受即加入群組，不會註冊或取得加密金鑰，也不會傳送已讀回條；您在該群組第一次 `line send` 時，
+可能會照常註冊群組金鑰。每次變更都使用已儲存的請求序號，且只嘗試一次。若結果不明，請先執行
+`line invites` 確認再重試。`--read-only` 會阻擋 `accept` 與 `reject`，但仍可列出邀請。
+
+CLI 使用的請求不會告知邀請人是誰，因此不顯示邀請人。若無法載入群組名稱，邀請仍會列出，
+並顯示 `name: null` 與 `name_status: "unavailable"`。
 
 <a id="send-messages-and-files"></a>
 
@@ -409,6 +441,26 @@ line download CHAT_ID --message MESSAGE_ID --output - | consumer
 但開始輸出後，管線中斷或取消操作可能留下不完整的內容，因此請檢查結束代碼並使用 `pipefail`。
 存成檔案時，建議使用 `--output PATH`；shell 的 `>` 重新導向可能在 CLI 執行前就清空既有檔案。
 
+<a id="mark-a-chat-as-read"></a>
+
+### 將聊天室標為已讀
+
+讀取、接收事件與下載都不會標為已讀。要傳送已讀回條，請執行 `line read`；聊天室中的其他人會看到 **已讀**。
+
+```sh
+line read "Alice"
+line read CHAT_ID --message MESSAGE_ID --json
+```
+
+未指定 `--message` 時，會標為已讀到最新 50 則中他人傳送的最新訊息；若沒有，則不傳送任何內容並以
+`message_not_found` 失敗。指定 `--message` 時，該 ID 必須在該聊天室中（與表情回應相同的查找範圍），
+且必須是他人的訊息；不能指定自己的訊息。在終端機中不指定聊天室執行 `line read`，會先列出有未讀
+訊息的聊天室供選擇，並在傳送前要求確認。
+
+與其他遠端變更相同，會使用已儲存的請求序號，且只嘗試一次。若結果不明，請先在 LINE 中確認再重新
+執行。`--read-only` 會阻擋此指令。JSON 結果包含 `action: "read"`、`chat_id`、`message_id` 與
+`request_sequence`。
+
 <a id="watch-new-events"></a>
 
 ### 接收新事件
@@ -418,9 +470,22 @@ line watch
 line watch --timeout 30s
 line watch --limit 10
 line watch --from-now
+line watch --json | your-program
 ```
 
-`watch` 每行向 stdout 寫入一個 JSON 事件，狀態訊息則寫入 stderr。
+在終端機中，`watch` 會為每則訊息顯示一行易讀的內容：時間、聊天室、傳送者，以及文字或附件類型。
+
+```text
+14:05  Alice: See you at 7 ↵ bring snacks
+14:06  Family · Bob: Running late
+14:07  You → Alice: On my way
+```
+
+名稱會依聊天室或人物各查詢一次並快取；查詢失敗時顯示 ID。其他事件除非加上 `--verbose`，否則不顯示。
+未顯示的事件仍會推進已儲存的位置，但不計入 `--limit`。
+
+stdout 不是終端機（管線或檔案）或使用 `--json` 時，`watch` 會與先前版本相同，每行向 stdout 寫入一個
+JSON 事件，狀態訊息則寫入 stderr。在終端機中執行 `watch` 的指令稿應加上 `--json`。
 首次執行從 LINE 目前的 revision 開始；之後從已儲存的檢查點繼續。
 `--from-now` 會捨棄檢查點，只接收新事件。
 
@@ -517,9 +582,12 @@ SIGINT 為 130，SIGTERM 為 143。空的結果清單以 `[]` 表示。
 | `messages` | ID、傳送者、時間、內容、加密資訊與狀態。 |
 | `send` | 訊息 ID、聊天室 ID、加密資訊、群組金鑰註冊與序號。 |
 | `download` | 輸出路徑、位元組數與訊息 ID。 |
-| `react`、`unsend` | 操作、聊天室 ID、訊息 ID 與序號。 |
+| `read`、`react`、`unsend` | 操作、聊天室 ID、訊息 ID 與序號。 |
+| `invites` | `schema_version: 1` 與 `invitations`（`chat_id`、可為 null 的 `name`、`name_status`）。 |
+| `invites accept`、`invites reject` | 操作（`accept_invitation` 或 `reject_invitation`）、聊天室 ID 與序號。 |
 | `watch` | 每行一個 JSON 事件。 |
 | `update` | 已安裝／最新版本、狀態、安裝方式與下一步。只檢查請用 `--check --json`。 |
+| `doctor` | `schema_version: 1`、`checks`（`id`、`status`、`message`，以及選填的 `next_step` 與字串 `details`），和各狀態數量的 `summary`。 |
 
 即使部分訊息無法解密，`messages --json` 仍會輸出完整陣列，附上每則訊息的狀態，
 然後以 1 結束。不會印出加密資料區塊或原始伺服器回應內容。
@@ -536,6 +604,28 @@ stdout 的成功與部分結果 JSON 則維持原格式。全域選項須放在�
 結果，以及準備或上傳的各步驟。檔案訊息可能已建立，但上傳失敗；傳送成功後即使輸出失敗，仍會保留已確認的結果。
 不要自動重試 `unknown` 的操作，網路錯誤也一樣；請先在 LINE 確認。儲存與訊號結束代碼不變。
 完整欄位、代碼與範例請參閱[錯誤格式說明](JSON.md#errors)。
+
+<a id="read-only-mode"></a>
+
+### 唯讀模式
+
+若只想讓指令稿或代理程式讀取，請在指令前加上 `--read-only`，或設定 `LINE_CLI_READ_ONLY=1`：
+
+```sh
+line --read-only messages CHAT_ID --json
+LINE_CLI_READ_ONLY=1 line chats --json
+line --read-only --error-format=json send CHAT_ID --text "hi"   # 會被拒絕
+```
+
+唯讀模式會拒絕 `send`、`read`、`react`、`unsend`、`invites accept`、`invites reject`、`login`、
+`logout`、`auth migrate` 與 `update`（安裝）。拒絕發生在提示、stdin、附件、工作階段鎖定、憑證儲存、
+網路與請求序號之前。讀取指令、`watch`（已儲存的位置是本機游標）、`download`、`auth status`、
+`doctor`、`update --check`、`help` 與 `version` 仍可使用，讀取時也可能更新存取權杖。
+
+`LINE_CLI_READ_ONLY` 接受 `1`/`true`（開啟），以及 `0`/`false` 或未設定（關閉）。其他值會讓所有指令以
+`invalid_arguments` 失敗，避免打錯字時保護無聲失效。`--read-only=false` 無法關閉環境變數。被拒絕的
+指令以 1 結束，JSON 錯誤代碼為 `read_only`（stage `preparation`）；訊息操作會回報
+`attempted: false` 與 `outcome: "not_attempted"`。唯讀模式下仍可顯示指令說明。
 
 <a id="json-lookup-results"></a>
 
@@ -815,6 +905,22 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 
 ## 疑難排解
 
+請先執行 `line doctor`。它會檢查已安裝的版本與 `PATH` 上的其他副本、本機儲存、已儲存的工作階段、
+LINE 是否仍接受它、Letter Sealing 金鑰、時鐘誤差與 watcher，並為有問題的項目提供下一步。它不會
+變更任何內容，未登入或在 `--read-only` 模式下也能使用：
+
+```sh
+line doctor
+line doctor --offline      # 不使用網路：略過版本、登入與時鐘檢查
+line doctor --json
+```
+
+每項檢查都有固定 ID（`version`、`install`、`storage`、`session`、`line_auth`、`e2ee_keys`、`clock`、
+`watch`），並回報 `pass`、`warn`、`fail` 或 `skipped`。只有檢查失敗時才以 1 結束。登入檢查只讀取
+一次個人資料，可能像一般讀取一樣更新存取權杖，但不會重新登入。watcher 檢查會短暫嘗試鎖定後立即
+釋放。報告會將家目錄中的路徑顯示為 `~/…`，且不含權杖、金鑰、使用者或聊天室 ID、名稱、電子郵件、
+訊息或伺服器回應，可直接貼到 GitHub Issue。
+
 | 症狀 | 下一步 |
 | --- | --- |
 | 不認得指南中的選項 | 執行 `line version` 與 `line COMMAND --help`，比對該發行標籤的指南。用 `line update --check` 檢查更新。 |
@@ -824,7 +930,7 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 | 傳送失敗或最近歷史中找不到 | 重做前先查看 LINE。用[結構化錯誤](#structured-errors)區分已確認與不明結果；最近歷史中沒有不代表未送達。 |
 | 歷史頁面較短或部分無法解密 | 除非 `exhausted` 為真，否則可繼續使用游標。請檢查各訊息狀態與結束代碼；舊歷史或金鑰可能已無法取得。 |
 
-回報問題時請提供 `line version`、作業系統、指令及已遮蔽敏感資料的錯誤。
+回報問題時請提供 `line doctor` 的輸出、指令及已遮蔽敏感資料的錯誤。
 不要提供權杖、密碼、QR/PIN、金鑰或私人訊息。
 
 <a id="reference"></a>
@@ -839,8 +945,49 @@ Linux 也會在 `$HOME/.config/line-cli` 的 `native-paths.json` 記錄曾偵測
 
 ```sh
 line help
+line help send
 line send --help
 ```
+
+說明會輸出到 stdout 並以 0 結束，因此可使用 `line send --help | less`。打錯指令或選項時，會以一行
+顯示最接近的選項，例如 `unknown option --limt; did you mean --limit?`，並以 1 結束。全域選項
+（`--read-only`、`--error-format`）須放在指令之前。
+
+<a id="shell-completion"></a>
+
+### 殼層自動完成
+
+`line completion SHELL` 會輸出靜態指令稿，可自動完成指令、子指令、選項與固定值（例如表情回應）。
+它不讀取工作階段，也不發出網路請求。升級 LINE CLI 後請重新產生。
+
+Bash（儲存一次，再由 `~/.bashrc` 載入）：
+
+```sh
+line completion bash > ~/.line-completion.bash
+echo 'source ~/.line-completion.bash' >> ~/.bashrc
+```
+
+Zsh（在 `~/.zshrc` 執行 `compinit` 前將檔案加入 `fpath`）：
+
+```sh
+mkdir -p ~/.zfunc
+line completion zsh > ~/.zfunc/_line
+# 在 ~/.zshrc 的 compinit 之前：  fpath=(~/.zfunc $fpath)
+```
+
+Fish：
+
+```sh
+line completion fish > ~/.config/fish/completions/line.fish
+```
+
+PowerShell（加入 `$PROFILE`）：
+
+```powershell
+line completion powershell | Out-String | Invoke-Expression
+```
+
+不會自動完成聊天室名稱、訊息 ID 等帳號資料，因為那需要讀取工作階段。Homebrew 目前尚未安裝這些指令稿。
 
 <a id="build-from-source"></a>
 
@@ -880,7 +1027,7 @@ go build -trimpath -o .\bin\line.exe ./cmd/line
 - 每頁最多 100 則；使用 `--page --json` 與游標可讀取仍可取得的較舊歷史。查找操作目標最多 10 頁、30 秒。
 - 一般檔案須確認 LINE 的支援狀態；非 E2EE 傳送仍經 HTTPS/TLS 加密。加密的原生圖片已停用；非 E2EE JPEG/PNG 圖片須由 LINE 明確回報支援。不支援原生影音、動態圖片、圖片回覆及貼圖傳送。
 - 支援下載最大 20 MiB 的圖片、影片、音訊與檔案，不支援外部媒體網址。
-- 讀取訊息不會標示已讀。
+- 讀取不會傳送已讀回條；要標為已讀請用 `line read`。
 - 發行版執行檔尚未經過數位簽署或公證。
 - LINE 通訊協定變更可能影響相容性。
 

@@ -137,7 +137,8 @@ protocol errors.
 | Commands accepting `--timeout DURATION` | Default deadline |
 | --- | --- |
 | `download` | `2m` |
-| `whoami`, `contacts`, `chats`, `members`, `messages`, `send`, `react`, `unsend` | `0` (no command deadline) |
+| `doctor` | `30s` |
+| `whoami`, `contacts`, `chats`, `members`, `invites`, `messages`, `send`, `read`, `react`, `unsend` | `0` (no command deadline) |
 
 For example: `line send "Alice" --text "Hello" --timeout 30s`. The deadline starts
 after option parsing and covers prompts/stdin, name and message lookup,
@@ -170,6 +171,8 @@ In an interactive terminal, you can omit some details:
 line messages
 line send
 line download
+line read
+line invites
 line react
 line unsend
 ```

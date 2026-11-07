@@ -139,11 +139,16 @@ line send       # 選擇收件人並輸入訊息
 | 傳送文字訊息 | `line send "Alice" --text "Hello!"` |
 | 傳送檔案 | `line send "Alice" --file ./report.pdf` |
 | 下載照片、影片、音訊或檔案 | `line download` |
+| 查看有未讀訊息的聊天室 | `line chats --unread` |
+| 將聊天室標為已讀 | `line read "Alice"` |
+| 接受或拒絕群組邀請 | `line invites` |
 | 串流接收即時事件 | `line watch` |
+| 檢查設定 | `line doctor` |
 
 請將 `Alice` 換成沒有重複的完整聊天室名稱（不區分大小寫），或使用完整的聊天室 ID。
-若名稱重複，執行 `line chats --search "Alice" --show-ids`，再使用顯示的完整 ID。
-使用 `line COMMAND --help` 查看選項；回覆、表情回應與分頁等進階操作請參閱
+在終端機中，部分或重複的名稱會開啟選單；指令稿請使用 `line chats --search "Alice" --show-ids`
+顯示的完整 ID。讀取不會傳送已讀回條，只有 `line read` 會。
+使用 `line help COMMAND` 查看選項；回覆、表情回應與分頁等進階操作請參閱
 [CLI 指南](docs/CLI.zh-TW.md#daily-commands)。
 
 <a id="automate-line-with-json-and-shell-scripts"></a>
@@ -165,7 +170,15 @@ line watch --json > events.ndjson
 欄位與錯誤格式請參閱 [JSON 參考](docs/JSON.md)。
 
 會變更遠端資料的操作只會嘗試一次。若傳送或其他操作後未收到回應，
-請先在 LINE 中確認結果，再決定是否重做。
+請先在 LINE 中確認結果，再決定是否重做。若只想讓指令稿或代理程式讀取，請在指令前加上
+`--read-only`，或設定 `LINE_CLI_READ_ONLY=1`：
+
+```sh
+LINE_CLI_READ_ONLY=1 line messages CHAT_ID --json
+```
+
+唯讀模式會在連線 LINE 之前，拒絕傳送、已讀回條、表情回應、收回、邀請變更、登入、登出、移轉與安裝更新。
+請參閱[唯讀模式](docs/CLI.zh-TW.md#read-only-mode)。
 
 ## Letter Sealing 加密與工作階段安全性
 
@@ -183,7 +196,7 @@ Letter Sealing 會進一步保護訊息內容，讓 LINE 的伺服器也無法�
   訊息仍會透過 HTTPS/TLS 加密傳輸。
   詳見[LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)。
 - 每頁最多 100 則訊息。使用 `--page --json` 與游標可讀取仍可取得的較舊歷史，
-  但不保證完整歷史。讀取不會標為已讀；部分較舊的加密訊息可能無法讀取。
+  但不保證完整歷史。讀取不會傳送已讀回條（請用 `line read`）；部分較舊的加密訊息可能無法讀取。
 - 檔案傳送與媒體下載上限為 20 MiB。`--file` 保留原始位元組，並顯示為一般檔案。
   目前停用加密的原生圖片傳送；非 E2EE 圖片需要 LINE 明確回報支援。
   不支援原生影音傳送、貼圖傳送及外部媒體 URL 下載。
@@ -206,7 +219,7 @@ Homebrew 請使用 `brew upgrade line-cli`。其他安裝方式請參閱
 
 請閱讀 [CLI 指南](docs/CLI.zh-TW.md)，或瀏覽[文件索引](docs/README.md)（參考文件為英文）。
 透過 [GitHub Issues](https://github.com/kongesque/line-cli/issues) 回報錯誤或提出功能需求。
-回報時請附上 `line version`、作業系統、指令及已遮蔽敏感內容的錯誤訊息。
+回報時請附上 `line doctor` 的輸出（不含權杖、金鑰、ID、名稱或訊息）、指令及已遮蔽敏感內容的錯誤訊息。
 請勿提供密碼、權杖、QR 碼登入值或私人訊息。
 
 <a id="build-and-contribute"></a>
