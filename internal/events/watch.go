@@ -31,6 +31,11 @@ type Watcher struct {
 	Err     io.Writer
 	FromNow bool
 	Limit   int
+	// Emit replaces the NDJSON writer, e.g. for readable terminal output. It
+	// reports whether the event was shown; hidden events still advance the
+	// resume position but do not count toward Limit. It runs under the session
+	// lock and may make read requests through Manager.
+	Emit func(context.Context, *Event) (bool, error)
 	// Hooks keep reconnection and cancellation tests independent of wall time.
 	ProbeInterval time.Duration
 	Wait          func(context.Context, time.Duration) error
@@ -194,15 +199,28 @@ func (w *Watcher) Run(ctx context.Context) error {
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				if err := encoder.Encode(event); err != nil {
-					return errors.New("could not write watch output; the event will replay on restart")
+				shown := true
+				if w.Emit == nil {
+					if err := encoder.Encode(event); err != nil {
+						return errors.New("could not write watch output; the event will replay on restart")
+					}
+				} else {
+					if shown, err = w.Emit(ctx, event); err != nil {
+						return err
+					}
+					// Name lookups may refresh tokens; never checkpoint a stale copy.
+					if s, err = w.state(generation); err != nil {
+						return err
+					}
 				}
 				s.WatchRevision = &next
 				if err := w.Manager.Store.Save(s); err != nil {
 					return err
 				}
 				revision = next
-				count++
+				if shown {
+					count++
+				}
 				received = true
 				recoveredStreamToken = ""
 				return nil

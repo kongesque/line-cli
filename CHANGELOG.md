@@ -8,6 +8,9 @@ and the documentation at your installed version's tag.
 
 ### Upgrade notes
 
+- `line watch` attached to a terminal now prints readable lines instead of
+  JSON. Piped or redirected output, and `--json`, keep the unchanged NDJSON
+  stream. Scripts that run `watch` attached to a terminal must pass `--json`.
 - `--help`, `-h`, and `line help COMMAND` now print to stdout (exit 0). Scripts
   that read help from stderr must read stdout instead. Error output is one line
   on stderr, without the full usage dump.
@@ -24,6 +27,9 @@ and the documentation at your installed version's tag.
   chooser of similar chats and contacts instead of failing. Without a terminal,
   the error lists up to five similar names with full IDs (JSON code unchanged).
   A partial or similar name is never used for a change unless you chose it.
+- In a terminal, `line watch` prints one readable line per message (time, chat,
+  sender, text or attachment type) with names cached. Other events are hidden
+  unless you add `--verbose`.
 
 ### Added
 

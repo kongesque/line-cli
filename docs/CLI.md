@@ -516,12 +516,28 @@ line watch
 line watch --timeout 30s
 line watch --limit 10
 line watch --from-now
+line watch --json | your-program
 ```
 
-`watch` writes one JSON event per line to stdout and status messages to stderr.
-The first run starts at LINE's current revision. Later runs continue from a
-saved checkpoint. `--from-now` discards that checkpoint and starts with new
-events.
+In a terminal, `watch` prints one readable line per message, with the time,
+chat, sender, and text or attachment type:
+
+```text
+14:05  Alice: See you at 7 ↵ bring snacks
+14:06  Family · Bob: Running late
+14:07  You → Alice: On my way
+```
+
+Names are looked up once per chat or person and cached; if a lookup fails, the
+ID is shown. Other events are hidden unless you add `--verbose`. A hidden event
+still advances the saved position but does not count toward `--limit`.
+
+When stdout is not a terminal (a pipe or file), or with `--json`, `watch` writes
+one JSON event per line to stdout, unchanged from earlier releases. Status
+messages go to stderr. Scripts that run `watch` attached to a terminal should
+pass `--json`. The first run starts at LINE's current revision. Later runs
+continue from a saved checkpoint. `--from-now` discards that checkpoint and
+starts with new events.
 
 | Event | Meaning |
 | --- | --- |

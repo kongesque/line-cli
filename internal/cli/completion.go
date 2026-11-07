@@ -60,7 +60,7 @@ func completionSpec() []completionCommand {
 			{name: "status", about: "Inspect local session storage", flags: []string{"check", "json"}},
 			{name: "migrate", about: "Move a Linux session to headless storage", flags: []string{"storage"}},
 		}},
-		{name: "watch", about: "Stream live events", flags: []string{"json", "from-now", "limit", "timeout"}},
+		{name: "watch", about: "Stream live events", flags: []string{"json", "verbose", "from-now", "limit", "timeout"}},
 		{name: "download", about: "Save an attachment", flags: []string{"timeout", "message", "output", "json"}},
 		{name: "react", about: "Add or remove a reaction", flags: []string{"timeout", "message", "json", "reaction", "remove"}},
 		{name: "unsend", about: "Retract one of your own messages", flags: []string{"timeout", "message", "json"}},
