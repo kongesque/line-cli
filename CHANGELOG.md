@@ -6,6 +6,22 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+### Fixed
+
+- Token refresh now reads LINE's wrapped `{code, message, data}` reply as well
+  as a bare token. A wrapped reply was previously discarded after LINE may have
+  rotated the tokens, which could leave every later refresh rejected (HTTP 400,
+  gateway code 10201) a few days after login until `line login`
+  ([#29](https://github.com/kongesque/line-cli/issues/29)). Sessions already in
+  that state still need `line login` once.
+- When LINE rejects a token refresh, commands now say to run `line login`
+  instead of "check your connection", JSON errors use `authentication_failed`
+  instead of `remote_failed`, `line doctor` reports the rejected refresh, and
+  `line watch` stops instead of retrying forever. The saved session is not
+  marked invalid.
+- The docs no longer promise a seven-day refresh interval; LINE decides when a
+  refresh is due.
+
 ## [0.6.0] - 2026-11-07
 
 Inbox control and agent safety: mark chats read on purpose, filter unread

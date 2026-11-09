@@ -113,8 +113,43 @@ func IsUnauthorizedStatus(err error) bool {
 }
 
 func IsAuthError(err error) bool {
-	return IsRefreshRequired(err) || IsLoggedOut(err) || IsUnauthorizedStatus(err) ||
+	return IsRefreshRequired(err) || IsLoggedOut(err) || IsUnauthorizedStatus(err) || IsRefreshRejected(err) ||
 		isExceptionCode(err, "TokenAuthException", 1) || isExceptionCode(err, "TokenAuthException", 2)
+}
+
+// refreshRejectedError marks an explicit error reply from the token-refresh
+// endpoint: the saved refresh credential cannot renew access, and repeating
+// the same request will not help. It is not a forced-logout signal; IsLoggedOut
+// still recognizes those codes through the wrapped ResponseError.
+type refreshRejectedError struct{ cause *ResponseError }
+
+func (e *refreshRejectedError) Error() string {
+	return "LINE rejected token refresh: " + e.cause.Error()
+}
+func (e *refreshRejectedError) Unwrap() error { return e.cause }
+
+// refreshFailure classifies token-refresh request errors. HTTP 400/401/403 and
+// HTTP 200 error envelopes are rejections (for example HTTP 400 with gateway
+// code 10201, kongesque/line-cli#29). Timeouts, 408/429, 5xx, and transport
+// failures stay retryable, and other statuses stay unclassified.
+func refreshFailure(err error) error {
+	var response *ResponseError
+	if !errors.As(err, &response) {
+		return err
+	}
+	switch response.Status {
+	case 200, 400, 401, 403:
+		return &refreshRejectedError{cause: response}
+	}
+	return err
+}
+
+// IsRefreshRejected reports that LINE answered a token refresh with an explicit
+// rejection. Only RefreshAccessTokenContext produces it, so errors from other
+// endpoints never match.
+func IsRefreshRejected(err error) bool {
+	var rejected *refreshRejectedError
+	return errors.As(err, &rejected)
 }
 
 // IsGroupKeyNotFound returns true when the error is specifically code 5 "not found"

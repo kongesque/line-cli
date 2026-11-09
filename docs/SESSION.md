@@ -12,8 +12,10 @@ For message encryption, see the [security model](SECURITY.md#letter-sealing).
 
 ## Current boundaries
 
-- The normal seven-day boundary is an access-token refresh boundary, not a fixed
-  local-session expiry. Persist rotated tokens before using the new client.
+- LINE's token metadata sets the access-token refresh boundary; it is not a fixed
+  local-session expiry, and seven days is not guaranteed (see
+  [the issue #29 follow-up](#refresh-follow-up-issue-29)). Persist rotated tokens
+  before using the new client.
 - Safe reads can recover authentication; message mutations are never replayed.
 - Native OS-protected storage is the default. Headless enrollment uses explicit
   host-only consent, and changing backend requires the migration transaction.
@@ -106,6 +108,34 @@ rejection without proving a forced logout. Generic 401/403 can trigger recovery
 but never alone persist invalidation. A logout code cannot reliably prove which
 other client, if any, displaced the session; diagnostics do not invent that cause.
 
+<a id="refresh-follow-up-issue-29"></a>
+
+### Refresh follow-up, 2026-11-09 (issue #29)
+
+[kongesque/line-cli#29](https://github.com/kongesque/line-cli/issues/29)
+reported sessions failing 3–4 days after QR login: every later refresh got
+HTTP 400 with gateway code 10201 until `line login`, and the CLI blamed the
+connection (`remote_failed`). No live capture was made for this follow-up.
+
+- **Reply shape.** The CLI parsed `/api/auth/tokenRefresh` replies only as a bare
+  TokenV3IssueResult. Every other gateway call here uses the `{code, message, data}`
+  envelope, and Beeper
+  [`90846b7`](https://github.com/beeper/line/commit/90846b7a87b31b7d37eb6df1785987f361e94c79) (beeper/line#260,
+  2026-10-07) decodes wrapped refresh replies. A wrapped success read as bare has
+  no access token, so the CLI saved nothing after LINE may already have rotated
+  the refresh token; that matches every later refresh being rejected. The CLI
+  now accepts both shapes and reports an unreadable success as the
+  `response_envelope` diagnostic instead of an unlabeled failure.
+- **Rejection.** HTTP 400/401/403 and HTTP 200 error envelopes from the refresh
+  endpoint are now refresh rejections: authentication errors that ask for
+  `line login` (JSON `authentication_failed`, gateway diagnostic retained). They
+  are not retried and do not invalidate the session; forced-logout codes still
+  invalidate as before. `line watch` stops instead of backing off forever.
+  Errors from other endpoints are never refresh rejections.
+- **Timing.** The seven-day figure came from synthetic test values, not observed
+  token metadata. The reported failures suggest LINE can ask for a refresh within
+  four days. The meaning of gateway code 10201 is inferred, not documented.
+
 ### Call-path audit
 
 | Path | Session handling |
@@ -138,9 +168,9 @@ jitter bounds, cancellation, forced logout, stale clients/streams, concurrent
 refresh, persistence failure, SSE-only auth errors, and scheduled SSE rotation.
 Existing messaging tests retain no-replay and encryption capability guards.
 
-Normal token rotation should survive the seven-day access-token boundary without
+Normal token rotation should survive LINE's access-token refresh boundary without
 manual login when refresh credentials remain valid and storage is writable.
-There is no seven-day live soak test or promise against server revocation.
+There is no multi-day live soak test or promise against server revocation.
 A rejected/missing refresh credential or genuine logout may require manual login.
 If a server rotates credentials but the response is lost or local persistence
 fails, the client cannot guarantee recovering that unknown/uncommitted token.

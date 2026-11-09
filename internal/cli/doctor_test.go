@@ -286,6 +286,22 @@ func TestDoctorFailuresExitNonzero(t *testing.T) {
 	}
 }
 
+func TestDoctorRejectedRefreshAsksForLogin(t *testing.T) {
+	f := newDoctorFixture(t)
+	f.store.state.RefreshToken = "synthetic-refresh"
+	f.store.state.RefreshAt = time.Unix(1, 0)
+	var paths []string
+	f.app.Manager.NewClient = rejectingRefreshClient(&paths)
+	_, checks, err := f.report(t)
+	if err == nil {
+		t.Fatal("failed check exited 0")
+	}
+	requireStatuses(t, checks, map[string]string{"line_auth": doctorFail})
+	if c := checks["line_auth"]; c.Message != "LINE rejected the token refresh" || c.NextStep != "Run line login." || len(paths) != 1 {
+		t.Fatalf("line_auth %+v after requests %v", c, paths)
+	}
+}
+
 func TestDoctorWarnings(t *testing.T) {
 	f := newDoctorFixture(t)
 	f.api.local = f.api.server.Add(2 * time.Minute)

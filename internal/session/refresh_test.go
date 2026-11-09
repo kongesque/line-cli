@@ -3,6 +3,9 @@ package session
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -236,6 +239,116 @@ func TestReactiveRefreshCommitFailureNeverPublishesOrReplays(t *testing.T) {
 		err := m.Do(func(API) error { calls++; return errors.New(`{"code":119}`) })
 		if !errors.Is(err, failure) || calls != 1 || f.refreshCalls != 1 || s.state.AccessToken != "old" {
 			t.Fatal("storage failure retried refresh/read", err)
+		}
+	}
+}
+
+// gatewayManager runs the real line.Client against a synthetic gateway, so
+// refresh reply parsing and rejection handling are covered end to end.
+func gatewayManager(store *memoryStore, gateway func(*http.Request) (int, string)) *Manager {
+	m := NewManager(store)
+	m.Now = func() time.Time { return time.Unix(1000, 0) }
+	m.Wait = func(context.Context, time.Duration) error { return errors.New("refresh retried") }
+	m.NewClient = func(token string) API {
+		c := line.NewClient(token)
+		c.HTTPClient.Transport = gatewayTransport(gateway)
+		return c
+	}
+	return m
+}
+
+type gatewayTransport func(*http.Request) (int, string)
+
+func (g gatewayTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	status, body := g(req)
+	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+}
+
+// Issue #29: a wrapped refresh reply used to be dropped after LINE had already
+// rotated the tokens, leaving a refresh token that LINE rejects from then on.
+func TestGatewayEnvelopeRefreshPersistsRotatedTokens(t *testing.T) {
+	s := &memoryStore{state: &State{Generation: "g", AccessToken: "old-access", RefreshToken: "old-refresh", RefreshAt: time.Unix(1, 0)}}
+	var refreshes, profiles int
+	m := gatewayManager(s, func(req *http.Request) (int, string) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/api/auth/tokenRefresh"):
+			refreshes++
+			if req.Header.Get("x-line-access") != "old-access" {
+				t.Error("refresh did not use the saved access token")
+			}
+			return 200, `{"code":0,"message":"OK","data":{"accessToken":"new-access","refreshToken":"new-refresh","durationUntilRefreshInSec":"302400","tokenIssueTimeEpochSec":"1000"}}`
+		case strings.HasSuffix(req.URL.Path, "/getProfile"):
+			profiles++
+			if req.Header.Get("x-line-access") != "new-access" {
+				return 401, `{}`
+			}
+			return 200, `{"code":0,"message":"OK","data":{"mid":"u-synthetic"}}`
+		}
+		t.Errorf("unexpected request %s", req.URL.Path)
+		return 500, `{}`
+	})
+	err := m.Do(func(api API) error {
+		profile, err := api.GetProfileContext(context.Background())
+		if err == nil && profile.Mid != "u-synthetic" {
+			err = errors.New("wrong profile")
+		}
+		return err
+	})
+	if err != nil || refreshes != 1 || profiles != 1 || s.saves != 1 {
+		t.Fatalf("wrapped refresh did not recover the session: err=%v refreshes=%d profiles=%d saves=%d", err, refreshes, profiles, s.saves)
+	}
+	if s.state.AccessToken != "new-access" || s.state.RefreshToken != "new-refresh" || s.state.DurationUntilRefreshSec != "302400" || !s.state.RefreshDeadline().Equal(time.Unix(1000+302400-30, 0)) {
+		t.Fatalf("rotated tokens were not saved: %+v", s.state)
+	}
+}
+
+// Issue #29: HTTP 400 with gateway code 10201 from tokenRefresh. The CLI must
+// say a new login is needed, not blame the connection, and must not retry,
+// invalidate, or change the saved session.
+func TestGatewayRefreshRejectionAsksForLogin(t *testing.T) {
+	for _, reply := range []struct {
+		status int
+		body   string
+	}{
+		{400, `{"code":10201,"message":"synthetic-secret"}`},
+		{400, `{"code":10051,"data":{"name":"TokenAuthException","code":1},"message":"synthetic-secret"}`},
+		{401, `{"message":"synthetic-secret"}`},
+	} {
+		for _, scheduled := range []bool{true, false} {
+			s := &memoryStore{state: &State{Generation: "g", AccessToken: "old-access", RefreshToken: "old-refresh"}}
+			if scheduled {
+				s.state.RefreshAt = time.Unix(1, 0)
+			}
+			refreshes, calls := 0, 0
+			m := gatewayManager(s, func(req *http.Request) (int, string) {
+				if strings.HasSuffix(req.URL.Path, "/api/auth/tokenRefresh") {
+					refreshes++
+					return reply.status, reply.body
+				}
+				return 200, `{"code":10051,"data":{"name":"TalkException","code":119}}`
+			})
+			err := m.Do(func(api API) error {
+				calls++
+				_, err := api.GetProfileContext(context.Background())
+				return err
+			})
+			wantCalls := 1
+			if scheduled {
+				wantCalls = 0
+			}
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			}
+			if err == nil || !strings.Contains(msg, "run line login") || strings.Contains(msg, "connection") || strings.Contains(msg, "synthetic-secret") || !line.IsRefreshRejected(ProtocolError(err)) {
+				t.Fatalf("status %d scheduled=%v: rejected refresh not reported as needing login: %q", reply.status, scheduled, msg)
+			}
+			if refreshes != 1 || calls != wantCalls {
+				t.Fatalf("status %d scheduled=%v: refreshes=%d calls=%d", reply.status, scheduled, refreshes, calls)
+			}
+			if s.saves != 0 || s.state.Invalidated || s.state.AccessToken != "old-access" || s.state.RefreshToken != "old-refresh" {
+				t.Fatalf("status %d scheduled=%v: rejected refresh changed the saved session", reply.status, scheduled)
+			}
 		}
 	}
 }

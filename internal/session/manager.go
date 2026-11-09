@@ -442,7 +442,9 @@ func (e *RemoteError) Error() string {
 	}
 	if line.IsAuthError(e.cause) {
 		if e.Action == "token refresh" {
-			return "LINE rejected token refresh; saved credentials were retained. Retry later or run line login if rejection persists"
+			// Retrying the same refresh token does not help (issue #29); only a
+			// new login issues usable credentials. The session is not invalidated.
+			return "LINE rejected the token refresh; run line login to sign in again"
 		}
 		if e.Action == "mutation (not replayed)" {
 			return "LINE mutation was not replayed after an authentication failure; current credentials were saved. Check LINE before trying again"

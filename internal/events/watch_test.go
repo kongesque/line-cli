@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -56,6 +57,7 @@ type fakeAPI struct {
 	profiles     int
 	profileError error
 	refreshes    int
+	refreshErr   error
 	onListen     func(context.Context, func(string, string)) error
 }
 
@@ -77,6 +79,9 @@ func (f *fakeAPI) GetProfileContext(context.Context) (*line.Profile, error) {
 }
 func (f *fakeAPI) RefreshAccessToken(string) (*line.TokenV3IssueResult, error) {
 	f.refreshes++
+	if f.refreshErr != nil {
+		return nil, f.refreshErr
+	}
 	return &line.TokenV3IssueResult{AccessToken: "rotated", RefreshToken: "refresh-new", DurationUntilRefreshSec: "3600"}, nil
 }
 func (f *fakeAPI) ListenSSE(ctx context.Context, rev int64, callback func(string, string)) error {
@@ -485,5 +490,43 @@ func TestEventDecoderSharesSafeLocationModel(t *testing.T) {
 	data, _ := json.Marshal(event)
 	if strings.Contains(string(data), `"content"`) || strings.Contains(string(data), `"location"`) {
 		t.Fatal("legacy watch schema changed")
+	}
+}
+
+type refreshTransport func(*http.Request) (*http.Response, error)
+
+func (f refreshTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// rejectedRefresh returns the real client's error for issue #29's reply.
+func rejectedRefresh(t *testing.T) error {
+	t.Helper()
+	c := line.NewClient("secret")
+	c.HTTPClient.Transport = refreshTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 400, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"code":10201,"message":"secret reason"}`)), Request: r}, nil
+	})
+	_, err := c.RefreshAccessToken("refresh")
+	if !line.IsRefreshRejected(err) {
+		t.Fatal("synthetic refresh reply was not a rejection", err)
+	}
+	return err
+}
+
+// Issue #29: retrying a refresh token LINE has rejected never succeeds, so the
+// watcher must stop with login guidance instead of backing off forever.
+func TestWatchStopsWhenLINERejectsRefresh(t *testing.T) {
+	w, f, s, out := setup(t)
+	s.state.RefreshToken = "refresh"
+	s.state.RefreshAt = time.Unix(1, 0)
+	f.refreshErr = rejectedRefresh(t)
+	w.Wait = func(context.Context, time.Duration) error {
+		t.Fatal("watch retried a rejected refresh")
+		return nil
+	}
+	err := w.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "run line login") || strings.Contains(err.Error(), "secret") {
+		t.Fatal("rejected refresh did not stop the watcher with login guidance", err)
+	}
+	if f.refreshes != 1 || len(f.revisions) != 0 || out.Len() != 0 || s.state.Invalidated || s.state.RefreshToken != "refresh" {
+		t.Fatalf("rejected refresh: refreshes=%d streams=%d invalidated=%v", f.refreshes, len(f.revisions), s.state.Invalidated)
 	}
 }
