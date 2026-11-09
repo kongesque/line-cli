@@ -760,10 +760,12 @@ Logout does not revoke the session on LINE's servers.
 
 ### Token refresh
 
-A normal access token reaches its refresh boundary after about seven days; this
-is not a fixed lifetime for your saved session. If the saved refresh token
-works, the CLI renews access automatically, even after a restart. If refresh
-keeps failing or the refresh token is missing, you may need `line login`.
+LINE decides when an access token must be refreshed. That can be a few days
+after login, so do not plan around a fixed lifetime. While the saved refresh
+token works, the CLI renews access automatically, even after a restart. If LINE
+rejects the refresh, commands say so and ask you to run `line login` (JSON code
+`authentication_failed`); retrying later does not help. A missing refresh token
+also needs `line login`.
 
 Read-only requests may refresh credentials and retry once. Sends, reactions,
 unsend, and uploads are never replayed automatically: inspect LINE before

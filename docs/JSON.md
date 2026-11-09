@@ -228,7 +228,8 @@ an operation ledger and does not supply a deduplication or replay API.
 Request failures may additionally include `error.diagnostic`. Its `kind`
 distinguishes `transport` (HTTP exchange failed), `response_read` (body could
 not be read completely), `gateway` (HTTP/application error),
-`response_envelope` (invalid JSON or missing/invalid success code),
+`response_envelope` (invalid JSON, missing/invalid success code, or a token
+refresh reply without an access token),
 `message_decode` (message data could not be decoded), and `missing_receipt`
 (send returned no message or no ID). Gateway diagnostics include `http_status`
 and, when available, numeric `gateway_code`. Only the known exception names
@@ -249,7 +250,7 @@ reports returned IDs before decryption without message text or encrypted data.
 | `invalid_session` | Invalidated session or unusable saved Letter Sealing keys. |
 | `session_changed` | Saved account changed during the command. |
 | `busy` | Another command holds the session lock. |
-| `authentication_failed` | Authentication failed; inspect the mutation outcome independently. |
+| `authentication_failed` | Authentication failed, including a token refresh that LINE rejected (run `line login`; retrying does not help); inspect the mutation outcome independently. |
 | `invalid_cursor` | Malformed/unsupported history cursor or cursor bound to another chat. |
 | `history_invalid` | History has invalid identity/order/data or no valid delivered-time continuation anchor. |
 | `message_not_found` | Target absent from available history in the selected chat; older history may be unavailable. For `read` without `--message`: no message from someone else among the latest 50, so nothing was sent. |
