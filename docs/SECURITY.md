@@ -130,11 +130,11 @@ fail explicitly and may require a reviewed budget adjustment.
 
 ### Toolchain and vulnerability scans
 
-Builds select Go 1.27.3, including CI/release jobs. `build.sh` checks the actual
+Builds select Go 1.27.4, including CI/release jobs. `build.sh` checks the actual
 compiler selected by `GO`/`GOTOOLCHAIN`; older compilers and unreviewed versions
-fail before building. The minimum module directive is also Go 1.27.3. This
+fail before building. The minimum module directive is also Go 1.27.4. This
 replaces the earlier Go 1.26+ requirement. To select the reviewed compiler:
-`GOTOOLCHAIN=go1.27.3 ./build.sh`. Future toolchain updates should change the
+`GOTOOLCHAIN=go1.27.4 ./build.sh`. Future toolchain updates should change the
 module, CI pins, and compiler guard together after advisory review.
 
 Run `./scripts/security-check.sh ./bin/line` for source and binary scans using
@@ -142,6 +142,17 @@ pinned govulncheck v1.9.0. Release jobs scan each target before packaging.
 [GO-2026-6611](https://pkg.go.dev/vuln/GO-2026-6611) affects HTTP/2 clients;
 [Go 1.27.2](https://go.dev/doc/devel/release#go1.27.0) contains its fix. Scanner
 findings require applicability review; there is no standard-library exemption.
+
+Security update (2026-11-16): [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859),
+published on 2026-11-11, is a crash in HTTP/1 servers that use `MaxBytesReader`
+or `MaxBytesHandler`. The CLI runs no HTTP server, but govulncheck reports the
+patched `net/http` symbols as reachable from its HTTP client calls, so the scan
+fails on Go 1.27.3. Go 1.27.4 contains the fix. The module, compiler guard, and
+CI/release jobs now select that toolchain. No advisory suppression is used.
+
+After this update, source and macOS arm64 binary scans with govulncheck v1.9.0
+and Go 1.27.4 reported no reachable or imported-package vulnerabilities. Five
+module-only findings remain in code that the CLI does not call.
 
 Security update (2026-10-22): [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809),
 published on 2026-10-21, identifies compromised intermediate certificates that

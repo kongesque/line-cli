@@ -22,6 +22,13 @@ and the documentation at your installed version's tag.
 - The docs no longer promise a seven-day refresh interval; LINE decides when a
   refresh is due.
 
+### Security
+
+- Require the reviewed Go 1.27.4 compiler for source, CI, and release builds to
+  address [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859) in `net/http`.
+  The advisory affects HTTP/1 servers, which the CLI does not run, but the
+  vulnerability scan reports the affected package as reachable.
+
 ## [0.6.0] - 2026-11-07
 
 Inbox control and agent safety: mark chats read on purpose, filter unread

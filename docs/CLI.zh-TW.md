@@ -994,7 +994,7 @@ line completion powershell | Out-String | Invoke-Expression
 
 ### 從原始碼建置
 
-需要 Git 與 Go 1.27.3。macOS 還需要 Xcode Command Line Tools 與 CGO，以支援 Keychain。
+需要 Git 與 Go 1.27.4。macOS 還需要 Xcode Command Line Tools 與 CGO，以支援 Keychain。
 
 macOS 或 Linux：
 
