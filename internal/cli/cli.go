@@ -232,7 +232,7 @@ func (a *App) run(args []string) error {
 	return nil
 }
 
-func (a *App) loginEmail(email string) error {
+func (a *App) loginEmail(email string, options session.EmailLoginOptions) error {
 	if err := a.prepareLogin(); err != nil {
 		return err
 	}
@@ -248,7 +248,7 @@ func (a *App) loginEmail(email string) error {
 	if err := a.Manager.CheckLogin(a.loginContext(), a.loginSnapshot); err != nil {
 		return err
 	}
-	profile, err := a.Manager.LoginContext(a.loginContext(), email, password, func(pin string, wait bool) error {
+	profile, err := a.Manager.EmailLoginContext(a.loginContext(), email, password, options, func(pin string, wait bool) error {
 		if pin != "" {
 			fmt.Fprintf(a.Err, "Open LINE on your phone and enter PIN: %s\n", terminalText(pin))
 		} else {

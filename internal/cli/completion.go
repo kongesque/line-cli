@@ -43,7 +43,7 @@ var (
 func completionSpec() []completionCommand {
 	invite := []string{"timeout", "json"}
 	commands := []completionCommand{
-		{name: "login", about: "Sign in by QR code or email", flags: []string{"email", "qr", "qr-url", "force", "headless"}},
+		{name: "login", about: "Sign in by QR code or email", flags: []string{"email", "qr", "qr-url", "require-pin", "force", "headless"}},
 		{name: "whoami", about: "Show your signed-in account", flags: []string{"timeout", "show-ids", "json"}},
 		{name: "contacts", about: "Find friends or look up people", flags: []string{"timeout", "search", "limit", "mid", "show-ids", "json"}},
 		{name: "chats", about: "Browse recent conversations", flags: []string{"timeout", "all", "search", "limit", "show-ids", "unread", "details", "json"}},

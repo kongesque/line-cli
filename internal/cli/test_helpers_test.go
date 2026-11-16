@@ -231,6 +231,7 @@ func (f *messageAPI) SendMessageContext(_ context.Context, arg0 int64, msg *line
 type guidedAPI struct {
 	chatAPI
 	sends, reactions, removals, unsends, logins int
+	loginCertificates                           []string
 	reads                                       int
 	readChat, readMessage                       string
 	readSeq                                     int64
@@ -270,6 +271,7 @@ func (f *guidedAPI) DownloadOBSWithSIDOptions(context.Context, string, string, s
 
 func (f *guidedAPI) Login(email, password, certificate string) (*line.LoginResult, error) {
 	f.logins++
+	f.loginCertificates = append(f.loginCertificates, certificate)
 	if email != "you@example.com" || password != "synthetic" {
 		return nil, errors.New("unexpected credentials")
 	}

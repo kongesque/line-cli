@@ -198,7 +198,7 @@ func (m *Manager) LoginQR(ctx context.Context, notify func(QRLoginEvent) error) 
 		if err := emit(QRLoginEvent{Kind: QRLoginApproved, Attempt: attempt}); err != nil {
 			return nil, err
 		}
-		return m.finishLogin(ctx, "", res.TokenV3IssueResult.AccessToken, false, res, "qr")
+		return m.finishLogin(ctx, "", res.TokenV3IssueResult.AccessToken, false, res, "qr", nil)
 	}
 	return nil, line.ErrQRCodeExpired
 }

@@ -194,6 +194,44 @@ locations because the sandbox does not allow writing the normal user caches.
 Linux native keyring and Windows DPAPI integration tests were not executed on
 this macOS host; their storage implementation is unchanged.
 
+<a id="email-certificate-reuse-issue-31"></a>
+
+## Email login certificate reuse (issue #31)
+
+[kongesque/line-cli#31](https://github.com/kongesque/line-cli/issues/31) asked
+that email login reuse the device certificate from an earlier email login, so a
+known device can sign in without a phone PIN. Email login previously always sent
+an empty certificate, and the session test fake rejected any certificate. No
+live capture was made for this change; the behavior follows two open-source
+clients:
+
+- Beeper [`f9b620b`](https://github.com/beeper/line/tree/f9b620b11618ae4cdf884178a3da2488caa38285)
+  (same Chrome gateway) sends the saved certificate on reconnect only when it
+  holds exported keys. When the reply has no keychain for the same account, it
+  keeps the earlier exported keys, and it keeps the old certificate when the
+  reply has none. A reply asking for verification goes through the normal PIN
+  flow.
+- LINEJS [`3c4a4cc`](https://github.com/evex-dev/linejs/tree/3c4a4cce32628cc98106e59caeca2143ab5ac1f7)
+  (desktop Thrift clients) stores the certificate per email address and always
+  sends it in `loginV2`, including the PIN continuation and the non-E2EE type-0
+  login. Before using stored keys after login it compares them with the
+  server-registered public key and fails rather than registering a new key.
+
+The CLI now sends a saved certificate only when it came from an email login for
+the same address, the session was not invalidated, and saved Letter Sealing keys
+exist (unless the account has none). If LINE returns tokens without a keychain
+for the same account, the CLI loads the saved keys and requires the newest to
+match `negotiateE2EEPublicKey` for the account (key ID and public key); a
+mismatch saves nothing and suggests `--require-pin`. A new keychain is always
+exported instead. A failed certificate login is reported, never repeated
+without the certificate, and `--require-pin` sends none. Synthetic session and
+CLI tests cover these paths.
+
+Open questions: whether LINE answers a stale certificate with a verification
+challenge (as both clients assume) or an error, and whether the Chrome
+extension itself reuses its certificate on email login. Neither has been
+captured.
+
 ## Headless storage engine
 
 Native storage remains the default. `login --headless` enrolls host-only storage;

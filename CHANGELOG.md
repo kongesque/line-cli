@@ -6,6 +6,16 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+### Added
+
+- `line login --email` sends the device certificate saved by an earlier email
+  login for the same address, so LINE may sign you in without a phone PIN
+  ([#31](https://github.com/kongesque/line-cli/issues/31)). When LINE skips
+  verification, the saved Letter Sealing keys are reused only if they match the
+  account's current key on LINE; otherwise nothing is saved. Certificates from
+  QR login or logged-out sessions are not sent, and a failed login is not
+  repeated. `--require-pin` always asks for phone verification.
+
 ### Fixed
 
 - Token refresh now reads LINE's wrapped `{code, message, data}` reply as well
