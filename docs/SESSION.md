@@ -135,6 +135,11 @@ connection (`remote_failed`). No live capture was made for this follow-up.
 - **Timing.** The seven-day figure came from synthetic test values, not observed
   token metadata. The reported failures suggest LINE can ask for a refresh within
   four days. The meaning of gateway code 10201 is inferred, not documented.
+- **Live check.** After a QR login on 2026-11-09 with the fixed build (macOS
+  arm64), a read-only `line whoami` ran roughly every 6 hours and logged only
+  the outcome: 35 checks over 168 hours, none failed, including the checks
+  around the 3–4 day point where v0.6.0 failed. The log records command
+  success, not individual refreshes, so no refresh reply was captured.
 
 ### Call-path audit
 
@@ -227,7 +232,15 @@ exported instead. A failed certificate login is reported, never repeated
 without the certificate, and `--require-pin` sends none. Synthetic session and
 CLI tests cover these paths.
 
-Open questions: whether LINE answers a stale certificate with a verification
+Live check, 2026-11-16, one account on macOS arm64 at `0cb502d`: an email
+login (from a QR-origin session, so no certificate was sent) asked for the
+phone PIN and saved a certificate. A second email login sent that certificate
+and signed in without phone verification. Afterwards `line whoami` and
+`line doctor` passed (one saved key loads) and recent Letter Sealing messages
+decrypted. Whether LINE's second reply carried a keychain or the checked saved
+key was reused was not observed.
+
+Still open: whether LINE answers a stale certificate with a verification
 challenge (as both clients assume) or an error, and whether the Chrome
 extension itself reuses its certificate on email login. Neither has been
 captured.

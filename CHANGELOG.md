@@ -6,6 +6,28 @@ and the documentation at your installed version's tag.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-16
+
+Sessions that keep working: token refresh no longer strands a session a few
+days after login, a known device can repeat email login without a phone PIN,
+and builds use Go 1.27.4.
+
+### Upgrade notes
+
+- Stop commands, watchers, and services that restart watchers before
+  upgrading. Running old and new versions concurrently is unsupported.
+- If your session already fails a few days after login with "check your
+  connection" (HTTP 400, gateway code 10201), run `line login` once after
+  upgrading. The fix prevents this but cannot recover a session already in
+  that state.
+- A rejected token refresh is now JSON `authentication_failed` instead of
+  `remote_failed`. Scripts that retried on `remote_failed` should run
+  `line login` instead; retrying does not help.
+- `line login --email` now sends the device certificate saved by an earlier
+  email login for the same address, so LINE may skip the phone PIN. Add
+  `--require-pin` to always verify on your phone.
+- Source builds require **Go 1.27.4**.
+
 ### Added
 
 - `line login --email` sends the device certificate saved by an earlier email
@@ -14,7 +36,9 @@ and the documentation at your installed version's tag.
   verification, the saved Letter Sealing keys are reused only if they match the
   account's current key on LINE; otherwise nothing is saved. Certificates from
   QR login or logged-out sessions are not sent, and a failed login is not
-  repeated. `--require-pin` always asks for phone verification.
+  repeated. `--require-pin` always asks for phone verification. Checked with
+  one live account on 2026-11-16: a repeat email login signed in without a PIN
+  and messages decrypted afterwards.
 
 ### Fixed
 
@@ -31,6 +55,10 @@ and the documentation at your installed version's tag.
   marked invalid.
 - The docs no longer promise a seven-day refresh interval; LINE decides when a
   refresh is due.
+
+A live check with one account kept a QR session working for 168 hours (seven
+days) with read-only checks about every 6 hours, past the 3–4 day point where
+v0.6.0 failed. See the [session notes](docs/SESSION.md#refresh-follow-up-issue-29).
 
 ### Security
 
@@ -187,7 +215,8 @@ agents a read-only switch.
 
 For earlier versions, see [GitHub Releases](https://github.com/kongesque/line-cli/releases).
 
-[Unreleased]: https://github.com/kongesque/line-cli/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kongesque/line-cli/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kongesque/line-cli/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kongesque/line-cli/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kongesque/line-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kongesque/line-cli/releases/tag/v0.4.0

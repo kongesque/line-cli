@@ -274,11 +274,11 @@ the [changelog](../CHANGELOG.md) until a version and release date are chosen.
 - Use a minor version for new commands/options or behavior changes, and a patch
   version for compatible fixes. Do not promise live interoperability based only
   on synthetic tests or static protocol evidence.
-- For this candidate (0.6.0), call out `--read-only`/`LINE_CLI_READ_ONLY`
-  (including that invalid values now fail every command), explicit read
-  receipts through `line read`, readable `watch` output in a terminal (scripts
-  attached to a terminal need `--json`), help on stdout, and stopping watchers
-  before upgrading.
+- For this candidate (0.7.0), call out that sessions stuck by the token refresh
+  failure need `line login` once, that a rejected refresh is now JSON
+  `authentication_failed` (not `remote_failed`), that email login now sends the
+  saved certificate (`--require-pin` opts out), the Go 1.27.4 requirement, and
+  stopping watchers before upgrading.
 - Keep detailed evidence in [SECURITY.md](SECURITY.md#security-change-record); release notes
   should explain the effect on users and link to that record.
 
