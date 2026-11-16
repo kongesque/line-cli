@@ -349,6 +349,8 @@ func (a *App) doctorAuth(st *doctorState) doctorCheck {
 		c.Status, c.Message, c.NextStep = doctorWarn, "LINE did not answer before the deadline", "Check your connection, or raise --timeout."
 	case errors.Is(err, session.ErrSessionInvalidated):
 		c.Status, c.Message, c.NextStep = doctorFail, "LINE signed this session out", "Run line login."
+	case line.IsRefreshRejected(session.ProtocolError(err)):
+		c.Status, c.Message, c.NextStep = doctorFail, "LINE rejected the token refresh", "Run line login."
 	case line.IsAuthError(session.ProtocolError(err)):
 		c.Status, c.Message, c.NextStep = doctorFail, "LINE rejected the saved session", "Run line login if this persists."
 	case session.StorageReason(err) != "ok" && session.StorageReason(err) != "storage_error":

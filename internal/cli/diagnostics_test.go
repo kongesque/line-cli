@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/messaging"
@@ -88,6 +89,51 @@ func TestHistoryDiagnosticFlagsValidateBeforeSession(t *testing.T) {
 		a.Lock = func() (func(), error) { t.Fatal("invalid flags accessed session"); return nil, nil }
 		if err := a.Run(append([]string{"messages", "id:c-group", "--diagnostics"}, extra...)); err == nil {
 			t.Fatalf("accepted invalid flags: %v", extra)
+		}
+	}
+}
+
+// rejectingRefreshClient is a real client whose token refresh gets issue #29's
+// reply: HTTP 400 with gateway code 10201.
+func rejectingRefreshClient(paths *[]string) func(string) session.API {
+	return func(token string) session.API {
+		c := line.NewClient(token)
+		c.HTTPClient.Transport = diagnosticTransport(func(r *http.Request) (*http.Response, error) {
+			*paths = append(*paths, r.URL.Path)
+			return &http.Response{StatusCode: 400, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"code":10201,"message":"private-reason"}`)), Request: r}, nil
+		})
+		return c
+	}
+}
+
+// Issue #29 reported "check your connection" and remote_failed for a refresh
+// that LINE had rejected; a new login is the only way forward.
+func TestRejectedRefreshAsksForLogin(t *testing.T) {
+	for _, jsonErrors := range []bool{false, true} {
+		a, out, _ := testApp(nil)
+		var paths []string
+		a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", RefreshToken: "synthetic-refresh", RefreshAt: time.Unix(1, 0), NoE2EE: true}}
+		a.Manager.NewClient = rejectingRefreshClient(&paths)
+		args := []string{"whoami"}
+		if jsonErrors {
+			args = append([]string{"--error-format=json"}, args...)
+		}
+		err := a.Run(args)
+		if err == nil || len(paths) != 1 || paths[0] != "/api/auth/tokenRefresh" || out.Len() != 0 {
+			t.Fatalf("json=%v: unexpected requests %v or output: %v", jsonErrors, paths, err)
+		}
+		if !jsonErrors {
+			if !strings.Contains(err.Error(), "LINE rejected the token refresh; run line login") || strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "private-") {
+				t.Fatalf("human error lacks login guidance: %v", err)
+			}
+			continue
+		}
+		d := machineDetail(t, err)
+		if d.Code != "authentication_failed" || !strings.Contains(d.Message, "run line login") || d.Diagnostic == nil || d.Diagnostic.Kind != "gateway" || d.Diagnostic.HTTPStatus != 400 || d.Diagnostic.GatewayCode == nil || *d.Diagnostic.GatewayCode != 10201 {
+			t.Fatalf("machine error: %+v %+v", d, d.Diagnostic)
+		}
+		if encoded, _ := json.Marshal(d); strings.Contains(string(encoded), "private-") {
+			t.Fatal("machine channel leaked data")
 		}
 	}
 }

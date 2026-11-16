@@ -558,26 +558,42 @@ func (c *Client) RefreshAccessTokenContext(ctx context.Context, refreshToken str
 
 	respBytes, err := c.postWithHMACContext(ctx, url, bodyBytes)
 	if err != nil {
+		return nil, refreshFailure(err)
+	}
+	// Other gateway calls reply with a {code, message, data} envelope, and
+	// beeper/line#260 decodes a wrapped refresh reply; accept that and the bare
+	// token. A reply dropped here may already have rotated the refresh token on
+	// the server, stranding the session (kongesque/line-cli#29).
+	res, err := parseTokenRefresh(respBytes)
+	if err != nil {
 		return nil, err
-	}
-
-	var res TokenV3IssueResult
-	if err := json.Unmarshal(respBytes, &res); err != nil {
-		return nil, fmt.Errorf("failed to parse refresh response: %w", err)
-	}
-
-	// Treat an empty access token as a refresh failure. LINE occasionally
-	// returns HTTP 200 with a non-token body (e.g. an error JSON that doesn't
-	// match TokenV3IssueResult), in which case the unmarshal silently yields a
-	// zeroed struct. Without this guard the caller would clear the in-memory
-	// access token and the client would silently go into a "not logged in"
-	// state on the next API call.
-	if res.AccessToken == "" {
-		return nil, errors.New("refresh response missing access token")
 	}
 
 	// The session owner publishes credentials only after persistence.
 
+	return res, nil
+}
+
+func parseTokenRefresh(body []byte) (*TokenV3IssueResult, error) {
+	var envelope struct {
+		TokenV3IssueResult
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, requestFailure("response_envelope", fmt.Errorf("failed to parse refresh response: %w", err))
+	}
+	res := envelope.TokenV3IssueResult
+	if data := bytes.TrimSpace(envelope.Data); len(data) > 0 && !bytes.Equal(data, []byte("null")) {
+		res = TokenV3IssueResult{}
+		if err := json.Unmarshal(data, &res); err != nil {
+			return nil, requestFailure("response_envelope", fmt.Errorf("failed to parse refresh response: %w", err))
+		}
+	}
+	// A success reply without an access token must not clear credentials; the
+	// caller keeps the saved session and reports the failure.
+	if res.AccessToken == "" {
+		return nil, requestFailure("response_envelope", errors.New("refresh response missing access token"))
+	}
 	return &res, nil
 }
 

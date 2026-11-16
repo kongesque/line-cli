@@ -180,6 +180,8 @@ func DescribeError(err error, stage string, op *fault.Mutation) *fault.Error {
 		code, stage, message = "busy", "lock", "Another command is using the session."
 	case reason != "ok" && reason != "storage_error":
 		code, message = "storage_"+reason, "Session storage could not complete the operation."
+	case line.IsRefreshRejected(session.ProtocolError(err)):
+		code, message = "authentication_failed", "LINE rejected the token refresh; run line login."
 	case line.IsAuthError(session.ProtocolError(err)):
 		code, message = "authentication_failed", "LINE rejected authentication."
 	default:
