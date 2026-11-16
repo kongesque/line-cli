@@ -99,11 +99,13 @@ and never saved. There is no password flag or password environment variable.
 | --- | --- |
 | `line login --qr` | Explicitly select the default QR login. |
 | `line login --email ADDRESS` | Use an email address/password configured on your LINE account, with phone verification. |
+| `line login --email ADDRESS --require-pin` | Email login that always asks for phone verification instead of sending this device's saved certificate. |
 | `line login --headless --email ADDRESS` | Use email login and headless storage on Linux. |
 | `line login --qr-url` | Output the one-time QR value for a trusted local QR tool. |
 | `line login --force` | Skip confirmation before replacing a saved session. |
 
-`--email` cannot combine with `--qr` or `--qr-url`. Both QR modes require an
+`--email` cannot combine with `--qr` or `--qr-url`, and `--require-pin` needs
+`--email`. Both QR modes require an
 interactive input terminal; stdout can be redirected. Progress, QR codes, PINs,
 and warnings go to stderr; the final success message goes to stdout.
 
@@ -126,6 +128,14 @@ and warnings go to stderr; the final success message goes to stdout.
   can replace it again. Try email login if configured.
   `Diagnostic: qrCodeLoginV2 metadata` contains fixed field states and a count
   only, with no key, token, or raw server response.
+- **Repeat email login:** email login saves LINE's device certificate. The next
+  `line login --email` for the same address sends it, so LINE may skip phone
+  verification. LINE then sends no new Letter Sealing keys: the CLI keeps the
+  saved ones only if they match the account's current key on LINE, and
+  otherwise saves nothing and suggests `--require-pin`. If LINE still wants
+  verification, the usual PIN appears. Certificates from QR login, logged-out
+  sessions, or another address are not sent, and the CLI never repeats a
+  failed login without the certificate. `--require-pin` never sends it.
 
 ### Saved sessions and cancellation
 

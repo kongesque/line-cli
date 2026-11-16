@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
+	gen "github.com/kongesque/line-cli/pkg"
 	"github.com/kongesque/line-cli/pkg/e2ee"
 	"github.com/kongesque/line-cli/pkg/line"
 )
@@ -81,8 +83,11 @@ type Manager struct {
 	Storage    StoragePreparer
 	NewClient  func(string) API
 	ExportKeys func(context.Context, API, *line.LoginResult) (map[string]string, error)
-	Now        func() time.Time
-	beginQRKey func() (qrLoginKey, error)
+	// CheckSavedKeys confirms that saved Letter Sealing keys hold the account's
+	// current key before a certificate login reuses them.
+	CheckSavedKeys func(ctx context.Context, api API, mid string, keys map[string]string) error
+	Now            func() time.Time
+	beginQRKey     func() (qrLoginKey, error)
 }
 
 func NewManager(store Store) *Manager {
@@ -93,9 +98,10 @@ func NewManager(store Store) *Manager {
 			client.OBSClient.Timeout = 2 * time.Minute
 			return client
 		},
-		ExportKeys: exportKeys,
-		Now:        time.Now,
-		beginQRKey: beginQRKey,
+		ExportKeys:     exportKeys,
+		CheckSavedKeys: checkSavedKeys,
+		Now:            time.Now,
+		beginQRKey:     beginQRKey,
 	}
 	if preparer, ok := store.(StoragePreparer); ok {
 		manager.Storage = preparer
@@ -118,10 +124,23 @@ func (m *Manager) Login(email, password string, notify Notify) (*line.Profile, e
 	return m.LoginContext(context.Background(), email, password, notify)
 }
 
-// LoginContext retains the email authentication protocol. Common completion is
-// cancellable; the legacy email authentication requests themselves are not yet.
-// The caller holds the command lock (see PrepareLogin).
+// EmailLoginOptions adjusts email login. The zero value sends this device's
+// saved certificate when one qualifies (see reusableEmailSession).
+type EmailLoginOptions struct {
+	// RequirePIN sends no certificate, so LINE asks for phone verification and
+	// sends a fresh Letter Sealing keychain.
+	RequirePIN bool
+}
+
+// LoginContext is EmailLoginContext with default options.
 func (m *Manager) LoginContext(ctx context.Context, email, password string, notify Notify) (*line.Profile, error) {
+	return m.EmailLoginContext(ctx, email, password, EmailLoginOptions{}, notify)
+}
+
+// EmailLoginContext retains the email authentication protocol. Common completion
+// is cancellable; the legacy email authentication requests themselves are not
+// yet. The caller holds the command lock (see PrepareLogin).
+func (m *Manager) EmailLoginContext(ctx context.Context, email, password string, options EmailLoginOptions, notify Notify) (*line.Profile, error) {
 	if err := m.readOnly("login"); err != nil {
 		return nil, err
 	}
@@ -131,15 +150,25 @@ func (m *Manager) LoginContext(ctx context.Context, email, password string, noti
 	if err := m.PrepareStorage(); err != nil {
 		return nil, err
 	}
+	prior, err := m.reusableEmailSession(email, options)
+	if err != nil {
+		return nil, err
+	}
+	certificate, action := "", "login"
+	if prior != nil {
+		certificate, action = prior.Certificate, "certificate login"
+	}
 	api := m.NewClient("")
 	if cleaner, ok := api.(interface{ ClearLoginKey() error }); ok {
 		defer cleaner.ClearLoginKey()
 	}
-	// Always request a fresh keychain. Certificate-only login may return tokens
-	// without the encryption keys needed after restarting this CLI process.
-	res, err := api.Login(email, password, "")
+	// LINE may accept a saved certificate without phone verification and then
+	// send tokens without a keychain; finishLogin reuses the saved keys only
+	// after checking them. A stale certificate gets the usual verification
+	// challenge, so there is no separate fallback request (issue #31).
+	res, err := api.Login(email, password, certificate)
 	if err != nil {
-		return nil, remoteError("login", err)
+		return nil, remoteError(action, err)
 	}
 	noE2EE := false
 	for step := 0; step < 5; step++ {
@@ -152,7 +181,7 @@ func (m *Manager) LoginContext(ctx context.Context, email, password string, noti
 			token = res.TokenV3IssueResult.AccessToken
 		}
 		if token != "" {
-			return m.finishLogin(ctx, email, token, noE2EE, res, "email")
+			return m.finishLogin(ctx, email, token, noE2EE, res, "email", prior)
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -171,14 +200,15 @@ func (m *Manager) LoginContext(ctx context.Context, email, password string, noti
 			res, err = api.WaitForLogin(res.Verifier, noE2EE)
 		} else if res.Certificate != "" {
 			// Some LINE responses put a phone challenge in this field; it is
-			// not a reusable certificate until login has completed.
+			// not a reusable certificate until login has completed. The
+			// continuation repeats the first request, as Beeper and LINEJS do.
 			if err := notify(res.Certificate, true); err != nil {
 				return nil, err
 			}
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			res, err = api.Login(email, password, "")
+			res, err = api.Login(email, password, certificate)
 		} else {
 			return nil, errors.New("LINE login is incomplete; no verification challenge was returned")
 		}
@@ -189,7 +219,10 @@ func (m *Manager) LoginContext(ctx context.Context, email, password string, noti
 	return nil, errors.New("LINE login did not complete after phone verification; run line login again")
 }
 
-func (m *Manager) finishLogin(ctx context.Context, email, token string, noE2EE bool, res *line.LoginResult, origin string) (profile *line.Profile, err error) {
+// finishLogin saves the approved session. prior is the saved session whose
+// certificate the login sent, or nil; its certificate and keys carry over only
+// to the same account.
+func (m *Manager) finishLogin(ctx context.Context, email, token string, noE2EE bool, res *line.LoginResult, origin string, prior *State) (profile *line.Profile, err error) {
 	stage := LoginSetup
 	defer func() {
 		if err != nil {
@@ -220,13 +253,27 @@ func (m *Manager) finishLogin(ctx context.Context, email, token string, noE2EE b
 	if res.TokenV3IssueResult != nil {
 		s.applyToken(m.Now(), res.TokenV3IssueResult)
 	}
+	sameAccount := prior != nil && prior.MID == profile.Mid
+	if sameAccount && s.Certificate == "" {
+		// LINE need not reissue the certificate it just accepted (Beeper keeps it).
+		s.Certificate = prior.Certificate
+	}
 	if !noE2EE {
-		if res.E2EEPublicKey == "" || res.EncryptedKeyChain == "" {
+		switch {
+		case res.E2EEPublicKey != "" && res.EncryptedKeyChain != "":
+			s.ExportedKeys, err = m.ExportKeys(ctx, api, res)
+			if err != nil {
+				return nil, err
+			}
+		case sameAccount && !prior.NoE2EE && validExportedKeys(prior.ExportedKeys):
+			// Without phone verification LINE sends no keychain. Like LINEJS,
+			// use saved keys only if they hold the account's current key.
+			if err := m.CheckSavedKeys(ctx, api, profile.Mid, prior.ExportedKeys); err != nil {
+				return nil, err
+			}
+			s.ExportedKeys = maps.Clone(prior.ExportedKeys)
+		default:
 			return nil, errors.New("LINE login returned no Letter Sealing keys; session was not saved; retry line login")
-		}
-		s.ExportedKeys, err = m.ExportKeys(ctx, api, res)
-		if err != nil {
-			return nil, err
 		}
 		for id, key := range s.ExportedKeys {
 			if id == "" || key == "" {
@@ -246,6 +293,88 @@ func (m *Manager) finishLogin(ctx context.Context, email, token string, noE2EE b
 	}
 	// A completed save wins over cancellation arriving during the commit.
 	return profile, nil
+}
+
+// ErrSavedKeysNotCurrent means a certificate login got no keychain and the
+// saved Letter Sealing keys do not hold the account's current key.
+var ErrSavedKeysNotCurrent = errors.New("saved Letter Sealing keys are not the account's current keys")
+
+// reusableEmailSession returns the saved session whose certificate an email
+// login may send: one from an earlier email login for the same address that LINE
+// has not logged out, holding the keys a login without phone verification needs.
+// Beeper and LINEJS send a saved certificate on email login the same way.
+func (m *Manager) reusableEmailSession(email string, options EmailLoginOptions) (*State, error) {
+	if options.RequirePIN {
+		return nil, nil
+	}
+	s, err := m.Store.Load()
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, errors.New("saved session is invalid")
+	}
+	// An invalidated session's certificate is not reused, as for QR login.
+	if s.Invalidated || s.CertificateOrigin != "email" || s.Certificate == "" || s.Email != email || s.MID == "" {
+		return nil, nil
+	}
+	if !s.NoE2EE && !validExportedKeys(s.ExportedKeys) {
+		return nil, nil
+	}
+	return s, nil
+}
+
+func validExportedKeys(keys map[string]string) bool {
+	for id, key := range keys {
+		if id == "" || key == "" {
+			return false
+		}
+	}
+	return len(keys) > 0
+}
+
+// checkSavedKeys loads saved keys and requires the newest to match the public
+// key LINE currently returns for the account, which peers encrypt to. LINEJS
+// makes the same check before using stored keys after login. Nothing is
+// registered or replaced on failure.
+func checkSavedKeys(ctx context.Context, api API, mid string, keys map[string]string) error {
+	mgr, err := e2ee.NewManager()
+	if err != nil {
+		return err
+	}
+	if err := mgr.LoadMyKeyFromExportedMap(keys); err != nil {
+		return err
+	}
+	rawID, public, err := mgr.MyPublicKey()
+	if err != nil {
+		return err
+	}
+	current, err := api.NegotiateE2EEPublicKeyContext(ctx, mid)
+	if err != nil {
+		return err
+	}
+	return matchCurrentKey(rawID, public, current)
+}
+
+// matchCurrentKey compares the newest saved key with the account's current key.
+func matchCurrentKey(rawID int, public string, current *line.E2EEPublicKey) error {
+	if current == nil {
+		return ErrSavedKeysNotCurrent
+	}
+	if id, err := current.KeyID.Int64(); err != nil || rawID <= 0 || id != int64(rawID) {
+		return ErrSavedKeysNotCurrent
+	}
+	want, err := gen.NormalizePeerPublicKeyB64(current.PublicKey)
+	if err != nil {
+		return ErrSavedKeysNotCurrent
+	}
+	if got, err := gen.NormalizePeerPublicKeyB64(public); err != nil || got != want {
+		return ErrSavedKeysNotCurrent
+	}
+	return nil
 }
 
 func exportKeys(ctx context.Context, api API, res *line.LoginResult) (map[string]string, error) {
@@ -439,6 +568,10 @@ func (e *RemoteError) Error() string {
 	}
 	if errors.Is(e.cause, context.DeadlineExceeded) {
 		return "LINE command deadline exceeded"
+	}
+	if e.Action == "certificate login" {
+		// The cause is unknown; the request is not repeated without the certificate.
+		return "LINE login with this device's saved certificate failed; your saved session was not changed. Check your connection and account settings, or run line login --email you@example.com --require-pin to verify with a PIN instead"
 	}
 	if line.IsAuthError(e.cause) {
 		if e.Action == "token refresh" {

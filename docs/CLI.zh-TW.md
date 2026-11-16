@@ -102,11 +102,12 @@ line send
 | --- | --- |
 | `line login --qr` | 明確選擇預設的 QR 登入。 |
 | `line login --email ADDRESS` | 使用 LINE 帳號已設定的電子郵件、密碼與手機驗證。 |
+| `line login --email ADDRESS --require-pin` | 電子郵件登入時一律在手機上驗證，不傳送本裝置已儲存的憑證。 |
 | `line login --headless --email ADDRESS` | 在 Linux 使用電子郵件登入與無頭環境儲存。 |
 | `line login --qr-url` | 將一次性 QR 碼內容交給可信任的本機工具。 |
 | `line login --force` | 略過取代已儲存工作階段前的確認。 |
 
-`--email` 不能搭配 `--qr` 或 `--qr-url`。兩種 QR 方式都需要互動式輸入終端機，
+`--email` 不能搭配 `--qr` 或 `--qr-url`，`--require-pin` 必須搭配 `--email`。兩種 QR 方式都需要互動式輸入終端機，
 但 stdout 可重新導向。進度、QR 碼、PIN 與警告寫入 stderr；最後的成功訊息寫入 stdout。
 
 - **QR 碼太寬：** CLI 會告知所需寬度並建議使用 `--qr-url`，不會裁切 QR 碼。
@@ -121,6 +122,10 @@ line send
 - **缺少 Letter Sealing 金鑰：** 若 LINE 核准登入但未傳回可用金鑰，CLI 不會儲存工作階段，也不會將帳號視為不支援 E2EE。
   LINE 可能已取代原有的 Chrome 類型工作階段，重試可能會再次取代。若帳號已設定電子郵件，可改用該方式登入。
   `Diagnostic: qrCodeLoginV2 metadata` 只包含固定的欄位狀態與數量，不包含金鑰、權杖或伺服器原始回應。
+- **再次以電子郵件登入：** 電子郵件登入會儲存 LINE 的裝置憑證。下次以相同地址執行 `line login --email` 時會傳送此憑證，LINE 可能因此略過手機驗證。
+  此時 LINE 不會傳送新的 Letter Sealing 金鑰：只有已儲存的金鑰與 LINE 上帳號目前的金鑰相符時，CLI 才會沿用，
+  否則不儲存任何內容並建議使用 `--require-pin`。若 LINE 仍要求驗證，會照常顯示 PIN。
+  CLI 不會傳送來自 QR 登入、已登出工作階段或其他地址的憑證，也不會在登入失敗後自動不帶憑證重試。`--require-pin` 一律不傳送憑證。
 
 <a id="saved-sessions-and-cancellation"></a>
 

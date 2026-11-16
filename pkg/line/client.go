@@ -139,7 +139,8 @@ func (c *Client) Login(email, pass, certificate string) (*LoginResult, error) {
 		if err2 != nil {
 			return nil, fmt.Errorf("failed to encrypt password for LSOFF retry: %w", err2)
 		}
-		respBytes, err = c.LoginV2WithType(0, rsaKey2.KeyName, encryptedPass2, "", "")
+		// LINEJS sends the saved certificate on this type-0 login too.
+		respBytes, err = c.LoginV2WithType(0, rsaKey2.KeyName, encryptedPass2, certificate, "")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("login failed: %w", err)

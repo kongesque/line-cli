@@ -49,7 +49,7 @@ func TestQRLoginSelectionAndStreams(t *testing.T) {
 }
 
 func TestLoginInvalidFlagsAndNoninteractiveQRNeverOpenStorage(t *testing.T) {
-	for _, flags := range [][]string{{"--qr", "--email", "you@example.com"}, {"--qr-url", "--email", "you@example.com"}, {"--email", ""}, {"--email", "   "}, {"--password", "secret"}, {"extra"}, nil, {"--qr-url", "--force"}, {"--qr", "--force"}} {
+	for _, flags := range [][]string{{"--qr", "--email", "you@example.com"}, {"--qr-url", "--email", "you@example.com"}, {"--email", ""}, {"--email", "   "}, {"--password", "secret"}, {"extra"}, nil, {"--qr-url", "--force"}, {"--qr", "--force"}, {"--require-pin"}, {"--qr", "--require-pin"}} {
 		t.Run(strings.Join(flags, " "), func(t *testing.T) {
 			a, _, _, _, calls, _ := qrApp(t, "")
 			a.Interactive = false
@@ -288,6 +288,27 @@ func TestNoninteractiveEmailNeedsForceForExistingSession(t *testing.T) {
 				}
 			} else if err == nil || api.logins != 0 || !strings.Contains(err.Error(), "--force") {
 				t.Fatal("replacement without confirmation", err)
+			}
+		})
+	}
+}
+
+func TestEmailLoginSavedCertificateAndRequirePIN(t *testing.T) {
+	for _, requirePIN := range []bool{false, true} {
+		t.Run(fmt.Sprint(requirePIN), func(t *testing.T) {
+			a, api, _, _, _, _ := qrApp(t, "")
+			a.Manager.Store = &testStore{state: &session.State{AccessToken: "old", Generation: "old", MID: "u-self", Email: "you@example.com",
+				NoE2EE: true, Certificate: "saved-certificate", CertificateOrigin: "email"}}
+			flags := []string{"login", "--email", "you@example.com", "--force"}
+			want := "saved-certificate"
+			if requirePIN {
+				flags, want = append(flags, "--require-pin"), ""
+			}
+			if err := a.Run(flags); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(api.loginCertificates, ",") != want {
+				t.Fatalf("sent certificates %q, want %q", api.loginCertificates, want)
 			}
 		})
 	}

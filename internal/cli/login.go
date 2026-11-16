@@ -11,21 +11,22 @@ import (
 )
 
 type loginOptions struct {
-	email                  string
-	qrURL, force, headless bool
+	email                              string
+	qrURL, force, headless, requirePIN bool
 }
 
 func (a *App) loginCommand(args []string) error {
 	fs := newFlagSet("login")
 	h := commandHelp{Command: "login", Usage: []string{"line login [--qr | --email ADDRESS] [options]"},
 		About:    "Sign in by QR code (the default) or email and password, with approval on your\nphone. LINE allows one Chrome-style session, so signing in here may sign out\nLINE for Chrome or another Chrome-style client.",
-		Groups:   []flagGroup{{"Sign-in method", []string{"qr", "email", "qr-url"}}, {"Session", []string{"force", "headless"}}},
+		Groups:   []flagGroup{{"Sign-in method", []string{"qr", "email", "qr-url", "require-pin"}}, {"Session", []string{"force", "headless"}}},
 		Examples: []string{"line login", "line login --email you@example.com", "line login --headless"}}
 	var options loginOptions
 	var qr bool
 	fs.StringVar(&options.email, "email", "", "use email/password login with this address")
 	fs.BoolVar(&qr, "qr", false, "sign in using a QR code (default)")
 	fs.BoolVar(&options.qrURL, "qr-url", false, "show the sensitive one-time URL instead of a terminal QR code")
+	fs.BoolVar(&options.requirePIN, "require-pin", false, "email login: don't send this device's saved certificate; verify with a PIN on your phone")
 	fs.BoolVar(&options.force, "force", false, "skip saved-session replacement confirmation")
 	fs.BoolVar(&options.headless, "headless", false, "Linux: enroll headless host-key storage; preserve existing protection")
 	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
@@ -52,6 +53,9 @@ func (a *App) loginCommand(args []string) error {
 	}
 	if emailSet && options.email == "" {
 		return errors.New("--email requires a nonempty address. LINE was not contacted")
+	}
+	if options.requirePIN && !emailSet {
+		return errors.New("--require-pin requires --email. LINE was not contacted")
 	}
 	if options.headless && a.NewHeadlessLogin == nil {
 		return loginLocalError(session.ErrHeadlessUnsupported)
@@ -91,7 +95,7 @@ func (a *App) performLogin(options loginOptions) (bool, error) {
 		return false, loginLocalError(err)
 	}
 	if options.email != "" {
-		err = a.loginEmail(options.email)
+		err = a.loginEmail(options.email, session.EmailLoginOptions{RequirePIN: options.requirePIN})
 	} else {
 		err = a.loginQR(options)
 	}

@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -85,6 +84,7 @@ type fakeAPI struct {
 	API
 	loginResults  []*line.LoginResult
 	loginCalls    int
+	loginCerts    []string
 	waitResult    *line.LoginResult
 	waitNoE2EE    bool
 	refreshResult *line.TokenV3IssueResult
@@ -93,9 +93,7 @@ type fakeAPI struct {
 }
 
 func (f *fakeAPI) Login(email, password, certificate string) (*line.LoginResult, error) {
-	if certificate != "" {
-		return nil, errors.New("unexpected certificate reuse")
-	}
+	f.loginCerts = append(f.loginCerts, certificate)
 	res := f.loginResults[f.loginCalls]
 	f.loginCalls++
 	return res, nil

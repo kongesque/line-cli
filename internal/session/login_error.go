@@ -47,6 +47,10 @@ func (e *LoginError) Error() string {
 		return "LINE approved login, but this device could not save the new session. Run line auth status --check for local storage diagnostics." + displaced
 	}
 	if e.Approved {
+		if errors.Is(e.cause, ErrSavedKeysNotCurrent) {
+			return "LINE accepted this device's saved certificate but sent no Letter Sealing keys, and the saved keys are not the account's current keys. The new session was not saved." + displaced +
+				" Run line login --email you@example.com --require-pin to verify with a PIN and get fresh keys."
+		}
 		var metadata *line.QRMetadataError
 		if errors.As(e.cause, &metadata) {
 			// Diagnostic holds only fixed words and a count, never server text.
