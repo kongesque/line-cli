@@ -1089,7 +1089,7 @@ scripts yet.
 
 ### Build from source
 
-You need Git and Go 1.27.3. macOS also needs Xcode Command Line Tools
+You need Git and Go 1.27.4. macOS also needs Xcode Command Line Tools
 and CGO for Keychain support.
 
 On macOS or Linux:

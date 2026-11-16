@@ -231,7 +231,7 @@ values, and private messages.
 
 ## Build and contribute
 
-Source builds require **Go 1.27.3**; macOS also needs Xcode Command Line Tools
+Source builds require **Go 1.27.4**; macOS also needs Xcode Command Line Tools
 and CGO. See [build from source](docs/CLI.md#build-from-source) and
 [contributing](CONTRIBUTING.md) for setup and development checks.
 

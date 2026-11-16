@@ -1051,7 +1051,7 @@ Homebrewはまだこれらのスクリプトをインストールしません。
 
 ### ソースからビルドする
 
-GitとGo 1.27.3が必要です。macOSではKeychain対応のため、Xcode Command Line ToolsとCGOも必要です。
+GitとGo 1.27.4が必要です。macOSではKeychain対応のため、Xcode Command Line ToolsとCGOも必要です。
 
 macOSまたはLinux：
 
