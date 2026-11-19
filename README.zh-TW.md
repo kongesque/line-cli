@@ -55,11 +55,17 @@ sudo apt install libsecret-tools gnome-keyring
 irm https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-release.ps1 | iex
 ```
 
-安裝程式會驗證檢查碼，並將 `line.exe` 加入使用者的 `PATH`。
-必要時請重新開啟 PowerShell。Windows 不需要額外安裝金鑰圈套件。
+安裝程式會驗證檢查碼，將 `line.exe` 安裝到 `%LOCALAPPDATA%\line-cli\bin`，
+並將該資料夾加入使用者的 `PATH`。
+安裝完成後請開啟新的 PowerShell 視窗，才能找到 `line`。Windows 不需要額外安裝金鑰圈套件。
 
 你也可以[下載發行檔](https://github.com/kongesque/line-cli/releases/latest)
 或[從原始碼建置](#build-and-contribute)。發行檔尚未經過數位簽署或公證。
+
+如果 Windows 顯示「An Application Control policy has blocked this file」，
+表示 Smart App Control 拒絕執行未經簽署的 `line.exe`。請關閉 Smart App Control
+（關閉後，該 Windows 安裝將無法再次開啟此功能），或
+[從原始碼建置](#build-and-contribute)。
 
 確認安裝結果：
 
