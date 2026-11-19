@@ -56,12 +56,19 @@ sudo apt install libsecret-tools gnome-keyring
 irm https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-release.ps1 | iex
 ```
 
-ตัวติดตั้งจะตรวจสอบ checksum และเพิ่ม `line.exe` ลงใน `PATH` ของผู้ใช้
-เปิด PowerShell ใหม่หากจำเป็น Windows ไม่ต้องติดตั้งแพ็กเกจ keyring เพิ่มเติม
+ตัวติดตั้งจะตรวจสอบ checksum, ติดตั้ง `line.exe` ลงใน `%LOCALAPPDATA%\line-cli\bin`
+และเพิ่มโฟลเดอร์นั้นลงใน `PATH` ของผู้ใช้
+หลังติดตั้งให้เปิดหน้าต่าง PowerShell ใหม่ เพื่อให้พบคำสั่ง `line`
+Windows ไม่ต้องติดตั้งแพ็กเกจ keyring เพิ่มเติม
 
 คุณยังสามารถ[ดาวน์โหลดรีลีส](https://github.com/kongesque/line-cli/releases/latest)
 หรือ[บิลด์จากซอร์สโค้ด](#build-and-contribute)ได้ ไบนารีของรีลีสยังไม่มีลายเซ็นดิจิทัล
 และยังไม่ได้ผ่าน notarization
+
+หาก Windows แสดงข้อความ "An Application Control policy has blocked this file"
+แสดงว่า Smart App Control ปฏิเสธการรัน `line.exe` ที่ไม่มีลายเซ็น
+ให้ปิด Smart App Control (การปิดนี้ย้อนกลับไม่ได้สำหรับการติดตั้ง Windows นั้น) หรือ
+[บิลด์จากซอร์สโค้ด](#build-and-contribute)
 
 ตรวจสอบการติดตั้ง:
 

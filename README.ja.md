@@ -56,12 +56,19 @@ sudo apt install libsecret-tools gnome-keyring
 irm https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-release.ps1 | iex
 ```
 
-インストーラーがチェックサムを検証し、`line.exe` をユーザーの `PATH` に追加します。
-必要に応じてPowerShellを開き直してください。Windowsでは追加のキーリング用パッケージは不要です。
+インストーラーがチェックサムを検証し、`line.exe` を `%LOCALAPPDATA%\line-cli\bin` に
+インストールして、そのフォルダーをユーザーの `PATH` に追加します。
+インストール後は新しいPowerShellウィンドウを開いてください。`line` が見つかるようになります。
+Windowsでは追加のキーリング用パッケージは不要です。
 
 [リリースをダウンロード](https://github.com/kongesque/line-cli/releases/latest)するか、
 [ソースからビルド](#build-and-contribute)することもできます。リリース版バイナリは
 署名・公証されていません。
+
+Windowsに「An Application Control policy has blocked this file」と表示される場合は、
+Smart App Controlが署名されていない `line.exe` の実行を拒否しています。
+Smart App Controlをオフにする（一度オフにすると、そのWindowsでは再びオンにできません）か、
+[ソースからビルド](#build-and-contribute)してください。
 
 インストールを確認します。
 

@@ -54,12 +54,18 @@ keyring, use the headless login below.
 irm https://raw.githubusercontent.com/kongesque/line-cli/main/scripts/install-release.ps1 | iex
 ```
 
-The installer verifies the checksum and adds `line.exe` to your user `PATH`.
-Reopen PowerShell if needed. Windows needs no additional keyring package.
+The installer verifies the checksum, installs `line.exe` into
+`%LOCALAPPDATA%\line-cli\bin`, and adds that folder to your user `PATH`.
+Open a new PowerShell window afterwards so `line` is found. Windows needs no
+additional keyring package.
 
 You can also [download a release](https://github.com/kongesque/line-cli/releases/latest)
 or [build from source](#build-and-contribute). Release binaries are unsigned and
 not notarized.
+
+If Windows reports "An Application Control policy has blocked this file", Smart
+App Control is rejecting the unsigned `line.exe`. Turn it off (this is permanent
+for that Windows install) or [build from source](#build-and-contribute).
 
 Check your installation:
 
