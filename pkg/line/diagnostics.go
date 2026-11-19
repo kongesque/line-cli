@@ -38,6 +38,18 @@ func RequestDiagnostics(err error) *RequestDiagnostic {
 	if errors.Is(err, ErrMissingMessageReceipt) {
 		return &RequestDiagnostic{Kind: "missing_receipt"}
 	}
+	var squareApplication *SquareApplicationError
+	if errors.As(err, &squareApplication) {
+		if squareApplication.ApplicationException == nil {
+			return &RequestDiagnostic{Kind: "square_application", Exception: "TApplicationException"}
+		}
+		code := int(squareApplication.ApplicationException.TypeId())
+		return &RequestDiagnostic{
+			Kind:          "square_application",
+			Exception:     "TApplicationException",
+			ExceptionCode: &code,
+		}
+	}
 	var diagnostic *diagnosticError
 	if errors.As(err, &diagnostic) {
 		return &RequestDiagnostic{Kind: diagnostic.kind}

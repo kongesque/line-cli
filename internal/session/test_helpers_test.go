@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
@@ -90,6 +91,20 @@ type fakeAPI struct {
 	refreshResult *line.TokenV3IssueResult
 	refreshErr    error
 	refreshCalls  int
+	squareClient  *line.SquareClient
+}
+
+type sessionRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn sessionRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func (f *fakeAPI) SquareClient() *line.SquareClient {
+	if f.squareClient == nil {
+		f.squareClient = line.NewSquareClient(line.NewClient("synthetic-session-token"))
+	}
+	return f.squareClient
 }
 
 func (f *fakeAPI) Login(email, password, certificate string) (*line.LoginResult, error) {

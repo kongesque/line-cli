@@ -5,12 +5,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kongesque/line-cli/pkg/line"
 )
+
+func TestDoSquareReadContextRejectsUnregisteredOperation(t *testing.T) {
+	s := &memoryStore{state: &State{AccessToken: "existing-token"}}
+	f := &fakeAPI{}
+	lineClient := line.NewClient("synthetic-session-token")
+	dispatched := 0
+	lineClient.HTTPClient.Transport = sessionRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		dispatched++
+		return nil, errors.New("unexpected Square transport dispatch")
+	})
+	f.squareClient = line.NewSquareClient(lineClient)
+	m := testManager(s, f)
+	_, err := m.DoSquareReadContext(context.Background(), line.SquareReadOperation("sendMessage"), nil)
+	if !errors.Is(err, line.ErrSquareOperationNotAllowed) || dispatched != 0 {
+		t.Fatalf("err = %v, dispatched = %d", err, dispatched)
+	}
+}
 
 func TestLoginPreservesKeysAndV3TokensAfterPIN(t *testing.T) {
 	s := &memoryStore{}

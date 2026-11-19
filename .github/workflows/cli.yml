@@ -15,6 +15,47 @@ env:
   LINE_CLI_LIVE_SECURITY_SEND: "0"
 
 jobs:
+  quality:
+    name: Square security and full regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+          cache: true
+      - name: Verify security toolchain
+        shell: bash
+        run: ./scripts/check-toolchain.sh
+      - name: Verify dependency integrity
+        run: |
+          go mod verify
+          go mod tidy -diff
+      - name: Check Go formatting
+        shell: bash
+        run: test -z "$(gofmt -l .)"
+      - name: Run full repository test suite
+        run: go test ./...
+      - name: Vet supported packages (generated LTSM excluded)
+        run: |
+          echo "pkg/ltsm is excluded because generated wbc_generated.go emits self-assignment vet diagnostics."
+          echo "Its full regression tests still run in the crypto job."
+          go vet ./internal/... ./cmd/line ./pkg/line ./pkg/e2ee ./pkg
+      - name: Race-test Square and session packages
+        run: go test -race ./pkg/line ./internal/session
+      - name: Run Square transport security gates
+        shell: bash
+        run: |
+          go test -count=1 -v ./pkg/line -run '^(TestCompactProtocolGoldenBytes|TestEncodeSquareRequest|TestDecodeSquareSuccess|TestDecodeSquareApplicationException|TestDecodeSquareUnknownResultStructIsOpaque|TestDecodeSquareMalformedTruncated|TestSquareHTTPStatusAndOversizedResponse|TestSquareUnknownOperationsCannotSendCredentials|TestSquareAllowlistBuildsExactHTTPSEndpoint|TestSquareRedirectRejectedWithoutCredentialForwarding|TestSquareContextCancellationAndTimeout|TestTalkRPCRegressionPathUnchanged)$'
+          go test -count=1 -v ./internal/session -run '^TestDoSquareReadContextRejectsUnregisteredOperation$'
+      - name: Build CLI
+        run: ./build.sh
+      - name: Explain protocol fixture scope
+        run: |
+          echo "Compact Protocol golden bytes are independent generic v1 fixtures."
+          echo "They are not Rust line-rs interoperability evidence."
+
   crypto:
     name: Runner and LTSM regressions
     runs-on: ubuntu-latest

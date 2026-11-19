@@ -35,6 +35,15 @@ Its separate crypto job runs the full runner/LTSM regression command with
 `CGO_ENABLED=0`, a 20-minute test timeout, and a 30-minute job limit. Live LINE and
 disposable booted-VM checks remain manual.
 
+The `Square security and full regression` job runs `go test ./...`, Go formatting,
+module verification/tidiness, a CLI build, and race tests for `pkg/line` and
+`internal/session`. It also runs the Compact Protocol golden fixture and focused
+Square transport security tests. `go vet` uses the contributor-supported package
+set and excludes generated `pkg/ltsm/wbc_generated.go`, which emits existing
+self-assignment diagnostics; the LTSM tests still run in the crypto job. The
+generic Compact Protocol golden fixture is not Rust `line-rs` compatibility
+evidence.
+
 ## Test suites
 
 | Suite | Location | Execution |

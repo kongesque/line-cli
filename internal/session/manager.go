@@ -407,6 +407,30 @@ func (m *Manager) DoContext(ctx context.Context, call func(API) error) error {
 	return m.do(ctx, call, true)
 }
 
+// DoSquareReadContext runs one allowlisted Square read through the existing
+// session lifecycle. The caller chooses only a registered operation and its
+// validated arguments; it cannot provide a URL, method, or arbitrary callback.
+//
+// Thrift application/service exceptions are not assumed to represent auth;
+// only HTTP/auth evidence classified by the existing line package participates
+// in login invalidation and refresh handling until a verified mapping exists.
+func (m *Manager) DoSquareReadContext(ctx context.Context, operation line.SquareReadOperation, arguments []line.SquareField) (*line.SquareReadResponse, error) {
+	var response *line.SquareReadResponse
+	err := m.do(ctx, func(api API) error {
+		provider, ok := api.(interface{ SquareClient() *line.SquareClient })
+		if !ok {
+			return errors.New("session API does not provide the Square transport")
+		}
+		var err error
+		response, err = provider.SquareClient().CallRead(ctx, operation, arguments)
+		return err
+	}, true)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // Mutate refreshes credentials but never replays the operation, even on auth errors.
 // A lost response may mean the server already accepted the mutation.
 func (m *Manager) Mutate(call func(API) error) error {
