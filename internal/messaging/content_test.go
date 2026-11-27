@@ -111,7 +111,7 @@ func TestAllowlistedContentAndRichBounds(t *testing.T) {
 		{line.Message{ContentType: 17}, "rich", "unsupported"},
 	}
 	for _, tc := range cases {
-		got := decodeContent(&tc.msg, false, "")
+		got := decodeContent("u-peer", &tc.msg, false, "")
 		if got.Kind != tc.kind || got.Status != tc.status {
 			t.Fatalf("got %+v", got)
 		}
@@ -160,10 +160,10 @@ func TestWireLocationMissingCoordinatesNeverBecomesZero(t *testing.T) {
 		if err := json.Unmarshal([]byte(`{"contentType":15,"location":`+raw+`}`), &msg); err != nil {
 			t.Fatal(err)
 		}
-		if got := decodeContent(&msg, false, ""); got.Status != "malformed_metadata" || got.Location != nil {
+		if got := decodeContent("u-peer", &msg, false, ""); got.Status != "malformed_metadata" || got.Location != nil {
 			t.Fatal("invented location", got)
 		}
-		if got := decodeContent(&line.Message{}, true, `{"location":`+raw+`}`); got.Status != "malformed_metadata" || got.Location != nil {
+		if got := decodeContent("u-peer", &line.Message{}, true, `{"location":`+raw+`}`); got.Status != "malformed_metadata" || got.Location != nil {
 			t.Fatal("invented encrypted location", got)
 		}
 	}
@@ -171,7 +171,7 @@ func TestWireLocationMissingCoordinatesNeverBecomesZero(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"contentType":15,"location":{"latitude":0,"longitude":0}}`), &msg); err != nil {
 		t.Fatal(err)
 	}
-	if got := decodeContent(&msg, false, ""); got.Status != "ok" || got.Location == nil {
+	if got := decodeContent("u-peer", &msg, false, ""); got.Status != "ok" || got.Location == nil {
 		t.Fatal("rejected actual zero coordinates")
 	}
 }
@@ -184,5 +184,368 @@ func TestAttachmentEncryptionMarkersDoNotPermitPlaintextProjection(t *testing.T)
 		if !got.Encrypted || got.Content.Status != "decryption_failed" || got.Content.Attachment != nil || crypto.decryptCalls != 0 || f.sends != 0 || f.registrations != 0 {
 			t.Fatalf("unsafe marker %s: %+v", key, got.Content)
 		}
+	}
+}
+
+func TestPostNotificationNativeTypesAndWrappers(t *testing.T) {
+	c, _, _, _ := setup(t, true)
+
+	// Native type 16 Note (multiline, GB)
+	noteMsg := &line.Message{
+		ID: "5001", From: "u-alice", To: "c1234", ToType: 2, ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   " gb ",
+			"text":          "Packing checklist\nTent, stove, headlamps",
+			"postEndUrl":    "https://line.me/R/group/home/posts/post?homeId=c1234&postId=119988",
+			"albumName":     strings.Repeat("x", maxContentBytes+1), // ignored on Notes
+			"chatId":        "invalid chat id",                      // ignored on Notes
+			"previewMedias": "{bad json",                            // ignored on Notes
+			"ENC_KM":        "must-not-leak",
+			"UNKNOWN_KEY":   "hidden-meta",
+		},
+	}
+	gotNote := c.Decode("c1234", noteMsg)
+	if gotNote.Status != "unsupported" || gotNote.Text != "" || gotNote.Encrypted {
+		t.Fatalf("native 16 legacy projection changed: %+v", gotNote)
+	}
+	if gotNote.Content.Kind != "post_notification" || gotNote.Content.Status != "ok" || gotNote.Content.Text != "" || gotNote.Content.Post == nil {
+		t.Fatalf("note decode: %+v", gotNote.Content)
+	}
+	p := gotNote.Content.Post
+	if p.Type != "note" || p.Title != "" || p.Text != "Packing checklist\nTent, stove, headlamps" || p.URL != noteMsg.ContentMetadata["postEndUrl"] || p.AlbumID != "" || p.PreviewCount != nil {
+		t.Fatalf("note post fields: %+v", p)
+	}
+	if IsDownloadableMessage(gotNote) {
+		t.Fatal("note must not be downloadable")
+	}
+
+	// Native type 16 Album with albumIdV2 preferred over albumId, and same-chat previews
+	albumMsg := &line.Message{
+		ID: "5002", From: "u-bob", To: "c1234", ToType: 2, ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"albumName":     "  Summit photos  ",
+			"postEndUrl":    "line://group/home/albums/album?albumId=123&albumIdV2=abc-v2",
+			"chatId":        "c1234",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"},{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"},{"svc":"album","sid":"a","mediaOid":"vid-1","mediaType":"V"},{"svc":"album","sid":"a","mediaOid":"oid-2","mediaType":"I"}]`,
+			"ENC_KM":        "secret-key",
+		},
+	}
+	gotAlbum := c.Decode("c1234", albumMsg)
+	if gotAlbum.Content.Kind != "post_notification" || gotAlbum.Content.Status != "ok" || gotAlbum.Content.Post == nil {
+		t.Fatalf("album decode: %+v", gotAlbum.Content)
+	}
+	ap := gotAlbum.Content.Post
+	if ap.Type != "album" || ap.Title != "Summit photos" || ap.AlbumID != "abc-v2" || ap.PreviewCount == nil || *ap.PreviewCount != 2 {
+		t.Fatalf("album post fields: %+v", ap)
+	}
+	if !IsDownloadableMessage(gotAlbum) {
+		t.Fatal("same-chat album with previews should be downloadable")
+	}
+	// Allowlist leak check
+	marshaled, _ := json.Marshal(gotAlbum.Content)
+	for _, secret := range []string{"oid-1", "oid-2", "vid-1", "c1234", "ENC_KM", "secret-key", "previewMedias"} {
+		if strings.Contains(string(marshaled), secret) {
+			t.Fatalf("leaked private metadata %q in %s", secret, marshaled)
+		}
+	}
+
+	// Fallback to albumId when albumIdV2 is absent
+	albumV1 := &line.Message{
+		ID: "5003", ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType": "AB",
+			"albumName":   "Legacy Album",
+			"postEndUrl":  "https://line.me/R/group/home/albums/album?albumId=789",
+		},
+	}
+	gotV1 := c.Decode("c1234", albumV1)
+	if gotV1.Content.Status != "ok" || gotV1.Content.Post.AlbumID != "789" || gotV1.Content.Post.PreviewCount == nil || *gotV1.Content.Post.PreviewCount != 0 {
+		t.Fatalf("album v1 decode: %+v", gotV1.Content)
+	}
+
+	// Unknown serviceType and nil metadata
+	for _, meta := range []map[string]string{nil, {}, {"serviceType": "XY", "text": "Hello"}} {
+		got := c.Decode("c1234", &line.Message{ID: "5004", ContentType: 16, ContentMetadata: meta})
+		if got.Content.Kind != "post_notification" || got.Content.Status != "ok" || got.Content.Post == nil || got.Content.Post.Type != "unknown" || got.Content.Post.PreviewCount != nil {
+			t.Fatalf("unknown/nil decode: %+v", got.Content)
+		}
+	}
+
+	// Plaintext type 0 ORGCONTP wrapper: byte-for-byte legacy JSON + detailed projection
+	wrapMsg := &line.Message{
+		ID: "5005", From: "u-alice", To: "c1234", ContentType: 0,
+		Text: "Alice created a note.",
+		ContentMetadata: map[string]string{
+			"ORGCONTP":    "POSTNOTIFICATION",
+			"serviceType": "GB",
+			"text":        "Shared reminder",
+			"postEndUrl":  "https://line.me/R/group/home/posts/post?homeId=c1234&postId=119990",
+		},
+	}
+	gotWrap := c.Decode("c1234", wrapMsg)
+	legacyData, _ := json.Marshal(gotWrap)
+	wantLegacy := `{"id":"5005","from":"u-alice","to":"c1234","created_time":0,"content_type":0,"text":"Alice created a note.","encrypted":false,"status":"plaintext"}`
+	if string(legacyData) != wantLegacy {
+		t.Fatalf("wrapper legacy JSON changed:\ngot:  %s\nwant: %s", legacyData, wantLegacy)
+	}
+	if gotWrap.Content.Kind != "post_notification" || gotWrap.Content.Status != "ok" || gotWrap.Content.Text != "" || gotWrap.Content.Post == nil || gotWrap.Content.Post.Text != "Shared reminder" {
+		t.Fatalf("wrapper detailed decode: %+v", gotWrap.Content)
+	}
+
+	// Plaintext type 0 with Location + ORGCONTP preserves location precedence
+	locWrap := &line.Message{
+		ID: "5006", ContentType: 0,
+		Location:        &line.MessageLocation{Title: "Park", Address: "Main St", Latitude: 25, Longitude: 121},
+		ContentMetadata: map[string]string{"ORGCONTP": "POSTNOTIFICATION", "serviceType": "GB", "text": "spoofed"},
+	}
+	gotLoc := c.Decode("c1234", locWrap)
+	if gotLoc.Content.Kind != "location" || gotLoc.Content.Post != nil || gotLoc.Content.Location == nil {
+		t.Fatalf("location precedence broken: %+v", gotLoc.Content)
+	}
+}
+
+func TestPostNotificationE2EEAndAttachmentBoundaries(t *testing.T) {
+	// Encrypted type 0 with ORGCONTP: decryption success uses authenticated text, never outer post
+	c, _, crypto, _ := setup(t, false)
+	crypto.payload = `{"text":"authenticated hello"}`
+	encWrap := &line.Message{
+		ID: "6001", From: "u-peer", To: "u-self", ContentType: 0,
+		Text:   "outer fallback",
+		Chunks: encryptedChunks(22, 11),
+		ContentMetadata: map[string]string{
+			"e2eeVersion":   "2",
+			"ORGCONTP":      "POSTNOTIFICATION",
+			"serviceType":   "AB",
+			"albumName":     "Spoofed Album",
+			"chatId":        "u-peer",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	got := c.Decode("u-peer", encWrap)
+	if got.Status != "decrypted" || got.Text != "authenticated hello" || got.Content.Kind != "text" || got.Content.Status != "ok" || got.Content.Post != nil || IsDownloadableMessage(got) {
+		t.Fatalf("encrypted type 0 wrapper leaked post: %+v", got)
+	}
+
+	// Encrypted type 0 with ORGCONTP: decryption failure is never bypassed
+	crypto.decryptErr = errors.New("decrypt boom")
+	gotFail := c.Decode("u-peer", encWrap)
+	if gotFail.Status != "decryption_failed" || gotFail.Error == "" || gotFail.Content.Status != "decryption_failed" || gotFail.Content.Post != nil || IsDownloadableMessage(gotFail) {
+		t.Fatalf("encrypted type 0 failure bypassed: %+v", gotFail)
+	}
+	crypto.decryptErr = nil
+
+	// Native encrypted type 16 (chunks or e2eeVersion) -> kind post_notification, status unsupported, no post
+	for _, meta := range []struct {
+		name   string
+		chunks []string
+		ver    string
+	}{
+		{"chunks", encryptedChunks(22, 11), ""},
+		{"e2eeVersion", nil, "2"},
+	} {
+		t.Run("encrypted-native-16-"+meta.name, func(t *testing.T) {
+			beforeCalls := crypto.decryptCalls
+			msg := &line.Message{
+				ID: "6002", From: "u-peer", To: "u-self", ContentType: 16,
+				Chunks: meta.chunks,
+				ContentMetadata: map[string]string{
+					"e2eeVersion":   meta.ver,
+					"serviceType":   "AB",
+					"albumName":     "Hidden",
+					"chatId":        "u-peer",
+					"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+				},
+			}
+			res := c.Decode("u-peer", msg)
+			if !res.Encrypted || res.Status != "unsupported" || res.Text != "" || res.Content.Kind != "post_notification" || res.Content.Status != "unsupported" || res.Content.Post != nil || IsDownloadableMessage(res) {
+				t.Fatalf("encrypted native 16 unsafe: %+v", res)
+			}
+			if crypto.decryptCalls != beforeCalls {
+				t.Fatal("attempted to decrypt unsupported native type 16")
+			}
+		})
+	}
+
+	// ORGCONTP on encrypted attachment (ContentType 14) stays an attachment
+	crypto.payload = `{"fileName":"doc.pdf","keyMaterial":"k"}`
+	att := &line.Message{
+		ID: "6003", From: "u-peer", To: "u-self", ContentType: 14,
+		Chunks: encryptedChunks(22, 11),
+		ContentMetadata: map[string]string{
+			"ORGCONTP":      "POSTNOTIFICATION",
+			"serviceType":   "AB",
+			"albumName":     "Spoofed",
+			"chatId":        "u-peer",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	gotAtt := c.Decode("u-peer", att)
+	if gotAtt.Content.Kind != "file" || gotAtt.Content.Status != "ok" || gotAtt.Content.Post != nil || gotAtt.Content.Attachment == nil || *gotAtt.Content.Attachment.Name != "doc.pdf" {
+		t.Fatalf("attachment diverted to post: %+v", gotAtt.Content)
+	}
+}
+
+func TestPostNotificationURLAndQueryAllowlist(t *testing.T) {
+	cases := []struct {
+		name        string
+		serviceType string
+		rawURL      string
+		wantStatus  string
+		wantURL     string
+		wantAlbumID string
+	}{
+		{"https note post", "GB", "https://line.me/R/group/home/posts/post?homeId=c1234&postId=99", "ok", "https://line.me/R/group/home/posts/post?homeId=c1234&postId=99", ""},
+		{"https home post", "GB", "https://line.me/R/home/public/post?postId=99&source=talk", "ok", "https://line.me/R/home/public/post?postId=99&source=talk", ""},
+		{"line group album", "AB", "line://group/home/albums/album?albumId=12&albumIdV2=v2-id", "ok", "line://group/home/albums/album?albumId=12&albumIdV2=v2-id", "v2-id"},
+		{"line home post", "GB", "line://home/posts/post?postId=55", "ok", "line://home/posts/post?postId=55", ""},
+		{"unknown query param omits url with ok", "GB", "https://line.me/R/group/home/posts/post?postId=99&utm=1", "ok", "", ""},
+		{"unknown query param on album omits url but keeps album_id", "AB", "line://group/home/albums/album?albumId=12&albumIdV2=v2-ok&extra=1", "ok", "", "v2-ok"},
+		{"unrecognized line.me route omits url with ok", "GB", "https://line.me/ti/p/abc", "ok", "", ""},
+		{"unrecognized line:// authority omits url with ok", "GB", "line://nv/profile/abc", "ok", "", ""},
+		{"album_id not extracted on Note", "GB", "line://group/home/albums/album?albumId=12&albumIdV2=v2-id", "ok", "line://group/home/albums/album?albumId=12&albumIdV2=v2-id", ""},
+		{"album_id not extracted on post route", "AB", "https://line.me/R/group/home/posts/post?albumId=12", "ok", "https://line.me/R/group/home/posts/post?albumId=12", ""},
+		{"http rejected", "AB", "http://line.me/R/group/home/albums/album?albumId=12", "malformed_metadata", "", ""},
+		{"javascript rejected", "GB", "javascript:alert(1)", "malformed_metadata", "", ""},
+		{"relative rejected", "GB", "/R/group/home/posts/post?postId=1", "malformed_metadata", "", ""},
+		{"port rejected", "GB", "https://line.me:443/R/group/home/posts/post?postId=1", "malformed_metadata", "", ""},
+		{"userinfo rejected", "GB", "https://user:pass@line.me/R/group/home/posts/post?postId=1", "malformed_metadata", "", ""},
+		{"non-line host rejected", "GB", "https://evil.example/R/group/home/posts/post?postId=1", "malformed_metadata", "", ""},
+		{"invalid percent escaping rejected", "AB", "line://group/home/albums/album?albumId=%ZZ", "malformed_metadata", "", ""},
+		{"control char rejected", "GB", "https://line.me/R/group/home/posts/post?postId=1\n2", "malformed_metadata", "", ""},
+		{"whitespace rejected", "GB", "https://line.me/R/group/home/posts/post?postId=1 2", "malformed_metadata", "", ""},
+		{"embedded credentials in query rejected", "GB", "https://line.me/R/group/home/posts/post?postId=u@host", "malformed_metadata", "", ""},
+		{"duplicate albumId rejected", "AB", "line://group/home/albums/album?albumId=1&albumId=2", "malformed_metadata", "line://group/home/albums/album?albumId=1&albumId=2", ""},
+		{"overlong albumIdV2 rejected", "AB", "line://group/home/albums/album?albumIdV2=" + strings.Repeat("a", 257), "malformed_metadata", "line://group/home/albums/album?albumIdV2=" + strings.Repeat("a", 257), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := &line.Message{
+				ContentType: 16,
+				ContentMetadata: map[string]string{
+					"serviceType": tc.serviceType,
+					"postEndUrl":  tc.rawURL,
+				},
+			}
+			got := decodeContent("c1234", msg, false, "")
+			if got.Status != tc.wantStatus || got.Post == nil || got.Post.URL != tc.wantURL || got.Post.AlbumID != tc.wantAlbumID {
+				t.Fatalf("got status=%s url=%q album_id=%q; want status=%s url=%q album_id=%q",
+					got.Status, got.Post.URL, got.Post.AlbumID, tc.wantStatus, tc.wantURL, tc.wantAlbumID)
+			}
+		})
+	}
+}
+
+func TestPostNotificationPreviewMediasAndChatBinding(t *testing.T) {
+	// No top-level mediaOid fallback when previewMedias is absent or empty
+	noFallback := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType": "AB",
+			"albumName":   "Photos",
+			"chatId":      "c1234",
+			"mediaOid":    "top-level-oid",
+			"mediaType":   "I",
+		},
+	}
+	got := decodeContent("c1234", noFallback, false, "")
+	if got.Status != "ok" || got.Post.PreviewCount == nil || *got.Post.PreviewCount != 0 {
+		t.Fatalf("top-level mediaOid fallback must not be used: %+v", got)
+	}
+
+	// Mixed valid/malformed previewMedias retains valid siblings in order and reports malformed_metadata
+	mixed := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType": "AB",
+			"albumName":   "Mixed",
+			"chatId":      "c1234",
+			"previewMedias": `[
+				{"svc":"album","sid":"a","mediaOid":"good-1","mediaType":"I"},
+				"bad-shape",
+				{"svc":"album","sid":"a","mediaOid":"../escape","mediaType":"I"},
+				{"svc":"album","sid":"a","mediaOid":"good-2","mediaType":"I"},
+				{"svc":"album","sid":"a","mediaOid":"good-1","mediaType":"I"},
+				{"svc":"album","sid":"a","mediaOid":"vid-1","mediaType":"V"}
+			]`,
+		},
+	}
+	parsed := parsePostNotification("c1234", mixed)
+	if parsed.status != "malformed_metadata" || parsed.post.Title != "Mixed" || parsed.post.PreviewCount == nil || *parsed.post.PreviewCount != 2 {
+		t.Fatalf("mixed preview parse: %+v", parsed)
+	}
+	if strings.Join(parsed.oids, ",") != "good-1,good-2" {
+		t.Fatalf("retained oids = %v, want [good-1 good-2]", parsed.oids)
+	}
+
+	// Cap > 64 entries -> malformed_metadata, preview_count 0, title preserved
+	entries := make([]string, 65)
+	for i := range entries {
+		entries[i] = `{"svc":"album","sid":"a","mediaOid":"oid-` + string(rune('a'+i%26)) + `","mediaType":"I"}`
+	}
+	overCap := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"albumName":     "Huge",
+			"chatId":        "c1234",
+			"previewMedias": "[" + strings.Join(entries, ",") + "]",
+		},
+	}
+	gotOver := decodeContent("c1234", overCap, false, "")
+	if gotOver.Status != "malformed_metadata" || gotOver.Post.Title != "Huge" || *gotOver.Post.PreviewCount != 0 {
+		t.Fatalf("over-cap previews: %+v", gotOver)
+	}
+
+	// Invalid JSON, null, non-array -> malformed_metadata
+	for _, bad := range []string{`null`, `{}`, `[bad`, strings.Repeat(" ", maxContentBytes+1)} {
+		m := &line.Message{ContentType: 16, ContentMetadata: map[string]string{"serviceType": "AB", "chatId": "c1234", "previewMedias": bad}}
+		g := decodeContent("c1234", m, false, "")
+		if g.Status != "malformed_metadata" || *g.Post.PreviewCount != 0 {
+			t.Fatalf("bad previewMedias %q accepted: %+v", bad[:min(len(bad), 20)], g)
+		}
+	}
+
+	// Cross-chat album: readable, linkable, status ok, preview_count 0
+	crossChat := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"albumName":     "Other Group Album",
+			"postEndUrl":    "line://group/home/albums/album?albumId=55",
+			"chatId":        "c-other",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	gotCross := decodeContent("c-selected", crossChat, false, "")
+	if gotCross.Status != "ok" || gotCross.Post.Title != "Other Group Album" || gotCross.Post.URL == "" || *gotCross.Post.PreviewCount != 0 {
+		t.Fatalf("cross-chat album: %+v", gotCross)
+	}
+
+	// Missing chatId: status ok, preview_count 0
+	noChat := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	gotNoChat := decodeContent("c-selected", noChat, false, "")
+	if gotNoChat.Status != "ok" || *gotNoChat.Post.PreviewCount != 0 {
+		t.Fatalf("missing chatId album: %+v", gotNoChat)
+	}
+
+	// Syntactically invalid chatId: malformed_metadata, preview_count 0
+	badChat := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"chatId":        "not a mid!",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	gotBadChat := decodeContent("c-selected", badChat, false, "")
+	if gotBadChat.Status != "malformed_metadata" || *gotBadChat.Post.PreviewCount != 0 {
+		t.Fatalf("invalid chatId album: %+v", gotBadChat)
 	}
 }

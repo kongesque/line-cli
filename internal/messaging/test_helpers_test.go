@@ -230,6 +230,10 @@ type fileAPI struct {
 	uploadErr, plainErr              error
 	downloadErr                      error
 	downloads                        int
+	albumPreviewCalls                int
+	albumOID, albumChatID, albumID   string
+	albumData                        []byte
+	albumErr                         error
 }
 
 func (f *fileAPI) UploadOBSWithSID(data []byte, sid string) (string, error) {
@@ -259,6 +263,15 @@ func (f *fileAPI) DownloadOBSWithSIDOptions(_ context.Context, oid, message, sid
 	f.downloads++
 	f.options = opts
 	f.requestOID, f.talkMeta, f.requestSID = oid, message, sid
+	return f.data, f.downloadErr
+}
+
+func (f *fileAPI) DownloadAlbumPreview(_ context.Context, oid, chatID, albumID string) ([]byte, error) {
+	f.albumPreviewCalls++
+	f.albumOID, f.albumChatID, f.albumID = oid, chatID, albumID
+	if f.albumData != nil || f.albumErr != nil {
+		return f.albumData, f.albumErr
+	}
 	return f.data, f.downloadErr
 }
 

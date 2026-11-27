@@ -199,7 +199,7 @@ func (c *Client) DecodeContext(ctx context.Context, chat string, msg *line.Messa
 		item.Status = "decrypted"
 	}
 	payload := ""
-	if item.Encrypted && contentKind(msg.ContentType) != "unsupported" {
+	if item.Encrypted && contentKind(msg.ContentType) != "unsupported" && msg.ContentType != 16 {
 		var err error
 		payload, err = c.decryptPayload(ctx, chat, msg)
 		if err != nil {
@@ -210,7 +210,7 @@ func (c *Client) DecodeContext(ctx context.Context, chat string, msg *line.Messa
 			return item
 		}
 	}
-	item.Content = decodeContent(msg, item.Encrypted, payload)
+	item.Content = decodeContent(chat, msg, item.Encrypted, payload)
 	if item.Encrypted && msg.ContentType == 0 {
 		item.Text = item.Content.Text
 		if item.Content.Status == "malformed_metadata" && item.Content.Text == "" && item.Content.Location == nil {
