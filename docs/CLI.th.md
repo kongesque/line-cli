@@ -381,7 +381,7 @@ line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
 line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-หากไม่รองรับ จะคืน `encryption_required` ก่อนเปลี่ยนแปลงข้อมูลบนเซิร์ฟเวอร์
+หากไม่รองรับ จะคืน `encryption_required` ก่อนส่งข้อความ
 [รายงานการเข้ารหัสของ LINE ปี 2025 (ภาษาอังกฤษ)](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/) อธิบาย TLS, Letter Sealing และ E2EE สำหรับสื่อในแอปทางการรุ่นใหม่ ส่วน CLI นี้ยังต้องตรวจสอบการส่งสื่อแยกต่างหาก
 CLI ตรวจสอบการรองรับการเข้ารหัสไฟล์แยกจากข้อความ ข้อมูลการรองรับที่หายหรือไม่ถูกต้อง คีย์ที่หาย สมาชิกกลุ่มไม่ครบ และข้อผิดพลาดการรับส่ง จะไม่ทำให้ปิด E2EE
 การส่งเข้ากลุ่มที่สั่งโดยตรงเท่านั้นที่ลงทะเบียนคีย์ใหม่ได้ และต้องทราบสมาชิกปัจจุบันครบทุกคน

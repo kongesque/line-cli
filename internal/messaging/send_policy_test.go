@@ -67,6 +67,83 @@ func TestPlaintextConsentCapabilityAndFailureBoundaries(t *testing.T) {
 
 }
 
+type groupRegistrationAPI struct {
+	*fakeAPI
+	wire *line.Client
+}
+
+func (a *groupRegistrationAPI) RegisterE2EEGroupKeyContext(ctx context.Context, version int, chat string, members []string, keyIDs []int, wrapped []string) error {
+	return a.wire.RegisterE2EEGroupKeyContext(ctx, version, chat, members, keyIDs, wrapped)
+}
+
+func TestGroupRegistrationRejectionSendPolicy(t *testing.T) {
+	const tooManyMembers = `{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":100,"reason":"exceed max member"}}`
+	for _, tc := range []struct {
+		name                   string
+		status                 int
+		body                   string
+		transportErr           error
+		allowPlaintext         bool
+		wantRegistrationResult fault.Outcome
+	}{
+		{name: "default", status: http.StatusBadRequest, body: tooManyMembers, allowPlaintext: true, wantRegistrationResult: fault.Rejected},
+		{name: "strict", status: http.StatusBadRequest, body: tooManyMembers, wantRegistrationResult: fault.Rejected},
+		{name: "success_status_rejection", status: http.StatusOK, body: tooManyMembers, allowPlaintext: true, wantRegistrationResult: fault.Rejected},
+		{name: "different_reason", status: http.StatusBadRequest, body: strings.Replace(tooManyMembers, "exceed max member", "different reason", 1), allowPlaintext: true, wantRegistrationResult: fault.Unknown},
+		{name: "gateway_failure", status: http.StatusServiceUnavailable, body: tooManyMembers, allowPlaintext: true, wantRegistrationResult: fault.Unknown},
+		{name: "timeout", transportErr: context.DeadlineExceeded, allowPlaintext: true, wantRegistrationResult: fault.Unknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, f, _, store := setup(t, false)
+			f.groupErr = line.ErrGroupKeyNotFound
+			f.chats = &line.GetChatsResponse{Chats: []line.Chat{{
+				ChatMid: "c-group",
+				Extra: line.ChatExtra{GroupExtra: &line.GroupExtra{
+					MemberMids: line.FlexibleMidMap{"u-self": true, "u-peer": true},
+				}},
+			}}}
+			wire := line.NewClient("synthetic-token")
+			registrations := 0
+			wire.HTTPClient.Transport = claimTransport(func(r *http.Request) (*http.Response, error) {
+				registrations++
+				if tc.transportErr != nil {
+					return nil, tc.transportErr
+				}
+				return claimResponse(r, tc.status, tc.body), nil
+			})
+			api := &groupRegistrationAPI{fakeAPI: f, wire: wire}
+			c.Session.NewClient = func(string) session.API { return api }
+			result, err := c.SendMentionsWithOptionsContext(context.Background(), "c-group", "synthetic text", "", nil, SendOptions{AllowPlaintext: tc.allowPlaintext})
+			if registrations != 1 {
+				t.Fatalf("expected one registration attempt, got %d", registrations)
+			}
+			if tc.wantRegistrationResult == fault.Rejected && tc.allowPlaintext {
+				if err != nil || result == nil || result.Encrypted || result.GroupKeyRegistered || f.sends != 1 || f.sent.Text != "synthetic text" || len(f.sent.Chunks) != 0 || store.state.LastReqSeq == 0 {
+					t.Fatal("expected one persisted-sequence HTTPS/TLS send", err)
+				}
+				return
+			}
+
+			if result != nil || f.sends != 0 || store.state.LastReqSeq != 0 {
+				t.Fatal("expected the send to stop before reserving a sequence")
+			}
+			detail := mutationDetails(t, err)
+			wantStep := fault.Step{Stage: "group_key_registration", Attempted: true, Outcome: tc.wantRegistrationResult}
+			if detail.Mutation.Attempted || detail.Mutation.Outcome != fault.NotAttempted || len(detail.Mutation.Steps) != 1 || detail.Mutation.Steps[0] != wantStep {
+				t.Fatalf("unexpected mutation outcome: %+v", detail.Mutation)
+			}
+			if tc.wantRegistrationResult == fault.Rejected {
+				var safe *fault.Error
+				if !errors.As(err, &safe) || safe.Code != "encryption_required" {
+					t.Fatal("expected encryption_required", err)
+				}
+			} else if detail.Stage != "group_key_registration" || !strings.Contains(err.Error(), "it may have completed") {
+				t.Fatal("expected an uncertain registration failure", err)
+			}
+		})
+	}
+}
+
 func TestSendConsentAcrossContentAndDestinations(t *testing.T) {
 	img := imageFixture(t)
 	for _, chat := range []string{"u-peer", "c-group", "r-room"} {

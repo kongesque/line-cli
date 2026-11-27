@@ -404,8 +404,7 @@ To send only when Letter Sealing is available:
 line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-Strict mode returns `encryption_required` before remote actions if E2EE is
-unavailable.
+Strict mode returns `encryption_required` before sending if E2EE is unavailable.
 [LINE's Encryption Report 2025](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)
 explains TLS, Letter Sealing, and media E2EE in modern official clients; this CLI's
 media interoperability needs separate validation. File encryption support is checked

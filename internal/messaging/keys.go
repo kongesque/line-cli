@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 
 	"github.com/kongesque/line-cli/internal/fault"
@@ -178,9 +179,19 @@ func (c *Client) registerGroupKey(ctx context.Context, chat string, op *fault.Mu
 			return errors.New("could not wrap group key for every member")
 		}
 	}
+	var registrationErr error
 	err = c.attempt(ctx, op, "group_key_registration", false, func(api session.API) error {
-		return api.RegisterE2EEGroupKeyContext(ctx, 1, chat, members, keyIDs, wrapped)
+		registrationErr = api.RegisterE2EEGroupKeyContext(ctx, 1, chat, members, keyIDs, wrapped)
+		return registrationErr
 	})
+	// Classify the RPC reply directly because session errors can include credential recovery.
+	var responseErr *line.ResponseError
+	if errors.As(registrationErr, &responseErr) &&
+		(responseErr.Status == http.StatusOK || responseErr.Status == http.StatusBadRequest) &&
+		line.IsE2EEDisabled(responseErr) {
+		op.Steps[len(op.Steps)-1].Outcome = fault.Rejected
+		return errNoLetterSealing
+	}
 	if err != nil {
 		return fmt.Errorf("group-key registration did not return success; it may have completed; inspect LINE before retrying: %w", err)
 	}
