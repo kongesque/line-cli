@@ -108,12 +108,8 @@ func (r *readableWatch) message(ctx context.Context, e *events.Event) string {
 	}
 	r.lookup(ctx, e.ChatID, m.From)
 	sender := r.name(m.From)
-	body := messagePreview(*m)
-	if m.ContentType == 0 && m.Error == "" && m.Content.Kind != "location" && m.Content.Status != "malformed_metadata" {
-		body = m.Text
-	}
-	// One line per message: mark line breaks, then neutralize control text.
-	body = terminalText(strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", " ↵ "))
+	// One line per message: join sanitized logical lines with a visible marker.
+	body := strings.Join(messageLines(*m), " ↵ ")
 	if chatKind(e.ChatID) == "Direct" {
 		if m.From == r.self && r.self != "" {
 			return fmt.Sprintf("%s  You → %s: %s", stamp, terminalText(r.name(e.ChatID)), body)

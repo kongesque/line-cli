@@ -289,13 +289,21 @@ func (a *App) selectChatWith(selector string, unreadFirst bool) (string, string,
 }
 
 func (a *App) selectMessage(chat, command string) (string, error) {
-	unlock, err := a.lock()
+	m, err := a.selectMessageDetail(chat, command)
 	if err != nil {
 		return "", err
 	}
+	return m.ID, nil
+}
+
+func (a *App) selectMessageDetail(chat, command string) (messaging.Message, error) {
+	unlock, err := a.lock()
+	if err != nil {
+		return messaging.Message{}, err
+	}
 	if err = a.rememberAccount(); err != nil {
 		unlock()
-		return "", err
+		return messaging.Message{}, err
 	}
 	id, err := a.resolveChat(chat)
 	var messages []messaging.Message
@@ -308,19 +316,35 @@ func (a *App) selectMessage(chat, command string) (string, error) {
 	}
 	unlock()
 	if err != nil {
-		return "", err
+		return messaging.Message{}, err
 	}
 	options := make([]choice, 0, len(messages))
+	byID := make(map[string]messaging.Message, len(messages))
 	for _, m := range messages {
 		if command == "unsend" && m.From != a.promptAccount.mid {
 			continue
 		}
-		if command == "download" && !messaging.IsDownloadable(m.ContentType) {
+		if command == "download" && !messaging.IsDownloadableMessage(m) {
 			continue
 		}
-		body := messagePreview(m)
-		if r := []rune(body); len(r) > 90 {
-			body = string(r[:90]) + "…"
+		lines := messageLines(m)
+		previewSuffix := ""
+		if command == "download" && m.Content.Post != nil && m.Content.Post.Type == "album" && m.Content.Post.PreviewCount != nil && *m.Content.Post.PreviewCount > 1 {
+			previewSuffix = fmt.Sprintf(" (%d previews)", *m.Content.Post.PreviewCount)
+		}
+		var body string
+		if previewSuffix != "" && len(lines) > 0 && len([]rune(lines[0]+previewSuffix)) <= 90 {
+			lines[0] += previewSuffix
+			body = strings.Join(lines, " ↵ ")
+			if r := []rune(body); len(r) > 90 {
+				body = string(r[:90]) + "…"
+			}
+		} else {
+			body = strings.Join(lines, " ↵ ")
+			if r := []rune(body); len(r) > 90 {
+				body = string(r[:90]) + "…"
+			}
+			body += previewSuffix
 		}
 		if command == "download" {
 			stamp := "Time unavailable"
@@ -330,14 +354,19 @@ func (a *App) selectMessage(chat, command string) (string, error) {
 			body += " · " + stamp
 		}
 		options = append(options, choice{m.ID, body + " · ID " + m.ID})
+		byID[m.ID] = m
 	}
 	if len(options) == 0 {
 		if command == "download" {
-			return "", errors.New("no downloadable media among the latest 100 messages")
+			return messaging.Message{}, errors.New("no downloadable media among the latest 100 messages")
 		}
-		return "", errors.New("no eligible messages among the latest 100")
+		return messaging.Message{}, errors.New("no eligible messages among the latest 100")
 	}
-	return a.choose("Choose a message to "+command, options, true)
+	chosen, err := a.choose("Choose a message to "+command, options, true)
+	if err != nil {
+		return messaging.Message{}, err
+	}
+	return byID[chosen], nil
 }
 
 // hasUnread reports a known positive unread count.

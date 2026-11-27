@@ -20,11 +20,15 @@ const downloadChat = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 type mediaDownloadAPI struct {
 	session.API
-	message    *line.Message
-	data       []byte
-	err        error
-	downloads  int
-	onDownload func()
+	message           *line.Message
+	data              []byte
+	err               error
+	downloads         int
+	albumPreviewCalls int
+	albumOID          string
+	albumChatID       string
+	albumID           string
+	onDownload        func()
 }
 
 func (f *mediaDownloadAPI) GetRecentMessagesV2(string, int) ([]*line.Message, error) {
@@ -32,6 +36,14 @@ func (f *mediaDownloadAPI) GetRecentMessagesV2(string, int) ([]*line.Message, er
 }
 func (f *mediaDownloadAPI) DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error) {
 	f.downloads++
+	if f.onDownload != nil {
+		f.onDownload()
+	}
+	return f.data, f.err
+}
+func (f *mediaDownloadAPI) DownloadAlbumPreview(_ context.Context, oid, chatID, albumID string) ([]byte, error) {
+	f.albumPreviewCalls++
+	f.albumOID, f.albumChatID, f.albumID = oid, chatID, albumID
 	if f.onDownload != nil {
 		f.onDownload()
 	}
@@ -264,4 +276,192 @@ func TestGuidedDownloadEmptyAndDash(t *testing.T) {
 
 func (f *mediaDownloadAPI) GetRecentMessagesV2Context(_ context.Context, arg0 string, arg1 int) ([]*line.Message, error) {
 	return f.GetRecentMessagesV2(arg0, arg1)
+}
+
+func TestDownloadAlbumPreviewCLIAndValidation(t *testing.T) {
+	const groupChat = "Caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	albumMsg := func() *line.Message {
+		return &line.Message{
+			ID: "5002", From: "u-bob", To: groupChat, ToType: 2, ContentType: 16,
+			ContentMetadata: map[string]string{
+				"serviceType":   "AB",
+				"albumName":     "Summit photos",
+				"postEndUrl":    "line://group/home/albums/album?albumId=123&albumIdV2=abc-v2",
+				"chatId":        groupChat,
+				"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"},{"svc":"album","sid":"a","mediaOid":"oid-2","mediaType":"I"},{"svc":"album","sid":"a","mediaOid":"oid-3","mediaType":"I"}]`,
+			},
+		}
+	}
+
+	// --preview 0 rejected before lock/storage/temp-file creation
+	t.Run("preview-zero-before-lock", func(t *testing.T) {
+		dir := t.TempDir()
+		outPath := filepath.Join(dir, "thumb.jpg")
+		a, _, out, _ := downloadApp(t, 16)
+		a.Lock = func() (func(), error) { t.Fatal("--preview 0 opened session lock"); return nil, nil }
+		err := a.Run([]string{"--error-format=json", "download", groupChat, "--message", "5002", "--preview", "0", "--output", outPath})
+		var me *MachineError
+		if !errors.As(err, &me) || me.Detail.Code != "invalid_arguments" || me.Detail.Stage != "validation" || out.Len() != 0 {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Fatal("--preview 0 created a temp file")
+		}
+	})
+
+	// Scripted --preview 2 with --json exact 3-field receipt
+	t.Run("scripted-preview-json", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "summit-2.jpg")
+		a, api, out, _ := downloadApp(t, 16)
+		api.message = albumMsg()
+		api.data = []byte("thumb-2-bytes")
+		if err := a.Run([]string{"download", groupChat, "--message", "5002", "--preview", "2", "--output", path, "--json"}); err != nil {
+			t.Fatal(err)
+		}
+		if api.albumPreviewCalls != 1 || api.albumOID != "oid-2" || api.albumChatID != groupChat || api.albumID != "abc-v2" {
+			t.Fatalf("wrong album call: calls=%d oid=%q chat=%q album=%q", api.albumPreviewCalls, api.albumOID, api.albumChatID, api.albumID)
+		}
+		var receipt map[string]any
+		if err := json.Unmarshal(out.Bytes(), &receipt); err != nil || len(receipt) != 3 || receipt["path"] != path || receipt["message_id"] != "5002" || receipt["bytes"] != float64(len(api.data)) {
+			t.Fatalf("receipt changed: %s", out.String())
+		}
+		saved, err := os.ReadFile(path)
+		if err != nil || string(saved) != "thumb-2-bytes" {
+			t.Fatalf("saved bytes = %q, %v", saved, err)
+		}
+	})
+
+	// Scripted --output - binary stdout & oversized failure leaves nothing
+	t.Run("scripted-stdout-and-oversized-failure", func(t *testing.T) {
+		a, api, out, diag := downloadApp(t, 16)
+		api.message = albumMsg()
+		api.data = []byte{0xff, 0xd8, 0xff, 0x00, 0x0a}
+		if err := a.Run([]string{"download", groupChat, "--message", "5002", "--preview", "3", "--output", "-"}); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(out.Bytes(), api.data) || diag.Len() != 0 || api.albumOID != "oid-3" {
+			t.Fatalf("stdout mismatch: out=%x diag=%q oid=%q", out.Bytes(), diag.String(), api.albumOID)
+		}
+
+		// Oversized error publishes neither stdout nor destination file
+		for _, mode := range []string{"-", filepath.Join(t.TempDir(), "nope.jpg")} {
+			a2, api2, out2, _ := downloadApp(t, 16)
+			api2.message = albumMsg()
+			api2.err = line.ErrOBSSizeLimit
+			err := a2.Run([]string{"download", groupChat, "--message", "5002", "--output", mode})
+			if err == nil || out2.Len() != 0 {
+				t.Fatalf("mode %s: err=%v out=%d", mode, err, out2.Len())
+			}
+			if mode != "-" {
+				if _, statErr := os.Lstat(mode); !errors.Is(statErr, os.ErrNotExist) {
+					t.Fatalf("oversized download created %s", mode)
+				}
+			}
+		}
+	})
+
+	// Error codes: out-of-range, explicit --preview on non-album, note/0-preview album
+	t.Run("error-codes", func(t *testing.T) {
+		cases := []struct {
+			name     string
+			msg      *line.Message
+			args     []string
+			wantCode string
+		}{
+			{
+				name:     "out-of-range",
+				msg:      albumMsg(),
+				args:     []string{"--error-format=json", "download", groupChat, "--message", "5002", "--preview", "4", "--output", filepath.Join(t.TempDir(), "x.jpg")},
+				wantCode: "invalid_arguments",
+			},
+			{
+				name:     "preview-on-image",
+				msg:      &line.Message{ID: "5002", From: "u-bob", To: groupChat, ToType: 2, ContentType: 1},
+				args:     []string{"--error-format=json", "download", groupChat, "--message", "5002", "--preview", "1", "--output", filepath.Join(t.TempDir(), "x.jpg")},
+				wantCode: "invalid_arguments",
+			},
+			{
+				name:     "note-unsupported",
+				msg:      &line.Message{ID: "5002", From: "u-bob", To: groupChat, ToType: 2, ContentType: 16, ContentMetadata: map[string]string{"serviceType": "GB", "text": "hello"}},
+				args:     []string{"--error-format=json", "download", groupChat, "--message", "5002", "--output", filepath.Join(t.TempDir(), "x.jpg")},
+				wantCode: "unsupported_content",
+			},
+			{
+				name:     "cross-chat-album-unsupported",
+				msg:      &line.Message{ID: "5002", From: "u-bob", To: groupChat, ToType: 2, ContentType: 16, ContentMetadata: map[string]string{"serviceType": "AB", "chatId": "c-other", "previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`}},
+				args:     []string{"--error-format=json", "download", groupChat, "--message", "5002", "--output", filepath.Join(t.TempDir(), "x.jpg")},
+				wantCode: "unsupported_content",
+			},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				a, api, _, _ := downloadApp(t, 16)
+				api.message = tc.msg
+				err := a.Run(tc.args)
+				var me *MachineError
+				if !errors.As(err, &me) || me.Detail.Code != tc.wantCode {
+					t.Fatalf("got err=%v, want code %s", err, tc.wantCode)
+				}
+				if api.albumPreviewCalls != 0 || api.downloads != 0 {
+					t.Fatalf("unexpected download calls: album=%d obs=%d", api.albumPreviewCalls, api.downloads)
+				}
+			})
+		}
+	})
+}
+
+func TestGuidedDownloadAlbumChooserAndPreviewPrompt(t *testing.T) {
+	history := func() []*line.Message {
+		return []*line.Message{
+			{ID: "100", From: "u-alice", To: "u-self", ContentType: 16, ContentMetadata: map[string]string{"serviceType": "GB", "text": "Excluded note"}},
+			{ID: "101", From: "u-alice", To: "u-self", ContentType: 16, ContentMetadata: map[string]string{"serviceType": "AB", "albumName": "Empty album", "chatId": "u-alice", "previewMedias": `[]`}},
+			{ID: "102", From: "u-alice", To: "u-self", ContentType: 16, ContentMetadata: map[string]string{"serviceType": "AB", "albumName": "Cross chat album", "chatId": "c-other", "previewMedias": `[{"svc":"album","sid":"a","mediaOid":"x","mediaType":"I"}]`}},
+			{ID: "103", From: "u-alice", To: "u-self", ContentType: 16, CreatedTime: "1795673700000", ContentMetadata: map[string]string{
+				"serviceType":   "AB",
+				"albumName":     "Summit photos",
+				"postEndUrl":    "line://group/home/albums/album?albumIdV2=v2-guided",
+				"chatId":        "u-alice",
+				"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"},{"svc":"album","sid":"a","mediaOid":"oid-2","mediaType":"I"},{"svc":"album","sid":"a","mediaOid":"oid-3","mediaType":"I"}]`,
+			}},
+		}
+	}
+
+	// Explicit preview number "2"
+	path1 := filepath.Join(t.TempDir(), "p2.jpg")
+	a, api, _, diag, _ := guidedApp(t, "1\n1\n2\n"+path1+"\n")
+	api.history = history()
+	if err := a.Run([]string{"download"}); err != nil {
+		t.Fatal(err)
+	}
+	if api.albumPreviewCalls != 1 || api.albumOID != "oid-2" || api.albumID != "v2-guided" {
+		t.Fatalf("guided album download: calls=%d oid=%q album=%q", api.albumPreviewCalls, api.albumOID, api.albumID)
+	}
+	if !strings.Contains(diag.String(), "[Album: Summit photos] (3 previews)") || !strings.Contains(diag.String(), "Preview number (1-3) [1]: ") {
+		t.Fatalf("missing album chooser/prompt in:\n%s", diag.String())
+	}
+	if strings.Contains(diag.String(), "Excluded note") || strings.Contains(diag.String(), "Empty album") || strings.Contains(diag.String(), "Cross chat album") {
+		t.Fatalf("ineligible post appeared in chooser:\n%s", diag.String())
+	}
+
+	// Pressing Enter defaults to preview 1
+	path2 := filepath.Join(t.TempDir(), "p1.jpg")
+	a2, api2, _, _, _ := guidedApp(t, "1\n1\n\n"+path2+"\n")
+	api2.history = history()
+	if err := a2.Run([]string{"download"}); err != nil {
+		t.Fatal(err)
+	}
+	if api2.albumOID != "oid-1" {
+		t.Fatalf("empty enter did not default to oid-1: got %q", api2.albumOID)
+	}
+
+	// Explicit --message ID prompts only for output, not preview number
+	path3 := filepath.Join(t.TempDir(), "p1-direct.jpg")
+	a3, api3, _, diag3, _ := guidedApp(t, path3+"\n")
+	api3.history = history()
+	if err := a3.Run([]string{"download", "id:u-alice", "--message", "103"}); err != nil {
+		t.Fatal(err)
+	}
+	if api3.albumOID != "oid-1" || strings.Contains(diag3.String(), "Preview number") {
+		t.Fatalf("explicit --message unexpectedly prompted for preview: oid=%q diag=%q", api3.albumOID, diag3.String())
+	}
 }

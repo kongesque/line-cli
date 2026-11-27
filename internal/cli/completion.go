@@ -21,7 +21,7 @@ var completionShells = []string{"bash", "zsh", "fish", "powershell"}
 // Flags that take a value, and the fixed values some of them accept.
 var (
 	completionValueFlags = map[string]bool{"timeout": true, "email": true, "search": true, "limit": true, "mid": true, "cursor": true,
-		"mentions": true, "text": true, "file": true, "image": true, "reply-to": true, "message": true, "reaction": true,
+		"mentions": true, "text": true, "file": true, "image": true, "reply-to": true, "message": true, "preview": true, "reaction": true,
 		"output": true, "storage": true, "error-format": true}
 	completionFileFlags = []string{"file", "image", "output"}
 	completionValues    = []struct {
@@ -61,7 +61,7 @@ func completionSpec() []completionCommand {
 			{name: "migrate", about: "Move a Linux session to headless storage", flags: []string{"storage"}},
 		}},
 		{name: "watch", about: "Stream live events", flags: []string{"json", "verbose", "from-now", "limit", "timeout"}},
-		{name: "download", about: "Save an attachment", flags: []string{"timeout", "message", "output", "json"}},
+		{name: "download", about: "Save an attachment or album preview", flags: []string{"timeout", "message", "preview", "output", "json"}},
 		{name: "react", about: "Add or remove a reaction", flags: []string{"timeout", "message", "json", "reaction", "remove"}},
 		{name: "unsend", about: "Retract one of your own messages", flags: []string{"timeout", "message", "json"}},
 		{name: "doctor", about: "Check installation, storage, sign-in, and more", flags: []string{"offline", "json", "timeout"}},
