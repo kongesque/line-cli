@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	gen "github.com/kongesque/line-cli/pkg"
 	"github.com/kongesque/line-cli/pkg/line/password"
@@ -875,10 +877,13 @@ func (c *Client) DownloadOBSResource(ctx context.Context, service, sid, oid, mes
 // notification. Album thumbnails use a dedicated TID and are authorized by the
 // notification's chatId through LINE's Chrome home channel token.
 func (c *Client) DownloadAlbumPreview(ctx context.Context, oid, chatID, albumID string) ([]byte, error) {
-	if oid == "" || chatID == "" {
-		return nil, errors.New("album preview OID and chat ID are required")
+	if err := validateAlbumPreviewInputs(oid, chatID, albumID); err != nil {
+		return nil, err
 	}
-	channelToken, err := c.AcquireChannelAccessToken(albumPreviewChannelID)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	channelToken, err := c.AcquireChannelAccessTokenContext(ctx, albumPreviewChannelID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire album preview channel token: %w", err)
 	}
@@ -910,20 +915,52 @@ func (c *Client) DownloadAlbumPreview(ctx context.Context, oid, chatID, albumID 
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
 	}
-	body, readErr := readResponseBody(resp, maxMediaResponseBytes)
-	if readErr != nil {
-		return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)
-	}
+	body, readErr := readResponseBody(resp, maxAlbumPreviewBytes)
 	switch resp.StatusCode {
 	case http.StatusOK:
+		if errors.Is(readErr, ErrResponseTooLarge) {
+			return nil, ErrOBSSizeLimit
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)
+		}
 		return body, nil
 	case http.StatusAccepted:
 		return nil, ErrOBSEncodingIncomplete
 	case http.StatusNotFound:
 		return nil, ErrOBSObjectNotFound
 	default:
-		return nil, fmt.Errorf("OBS download failed (%d): %s", resp.StatusCode, string(body))
+		// Preserve status classification (including 401/403 recovery) without
+		// exposing raw OBS error bodies or misclassifying >4 KiB error pages.
+		return nil, &ResponseError{Status: resp.StatusCode}
 	}
+}
+
+func validateAlbumPreviewInputs(oid, chatID, albumID string) error {
+	if oid == "" || len(oid) > 256 || !utf8.ValidString(oid) ||
+		oid == "." || strings.Contains(oid, "..") || strings.ContainsAny(oid, "/\\") ||
+		strings.ContainsFunc(oid, func(r rune) bool { return unicode.IsControl(r) || unicode.IsSpace(r) }) {
+		return errors.New("invalid album preview OID")
+	}
+	if chatID == "" || len(chatID) > 256 || !isHeaderSafeToken(chatID) {
+		return errors.New("invalid album preview chat ID")
+	}
+	if albumID != "" && (len(albumID) > 256 || !isHeaderSafeToken(albumID)) {
+		return errors.New("invalid album preview album ID")
+	}
+	return nil
+}
+
+func isHeaderSafeToken(s string) bool {
+	if !utf8.ValidString(s) {
+		return false
+	}
+	for _, r := range s {
+		if r < 0x21 || r > 0x7E {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) downloadOBSWithServiceAndSIDOptions(ctx context.Context, service, sid, oid, messageID string, opts OBSDownloadOptions) ([]byte, error) {

@@ -14,6 +14,7 @@ const (
 	maxOBSMetadataBytes   = 64 << 10
 	maxErrorResponseBytes = 4 << 10
 	maxMediaResponseBytes = (20 << 20) + 32 // plaintext cap plus attachment HMAC
+	maxAlbumPreviewBytes  = 20 << 20
 	maxSSELineBytes       = 1 << 20
 	maxSSEEventBytes      = 4 << 20
 	maxSSEEventLines      = 4096

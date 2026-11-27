@@ -590,3 +590,152 @@ func TestDownloadOBSAllEncryptedMediaUseFullObject(t *testing.T) {
 		})
 	}
 }
+
+func TestAcquireChannelAccessTokenContextCancellationDoesNotStall(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	client := NewClient("line-token")
+	client.HTTPClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			select {
+			case <-started:
+			default:
+				close(started)
+			}
+			select {
+			case <-release:
+				return obsResponse(http.StatusOK, `{"code":0,"message":"OK","data":{"channelAccessToken":"channel-token","expiration":9999999999999}}`), nil
+			case <-req.Context().Done():
+				return nil, req.Context().Err()
+			}
+		}),
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := client.AcquireChannelAccessTokenContext(context.Background(), albumPreviewChannelID)
+		firstDone <- err
+	}()
+	<-started
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := client.AcquireChannelAccessTokenContext(ctx, albumPreviewChannelID)
+		secondDone <- err
+	}()
+
+	select {
+	case err := <-secondDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled caller err = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("canceled caller stalled behind in-flight channel token RPC")
+	}
+
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first caller failed: %v", err)
+	}
+}
+
+func TestDownloadAlbumPreviewValidatesInputsBeforeAcquiringToken(t *testing.T) {
+	cases := []struct {
+		name             string
+		oid, chat, album string
+	}{
+		{"empty oid", "", "c1234", ""},
+		{"dot oid", ".", "c1234", ""},
+		{"dotdot oid", "a..b", "c1234", ""},
+		{"slash oid", "a/b", "c1234", ""},
+		{"backslash oid", `a\b`, "c1234", ""},
+		{"space oid", "a b", "c1234", ""},
+		{"control oid", "a\nb", "c1234", ""},
+		{"overlong oid", strings.Repeat("a", 257), "c1234", ""},
+		{"empty chat", "oid-1", "", ""},
+		{"newline chat", "oid-1", "c1234\r\nX-Inject: 1", ""},
+		{"space chat", "oid-1", "c 1234", ""},
+		{"newline album", "oid-1", "c1234", "alb\n1"},
+		{"space album", "oid-1", "c1234", "alb 1"},
+		{"overlong album", "oid-1", "c1234", strings.Repeat("b", 257)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tokenCalls := 0
+			obsCalls := 0
+			client := NewClient("line-token")
+			client.HTTPClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				tokenCalls++
+				return obsResponse(http.StatusOK, `{"code":0,"data":{"channelAccessToken":"tok"}}`), nil
+			})}
+			client.OBSClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				obsCalls++
+				return obsResponse(http.StatusOK, "img"), nil
+			})}
+			if _, err := client.DownloadAlbumPreview(context.Background(), tc.oid, tc.chat, tc.album); err == nil {
+				t.Fatalf("accepted unsafe inputs: oid=%q chat=%q album=%q", tc.oid, tc.chat, tc.album)
+			}
+			if tokenCalls != 0 || obsCalls != 0 {
+				t.Fatalf("issued token (%d) or OBS (%d) calls on invalid input", tokenCalls, obsCalls)
+			}
+		})
+	}
+}
+
+func TestDownloadAlbumPreviewStatusPrecedesErrorBodySizeCap(t *testing.T) {
+	largeBody := "private-secret-" + strings.Repeat("x", maxErrorResponseBytes+1024)
+	tests := []struct {
+		name   string
+		status int
+		check  func(error) bool
+	}{
+		{"403 oversized body stays unauthorized", http.StatusForbidden, IsUnauthorizedStatus},
+		{"401 oversized body stays unauthorized", http.StatusUnauthorized, IsUnauthorizedStatus},
+		{"202 oversized body stays encoding incomplete", http.StatusAccepted, func(err error) bool { return errors.Is(err, ErrOBSEncodingIncomplete) }},
+		{"404 oversized body stays not found", http.StatusNotFound, func(err error) bool { return errors.Is(err, ErrOBSObjectNotFound) }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := NewClient("line-token")
+			client.channelTokenCache = map[string]cachedChannelAccessToken{
+				albumPreviewChannelID: {token: "channel-token", expiresAt: time.Now().Add(time.Hour)},
+			}
+			client.OBSClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return obsResponse(tc.status, largeBody), nil
+			})}
+			_, err := client.DownloadAlbumPreview(context.Background(), "oid-1", "c1234", "alb-1")
+			if err == nil || !tc.check(err) {
+				t.Fatalf("status %d: err = %v", tc.status, err)
+			}
+			if errors.Is(err, ErrOBSSizeLimit) || strings.Contains(err.Error(), "private-secret") {
+				t.Fatalf("status %d misclassified or leaked body: %v", tc.status, err)
+			}
+		})
+	}
+}
+
+func TestDownloadAlbumPreviewExact20MiBLimit(t *testing.T) {
+	client := NewClient("line-token")
+	client.channelTokenCache = map[string]cachedChannelAccessToken{
+		albumPreviewChannelID: {token: "channel-token", expiresAt: time.Now().Add(time.Hour)},
+	}
+	exact := strings.Repeat("a", maxAlbumPreviewBytes)
+	client.OBSClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return obsResponse(http.StatusOK, exact), nil
+	})}
+	data, err := client.DownloadAlbumPreview(context.Background(), "oid-1", "c1234", "")
+	if err != nil || len(data) != maxAlbumPreviewBytes {
+		t.Fatalf("exact 20 MiB failed: len=%d err=%v", len(data), err)
+	}
+
+	client.OBSClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return obsResponse(http.StatusOK, exact+"b"), nil
+	})}
+	data, err = client.DownloadAlbumPreview(context.Background(), "oid-1", "c1234", "")
+	if !errors.Is(err, ErrOBSSizeLimit) || data != nil {
+		t.Fatalf("20 MiB + 1: data=%d err=%v, want ErrOBSSizeLimit", len(data), err)
+	}
+}
