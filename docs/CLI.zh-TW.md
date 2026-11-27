@@ -372,7 +372,7 @@ line send "Family group" --file ./report.pdf --reply-to MESSAGE_ID
 line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-不支援時會在遠端變更前以 `encryption_required` 停止。
+不支援時會在傳送訊息前以 `encryption_required` 停止。
 [LINE 2025 年加密報告（英文）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)說明 TLS、Letter Sealing 及新版官方用戶端的媒體 E2EE 支援；本 CLI 的媒體互通性仍須另外驗證。
 檔案與文字的加密支援會分開檢查。支援資訊缺漏或無效、缺少金鑰、成員資料不完整及傳輸錯誤，都不會允許停用 E2EE。
 只有明確執行群組傳送，且掌握所有目前成員時，才能註冊新群組金鑰。

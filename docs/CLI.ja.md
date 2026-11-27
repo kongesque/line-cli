@@ -387,7 +387,7 @@ Letter Sealingで送信できる場合だけ送るには、次を指定します
 line send CHAT_ID --file ./report.pdf --require-e2ee --json
 ```
 
-非対応の場合はリモート変更前に `encryption_required` で停止します。
+非対応の場合はメッセージを送信する前に `encryption_required` で停止します。
 [LINE暗号化レポート2025（英語）](https://www.lycorp.co.jp/en/privacy-security/security/transparency/encryption-report/2025/)はTLS、Letter Sealing、新しい公式クライアントのメディアE2EE対応を説明しています。
 本CLIのメディア相互運用性は別途検証が必要です。ファイルとテキストでは暗号化への対応を個別に確認します。
 対応情報の欠落や不正、鍵の不足、不完全なメンバー情報、通信障害を理由にE2EEを無効にすることはありません。

@@ -295,15 +295,15 @@ the mutation API; it does not prove a packet reached LINE.
 | --- | --- |
 | `not_attempted` | The message action/stage was not handed to its mutation API. Inspect earlier steps before deciding what to do next. |
 | `confirmed` | A success response was received; sends also require a returned message ID. Do not repeat this action. |
-| `rejected` | An authoritative authentication rejection was received. Inspect earlier steps and the error code; the CLI never replays the action. |
+| `rejected` | LINE explicitly rejected the action or step. Inspect earlier steps and the error code. |
 | `unknown` | No authoritative result: a lost response, malformed/missing receipt, or an unclassified service failure. Inspect LINE before deciding whether to retry. |
 
-Rejection classification is deliberately narrow: typed HTTP 401/403, or the
-existing recognized authentication envelope codes (119/10004, TokenAuthException
-3/4, TalkException 8, and TalkException 83 with `invalid sender key`). Generic
-5xx responses, timeout-like errors, other service exceptions, and text that
-merely resembles an authentication error remain unknown. Void mutation responses
-must contain an explicit `code: 0`; HTTP 200 alone is insufficient.
+Rejection classification accepts HTTP 401/403 and recognized authentication
+envelopes (119/10004, TokenAuthException 3/4, TalkException 8, and TalkException
+83 with `invalid sender key`). Group-key registration also records `rejected`
+when LINE explicitly reports Letter Sealing unavailable in an HTTP 200 or 400
+response. Generic 5xx responses, timeouts, and unclassified service exceptions
+remain unknown. Void mutation responses require an explicit `code: 0` for success.
 
 A send can fail **before message dispatch** after registering a group key or
 uploading an encrypted file. Its message outcome is `not_attempted`, while the
@@ -334,8 +334,7 @@ the schema does not mean encrypted image sending is enabled. Non-E2EE image uplo
 follows message creation, so its failure retains the confirmed message receipt
 just like a generic-file upload. Never infer safe retries from a transport error.
 
-Send policy errors: `encryption_required` means Letter Sealing is unavailable
-and strict mode (`--require-e2ee`) blocked
-the send before remote actions. There is no encryption confirmation prompt in any
-output mode. `encrypted_image_unavailable` is the image restriction described
-above. Neither error permits an automatic resend or downgrade.
+`encryption_required` means Letter Sealing is unavailable and strict mode
+(`--require-e2ee`) stopped the message before sending. It can follow a rejected
+group-key registration. `encrypted_image_unavailable` is the image restriction
+described above. Both errors stop the send without prompting.
