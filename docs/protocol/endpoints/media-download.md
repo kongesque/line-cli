@@ -132,3 +132,31 @@ explicit plaintext consent, one synthetic `.txt` file completed message creation
 upload, history lookup, and a byte-identical 28-byte download. Its receipt and
 history reported `encrypted=false`. Direct-chat type alone therefore does not
 establish an encrypted-file capability.
+
+## Album preview thumbnails (`POSTNOTIFICATION`)
+
+Album post notifications (`contentType == 16` or plaintext `contentType == 0`
+with `ORGCONTP == "POSTNOTIFICATION"`, `serviceType == "AB"`) reference preview
+thumbnails hosted on LINE's album OBS namespace (provenance: `beeper/line`
+PRs #226/#361/#367; verified with synthetic transports, not live Chrome testing):
+
+- **Channel token:** Acquired via `ChannelService/issueChannelToken` for channel
+  ID `1341209850` (`AcquireChannelAccessTokenContext`). The cache lock is
+  released during the network RPC so canceled callers do not stall.
+- **Request:** Direct `GET https://obs.line-apps.com/r/album/a/{url.PathEscape(oid)}/f482x482`
+  with no `object_info.obs` preflight and HTTP redirects rejected.
+- **Headers:** `User-Agent`, `X-Line-ChannelToken`, `X-Line-Mid: <chatId>`,
+  optional `X-Line-Album: <albumId>`, and `X-Line-Access: <accessToken>` (no
+  `X-Line-Application`).
+- **Deliberate CLI restrictions:**
+  - Only positively-identified `previewMedias` entries (`svc == "album"`,
+    `sid == "a"`, `mediaType == "I"`) with safe OIDs are accepted; top-level
+    `mediaOid` fallback is not implemented.
+  - Exact same-chat binding (`chatId == selectedChat`) is enforced before any
+    channel token or OBS call; cross-chat shared albums have zero downloadable
+    previews.
+  - HTTP `200 OK` responses are capped at an exact 20 MiB (`20 << 20` bytes).
+  - HTTP status codes (`202` encoding incomplete, `404` missing object,
+    `401`/`403` status-bearing unauthorized response without raw OBS body) are
+    classified before applying response-body size errors so >4 KiB auth error
+    pages still trigger single-retry session refresh recovery.

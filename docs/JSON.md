@@ -131,17 +131,19 @@ detailed projection of damaged encrypted metadata.
 ### Allowed content fields
 
 `content.kind` is `text`, `location`, `image`, `video`, `audio`, `file`, `contact`,
-`sticker`, `flex`, `rich`, or `unsupported`. A location may arrive as LINE type
-0 or 15. Applicable content fields are:
+`sticker`, `post_notification`, `flex`, `rich`, or `unsupported`. A location may arrive as LINE type
+0 or 15; a post notification may arrive as native type 16 or as a plaintext type-0
+wrapper (`ORGCONTP="POSTNOTIFICATION"`). Applicable content fields are:
 
 | Field | Contents |
 | --- | --- |
-| `text` | Decrypted or plaintext text |
+| `text` | Decrypted or plaintext text (empty for decoded `post_notification`, whose excerpt lives in `post.text`) |
 | `mentions` | Entries with inclusive `start`, exclusive `end` in UTF-16 code units, and either `mid` or `all:true`; incoming metadata; the same field names are accepted by `send --mentions` |
 | `location` | `title`, `address`, `latitude`, `longitude`; missing/invalid coordinates are malformed |
 | `attachment` | Category `type`, nullable `name`, nullable `size_bytes`, nullable `duration_ms` (audio/video); MIME type is not guessed |
 | `contact` | `mid`, `display_name` |
 | `sticker` | String `package_id`, string `id`, optional `text` |
+| `post` | `type` (`note`, `album`, or `unknown`), optional `title` (album name), optional `text`, optional allowlisted LINE `url`, optional `album_id` (album routes only), and explicit `preview_count` on albums (omitted on non-albums); object IDs and internal `chatId` are never exported |
 | `rich` | Optional `alt_text`, `text`/`links` arrays, `truncated` |
 
 FLEX extraction visits known layout containers, text/span nodes, and URI action
