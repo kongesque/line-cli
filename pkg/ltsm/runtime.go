@@ -293,7 +293,17 @@ func (rt *Runtime) E2EEKeyCreateChannel(keyPtr uint32, peerPub []byte) (uint32, 
 	return rt.Curve25519KeyCreateChannel(keyPtr, peerPub)
 }
 
+// E2EEKeyDestroy releases an E2EEKey handle through its registered destructor.
+func (rt *Runtime) E2EEKeyDestroy(ptr uint32) error {
+	return rt.imp.Destroy("E2EEKey", ptr)
+}
+
 // --- E2EEChannel ---
+
+// E2EEChannelDestroy releases an E2EEChannel handle through its registered destructor.
+func (rt *Runtime) E2EEChannelDestroy(ptr uint32) error {
+	return rt.imp.Destroy("E2EEChannel", ptr)
+}
 
 func (rt *Runtime) E2EEChannelUnwrapKeyChain(chanPtr uint32, encKeyChain []byte) (uint32, error) {
 	ptr, err := rt.imp.CallMethod("E2EEChannel", "unwrapE2EEKeyChain", chanPtr, rt.imp.WriteEmvalBytes(encKeyChain))

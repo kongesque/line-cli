@@ -78,7 +78,16 @@ func (e *LoginError) Error() string {
 		return message
 	}
 	if e.Stage == LoginPhoneApproval {
-		return "Phone approval could not be confirmed. Your saved session was not changed. Wait for the phone prompt to close, then retry line login."
+		message := "Phone approval could not be confirmed. Your saved session was not changed. Wait for the phone prompt to close, then retry line login."
+		var response *line.QRServiceError
+		if errors.As(e.cause, &response) {
+			message += fmt.Sprintf(" Diagnostic: checkPinCodeVerified (HTTP %d, gateway %d, status %d", response.HTTPStatus, response.Code, response.StatusCode)
+			if response.ServiceCode != nil {
+				message += fmt.Sprintf(", service %d", *response.ServiceCode)
+			}
+			message += ")."
+		}
+		return message
 	}
 	if errors.Is(e.cause, line.ErrQRCodeExpired) && e.Stage == LoginBeforeScan {
 		return "QR login expired after 3 attempts. Your saved session was not changed. Retry line login, or use line login --email you@example.com."

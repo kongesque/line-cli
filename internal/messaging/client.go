@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -67,15 +69,19 @@ type Crypto interface {
 	EncryptMessageV2Raw(string, string, int, string, int, int, int, []byte) ([]string, error)
 	EncryptGroupMessageRawVersion(string, string, int, int, []byte) ([]string, error)
 	GenerateGroupKey() (int, error)
+	ReleaseGroupKey(int) error
 	WrapGroupKeyForMember(string, int) (string, error)
+	WrapRegistrationGroupKey([]string) ([]string, error)
 }
 
 type Client struct {
-	Session   *session.Manager
-	state     *session.State
-	crypto    Crypto
-	keyError  error
-	groupKeys map[string]int // chat:key ID -> negotiated version; key ID 0 is the latest send lookup
+	Session           *session.Manager
+	state             *session.State
+	crypto            Crypto
+	keyError          error
+	groupKeys         map[string]int // chat:key ID -> negotiated version; key ID 0 is the latest send lookup
+	wait              func(context.Context, time.Duration) error
+	keyRetrySkipUntil time.Time
 }
 
 func New(manager *session.Manager) (*Client, error) {
@@ -454,12 +460,30 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 	} else if !plain {
 		err = c.groupKey(ctx, chat, 0)
-		if errors.Is(err, errGroupKeyMissing) || errors.Is(err, e2ee.ErrMissingOwnPrivateKey) {
+		var missingOwn *e2ee.MissingOwnKeyError
+		switch {
+		case errors.Is(err, errGroupKeyMissing):
 			err = c.registerGroupKey(ctx, chat, op)
 			if err == nil {
 				groupKeyRegistered = true
 				err = c.groupKey(ctx, chat, 0)
 			}
+		case errors.As(err, &missingOwn):
+			myRaw, _, ownErr := c.crypto.MyKeyIDs()
+			if ownErr == nil && missingOwn.KeyID > 0 && missingOwn.KeyID < myRaw {
+				// Group key was wrapped for a retired own key; register a fresh key.
+				err = c.registerGroupKey(ctx, chat, op)
+				if err == nil {
+					groupKeyRegistered = true
+					err = c.groupKey(ctx, chat, 0)
+				}
+			} else {
+				// Local credentials are stale (LINE references our current or newer key);
+				// never overwrite the group key from a stale session.
+				return nil, fault.New("invalid_session", "preparation", "saved Letter Sealing keys are out of date for this group; run line login", err)
+			}
+		case errors.Is(err, e2ee.ErrMissingOwnPrivateKey):
+			return nil, fault.New("invalid_session", "preparation", "saved Letter Sealing keys are out of date for this group; run line login", err)
 		}
 		if errors.Is(err, errNoLetterSealing) {
 			if err := options.checkPlaintext(true, item); err != nil {
@@ -516,8 +540,22 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 	}
 	var sent *line.Message
 	stage = "send"
-	err = c.attempt(ctx, op, stage, true, func(api session.API) (err error) { sent, err = api.SendMessageContext(ctx, seq, msg); return })
+	var sendRPCErr error
+	err = c.attempt(ctx, op, stage, true, func(api session.API) error {
+		sent, sendRPCErr = api.SendMessageContext(ctx, seq, msg)
+		return sendRPCErr
+	})
 	if err != nil {
+		if !plain && kind == 0 && line.IsE2EEReceiverKeyRejected(session.ProtocolError(err)) {
+			var responseErr *line.ResponseError
+			if errors.As(sendRPCErr, &responseErr) &&
+				(responseErr.Status == http.StatusOK || responseErr.Status == http.StatusBadRequest) {
+				op.Outcome = fault.Rejected
+				op.Steps[len(op.Steps)-1].Outcome = fault.Rejected
+				return nil, fault.New("e2ee_receiver_key_rejected", stage, "LINE rejected the recipient's Letter Sealing key (their device key may have changed); nothing was sent; retry line send", err)
+			}
+			return nil, fmt.Errorf("LINE rejected the recipient's Letter Sealing key (their device key may have changed); inspect history before retrying: %w", err)
+		}
 		if op.Outcome == fault.NotAttempted {
 			return nil, fmt.Errorf("send was not attempted: %w", err)
 		}

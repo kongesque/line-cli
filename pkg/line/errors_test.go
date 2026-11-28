@@ -148,3 +148,53 @@ func TestNoUsableE2EEGroupKeyTalkExceptionExceedMaxMember(t *testing.T) {
 		t.Fatal("expected structured exceed max member response to disable group E2EE")
 	}
 }
+
+func TestLogoutReasonClassificationAndRedaction(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"nil", nil, ""},
+		{"non-logout", errors.New("network timeout"), ""},
+		{"v3 logged out", responseError(401, []byte(`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":8,"reason":"V3_TOKEN_CLIENT_LOGGED_OUT"}}`)), "V3_TOKEN_CLIENT_LOGGED_OUT"},
+		{"invalid sender key", responseError(400, []byte(`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":83,"reason":"invalid sender key"}}`)), "INVALID_SENDER_KEY"},
+		{"request need login", responseError(401, []byte(`{"code":10004,"message":"REQUEST_NEED_LOGIN"}`)), "REQUEST_NEED_LOGIN"},
+		{"talk exception 8 safe enum", responseError(400, []byte(`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":8,"reason":"MUST_UPGRADE"}}`)), "MUST_UPGRADE"},
+		{"talk exception 8 freeform redacted", responseError(400, []byte(`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":8,"reason":"secret freeform token"}}`)), "AUTHENTICATION_FAILED"},
+		{"token auth exception 3 redacted", responseError(401, []byte(`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TokenAuthException","code":3,"reason":"secret body"}}`)), "TOKEN_AUTH_LOGGED_OUT"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := LogoutReason(tc.err); got != tc.want {
+				t.Fatalf("LogoutReason() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsE2EEGroupMemberMismatchAndReceiverKeyRejected(t *testing.T) {
+	mismatch := responseError(400, []byte(`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":99,"reason":"invalid member count"}}`))
+	if !IsE2EEGroupMemberMismatch(mismatch) {
+		t.Fatal("expected TalkException 99 to match IsE2EEGroupMemberMismatch")
+	}
+	if IsE2EEGroupMemberMismatch(responseError(400, []byte(`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":98,"reason":"member settings off"}}`))) {
+		t.Fatal("code 98 must not match IsE2EEGroupMemberMismatch")
+	}
+
+	for _, body := range []string{
+		`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":83,"reason":"invalid receiver key"}}`,
+		`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":81,"reason":"E2EE_RETRY_ENCRYPT"}}`,
+		`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":82,"reason":"E2EE_RETRY_PLAIN"}}`,
+	} {
+		if !IsE2EEReceiverKeyRejected(responseError(400, []byte(body))) {
+			t.Fatalf("expected IsE2EEReceiverKeyRejected for %s", body)
+		}
+	}
+
+	// "invalid sender key" is own-session invalidation, NOT receiver-key rejection.
+	senderInvalid := responseError(400, []byte(`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":83,"reason":"invalid sender key"}}`))
+	if IsE2EEReceiverKeyRejected(senderInvalid) {
+		t.Fatal("invalid sender key must not match IsE2EEReceiverKeyRejected")
+	}
+}

@@ -143,16 +143,19 @@ type cancelCrypto struct {
 	cancel context.CancelFunc
 }
 
-func (c cancelCrypto) WrapGroupKeyForMember(pub string, id int) (string, error) {
+func (c cancelCrypto) WrapRegistrationGroupKey(pubs []string) ([]string, error) {
 	c.cancel()
-	return c.Crypto.WrapGroupKeyForMember(pub, id)
+	return c.Crypto.WrapRegistrationGroupKey(pubs)
 }
 func TestCancellationBeforeGroupKeyRegistration(t *testing.T) {
 	c, api, crypto, _ := setup(t, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	api.groupErr = line.ErrGroupKeyNotFound
-	api.chats = &line.GetChatsResponse{Chats: []line.Chat{{ChatMid: "c-group", Extra: line.ChatExtra{GroupExtra: &line.GroupExtra{MemberMids: line.FlexibleMidMap{"u-peer": true}}}}}}
+	api.groupPublicKeys = map[string]line.E2EEPeerPublicKey{
+		"u-self": {KeyID: 11, KeyData: testPublicKey},
+		"u-peer": {KeyID: 22, KeyData: testPublicKey},
+	}
 	c.crypto = cancelCrypto{Crypto: crypto, cancel: cancel}
 	_, err := c.SendContext(ctx, "c-group", "hello")
 	if !errors.Is(err, context.Canceled) || api.registrations != 0 || api.sends != 0 {
@@ -187,7 +190,10 @@ func (f *cancellationAPI) RegisterE2EEGroupKeyContext(ctx context.Context, _ int
 func TestCancelledGroupRegistrationRetainsUncertainOutcome(t *testing.T) {
 	c, api, _, _ := setup(t, false)
 	api.groupErr = line.ErrGroupKeyNotFound
-	api.chats = &line.GetChatsResponse{Chats: []line.Chat{{ChatMid: "c-group", Extra: line.ChatExtra{GroupExtra: &line.GroupExtra{MemberMids: line.FlexibleMidMap{"u-peer": true}}}}}}
+	api.groupPublicKeys = map[string]line.E2EEPeerPublicKey{
+		"u-self": {KeyID: 11, KeyData: testPublicKey},
+		"u-peer": {KeyID: 22, KeyData: testPublicKey},
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	f := &cancellationAPI{fakeAPI: api, cancel: cancel}

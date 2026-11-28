@@ -96,12 +96,10 @@ func TestGroupRegistrationRejectionSendPolicy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, f, _, store := setup(t, false)
 			f.groupErr = line.ErrGroupKeyNotFound
-			f.chats = &line.GetChatsResponse{Chats: []line.Chat{{
-				ChatMid: "c-group",
-				Extra: line.ChatExtra{GroupExtra: &line.GroupExtra{
-					MemberMids: line.FlexibleMidMap{"u-self": true, "u-peer": true},
-				}},
-			}}}
+			f.groupPublicKeys = map[string]line.E2EEPeerPublicKey{
+				"u-self": {KeyID: 11, KeyData: testPublicKey},
+				"u-peer": {KeyID: 22, KeyData: testPublicKey},
+			}
 			wire := line.NewClient("synthetic-token")
 			registrations := 0
 			wire.HTTPClient.Transport = claimTransport(func(r *http.Request) (*http.Response, error) {

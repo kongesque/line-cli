@@ -23,6 +23,37 @@ var (
 	ErrGroupKeyNotLoaded    = errors.New("e2ee key not loaded")
 )
 
+const (
+	maxCachedPeerChannels  = 256
+	maxCachedGroupKeys     = 256
+	maxCachedGroupChannels = 512
+)
+
+// MissingOwnKeyError reports that a message or wrapped group key references an
+// own device key ID that is not present in the local keychain.
+type MissingOwnKeyError struct {
+	KeyID int
+}
+
+func (e *MissingOwnKeyError) Error() string {
+	return fmt.Sprintf("%s for %d", ErrMissingOwnPrivateKey, e.KeyID)
+}
+
+func (e *MissingOwnKeyError) Unwrap() error {
+	return ErrMissingOwnPrivateKey
+}
+
+type groupKeyCacheID struct {
+	chatMid    string
+	groupKeyID int
+}
+
+type groupChannelCacheID struct {
+	chatMid     string
+	groupKeyID  int
+	senderKeyID int
+}
+
 func isFatalLTSMError(err error) bool {
 	return errors.Is(err, ltsm.ErrAbort)
 }
@@ -49,6 +80,12 @@ type Manager struct {
 	groupSessionChannels map[string]map[int]map[int]int
 
 	latestGroupKey map[string]int // chatMid -> latest groupKeyId
+
+	// Bounded LRU tracking for long-running watch sessions to avoid unbounded
+	// growth of native LTSM handles.
+	peerChannelLRU  []string
+	groupKeyLRU     []groupKeyCacheID
+	groupChannelLRU []groupChannelCacheID
 }
 
 func NewManager() (*Manager, error) {
@@ -351,6 +388,9 @@ func (m *Manager) ensureChannelForEncrypt(chatID string, myKeyID, senderKeyID, r
 	pairKey := fmt.Sprintf("%d|%d", privRaw, pubRaw)
 	m.mu.Lock()
 	chanID, ok := m.channelByPair[pairKey]
+	if ok {
+		m.touchPeerChannelLocked(pairKey)
+	}
 	m.mu.Unlock()
 	if !ok {
 		created, err := m.runner.ChannelCreate(privKeyID, pubKey)
@@ -359,7 +399,7 @@ func (m *Manager) ensureChannelForEncrypt(chatID string, myKeyID, senderKeyID, r
 		}
 		chanID = created
 		m.mu.Lock()
-		m.channelByPair[pairKey] = chanID
+		m.putPeerChannelLocked(pairKey, chanID)
 		m.mu.Unlock()
 	}
 
@@ -474,23 +514,21 @@ func (m *Manager) UnwrapGroupSharedKey(chatMid string, sharedKey *line.E2EEGroup
 	}
 
 	if myRunnerKey == 0 {
-		return 0, fmt.Errorf("%w for %d", ErrMissingOwnPrivateKey, receiverRawKeyID)
+		return 0, &MissingOwnKeyError{KeyID: receiverRawKeyID}
 	}
 
 	chanID, err := m.runner.ChannelCreate(myRunnerKey, creatorPubKeyB64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create channel with creator: %w", err)
 	}
+	defer func() { _ = m.runner.ReleaseChannel(chanID) }()
 
 	unwrappedKeyID, err := m.runner.ChannelUnwrapGroupSharedKey(chanID, sharedKey.EncryptedSharedKey)
 	if err != nil {
 		return 0, fmt.Errorf("failed to unwrap group key: %w", err)
 	}
 
-	if _, ok := m.groupKeys[chatMid]; !ok {
-		m.groupKeys[chatMid] = make(map[int]int)
-	}
-	m.groupKeys[chatMid][sharedKey.GroupKeyID] = unwrappedKeyID
+	m.putGroupKeyLocked(chatMid, sharedKey.GroupKeyID, unwrappedKeyID)
 
 	m.latestGroupKey[chatMid] = sharedKey.GroupKeyID
 
@@ -498,9 +536,40 @@ func (m *Manager) UnwrapGroupSharedKey(chatMid string, sharedKey *line.E2EEGroup
 }
 
 // GenerateGroupKey generates a new Curve25519 key in the WASM module for use as a group key.
-// Returns the key ID for use with WrapGroupKeyForMember.
+// Returns the key ID for use with WrapGroupKeyForMember. Call ReleaseGroupKey when done.
 func (m *Manager) GenerateGroupKey() (int, error) {
 	return m.runner.KeyGenerate()
+}
+
+// ReleaseGroupKey releases a temporary group key handle in the LTSM runner.
+func (m *Manager) ReleaseGroupKey(keyID int) error {
+	if m == nil || m.runner == nil {
+		return nil
+	}
+	return m.runner.ReleaseGroupKey(keyID)
+}
+
+// WrapRegistrationGroupKey generates a fresh group key, wraps it for every
+// member public key in order, and releases all temporary native key/channel
+// handles before returning.
+func (m *Manager) WrapRegistrationGroupKey(memberPubKeys []string) ([]string, error) {
+	if len(memberPubKeys) == 0 {
+		return nil, errors.New("no member public keys provided")
+	}
+	keyID, err := m.GenerateGroupKey()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = m.ReleaseGroupKey(keyID) }()
+
+	wrapped := make([]string, len(memberPubKeys))
+	for i, pub := range memberPubKeys {
+		wrapped[i], err = m.WrapGroupKeyForMember(pub, keyID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return wrapped, nil
 }
 
 // WrapGroupKeyForMember wraps a WASM-generated group key for a specific group member.
@@ -524,6 +593,7 @@ func (m *Manager) WrapGroupKeyForMember(memberPubKeyB64 string, keyID int) (stri
 	if err != nil {
 		return "", fmt.Errorf("failed to create ECDH channel: %w", err)
 	}
+	defer func() { _ = m.runner.ReleaseChannel(chanID) }()
 
 	encryptedKey, err := m.runner.ChannelWrapGroupSharedKey(chanID, keyID)
 	if err != nil {
@@ -604,6 +674,7 @@ func (m *Manager) ensureGroupChannel(chatMid string, groupKeyID, unwrappedKeyID,
 		m.groupSessionChannels[chatMid][groupKeyID] = make(map[int]int)
 	}
 	if id, ok := m.groupSessionChannels[chatMid][groupKeyID][senderKeyID]; ok {
+		m.touchGroupChannelLocked(groupChannelCacheID{chatMid: chatMid, groupKeyID: groupKeyID, senderKeyID: senderKeyID})
 		return id, nil
 	}
 
@@ -617,7 +688,7 @@ func (m *Manager) ensureGroupChannel(chatMid string, groupKeyID, unwrappedKeyID,
 		return 0, fmt.Errorf("failed to create group channel: %w", err)
 	}
 
-	m.groupSessionChannels[chatMid][groupKeyID][senderKeyID] = chanID
+	m.putGroupChannelLocked(groupChannelCacheID{chatMid: chatMid, groupKeyID: groupKeyID, senderKeyID: senderKeyID}, chanID)
 	return chanID, nil
 }
 
@@ -754,10 +825,10 @@ func (m *Manager) channelFromKeyIDs(senderKeyID, receiverKeyID int) (int, error)
 		privKeyID = id
 	} else {
 		if _, ok := peerPub[senderKeyID]; ok {
-			return 0, fmt.Errorf("%w for %d", ErrMissingOwnPrivateKey, receiverKeyID)
+			return 0, &MissingOwnKeyError{KeyID: receiverKeyID}
 		}
 		if _, ok := peerPub[receiverKeyID]; ok {
-			return 0, fmt.Errorf("%w for %d", ErrMissingOwnPrivateKey, senderKeyID)
+			return 0, &MissingOwnKeyError{KeyID: senderKeyID}
 		}
 		return 0, fmt.Errorf("no matching private key for senderKeyID=%d receiverKeyID=%d", senderKeyID, receiverKeyID)
 	}
@@ -770,6 +841,7 @@ func (m *Manager) channelFromKeyIDs(senderKeyID, receiverKeyID int) (int, error)
 	pairKey := fmt.Sprintf("%d|%d", privRaw, pubRaw)
 	m.mu.Lock()
 	if id, ok := m.channelByPair[pairKey]; ok {
+		m.touchPeerChannelLocked(pairKey)
 		m.mu.Unlock()
 		return id, nil
 	}
@@ -780,9 +852,170 @@ func (m *Manager) channelFromKeyIDs(senderKeyID, receiverKeyID int) (int, error)
 		return 0, err
 	}
 	m.mu.Lock()
-	m.channelByPair[pairKey] = chanID
+	m.putPeerChannelLocked(pairKey, chanID)
 	m.mu.Unlock()
 	return chanID, nil
+}
+
+func (m *Manager) releaseChannelLocked(chanID int) {
+	if m.runner != nil && chanID > 0 {
+		_ = m.runner.ReleaseChannel(chanID)
+	}
+}
+
+func (m *Manager) releaseGroupKeyLocked(keyID int) {
+	if m.runner != nil && keyID > 0 {
+		_ = m.runner.ReleaseGroupKey(keyID)
+	}
+}
+
+func (m *Manager) touchPeerChannelLocked(pairKey string) {
+	for i, existing := range m.peerChannelLRU {
+		if existing != pairKey {
+			continue
+		}
+		copy(m.peerChannelLRU[i:], m.peerChannelLRU[i+1:])
+		m.peerChannelLRU[len(m.peerChannelLRU)-1] = pairKey
+		return
+	}
+}
+
+func (m *Manager) putPeerChannelLocked(pairKey string, chanID int) {
+	if m.channelByPair == nil {
+		m.channelByPair = make(map[string]int)
+	}
+	if prev, exists := m.channelByPair[pairKey]; exists {
+		if prev != chanID {
+			m.releaseChannelLocked(prev)
+		}
+		m.channelByPair[pairKey] = chanID
+		m.touchPeerChannelLocked(pairKey)
+		return
+	}
+	for len(m.peerChannelLRU) >= maxCachedPeerChannels {
+		evicted := m.peerChannelLRU[0]
+		m.peerChannelLRU = m.peerChannelLRU[1:]
+		if evictedID, ok := m.channelByPair[evicted]; ok {
+			delete(m.channelByPair, evicted)
+			m.releaseChannelLocked(evictedID)
+		}
+	}
+	m.channelByPair[pairKey] = chanID
+	m.peerChannelLRU = append(m.peerChannelLRU, pairKey)
+}
+
+func (m *Manager) touchGroupKeyLocked(id groupKeyCacheID) {
+	for i, existing := range m.groupKeyLRU {
+		if existing != id {
+			continue
+		}
+		copy(m.groupKeyLRU[i:], m.groupKeyLRU[i+1:])
+		m.groupKeyLRU[len(m.groupKeyLRU)-1] = id
+		return
+	}
+}
+
+func (m *Manager) putGroupKeyLocked(chatMid string, groupKeyID, unwrappedKeyID int) {
+	if m.groupKeys == nil {
+		m.groupKeys = make(map[string]map[int]int)
+	}
+	if m.groupKeys[chatMid] == nil {
+		m.groupKeys[chatMid] = make(map[int]int)
+	}
+	cacheID := groupKeyCacheID{chatMid: chatMid, groupKeyID: groupKeyID}
+	if prev, exists := m.groupKeys[chatMid][groupKeyID]; exists {
+		if prev != unwrappedKeyID {
+			m.evictGroupChannelsForKeyLocked(chatMid, groupKeyID)
+			m.releaseGroupKeyLocked(prev)
+		}
+		m.groupKeys[chatMid][groupKeyID] = unwrappedKeyID
+		m.touchGroupKeyLocked(cacheID)
+		return
+	}
+	for len(m.groupKeyLRU) >= maxCachedGroupKeys {
+		evicted := m.groupKeyLRU[0]
+		m.groupKeyLRU = m.groupKeyLRU[1:]
+		if chatMap := m.groupKeys[evicted.chatMid]; chatMap != nil {
+			if evictedRunnerID, ok := chatMap[evicted.groupKeyID]; ok {
+				delete(chatMap, evicted.groupKeyID)
+				if len(chatMap) == 0 {
+					delete(m.groupKeys, evicted.chatMid)
+				}
+				if m.latestGroupKey[evicted.chatMid] == evicted.groupKeyID {
+					delete(m.latestGroupKey, evicted.chatMid)
+				}
+				m.evictGroupChannelsForKeyLocked(evicted.chatMid, evicted.groupKeyID)
+				m.releaseGroupKeyLocked(evictedRunnerID)
+			}
+		}
+	}
+	m.groupKeys[chatMid][groupKeyID] = unwrappedKeyID
+	m.groupKeyLRU = append(m.groupKeyLRU, cacheID)
+}
+
+func (m *Manager) evictGroupChannelsForKeyLocked(chatMid string, groupKeyID int) {
+	if m.groupSessionChannels != nil && m.groupSessionChannels[chatMid] != nil {
+		for _, chanID := range m.groupSessionChannels[chatMid][groupKeyID] {
+			m.releaseChannelLocked(chanID)
+		}
+		delete(m.groupSessionChannels[chatMid], groupKeyID)
+		if len(m.groupSessionChannels[chatMid]) == 0 {
+			delete(m.groupSessionChannels, chatMid)
+		}
+	}
+	kept := m.groupChannelLRU[:0]
+	for _, entry := range m.groupChannelLRU {
+		if entry.chatMid == chatMid && entry.groupKeyID == groupKeyID {
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	m.groupChannelLRU = kept
+}
+
+func (m *Manager) touchGroupChannelLocked(id groupChannelCacheID) {
+	for i, existing := range m.groupChannelLRU {
+		if existing != id {
+			continue
+		}
+		copy(m.groupChannelLRU[i:], m.groupChannelLRU[i+1:])
+		m.groupChannelLRU[len(m.groupChannelLRU)-1] = id
+		return
+	}
+}
+
+func (m *Manager) putGroupChannelLocked(id groupChannelCacheID, chanID int) {
+	if m.groupSessionChannels == nil {
+		m.groupSessionChannels = make(map[string]map[int]map[int]int)
+	}
+	if m.groupSessionChannels[id.chatMid] == nil {
+		m.groupSessionChannels[id.chatMid] = make(map[int]map[int]int)
+	}
+	if m.groupSessionChannels[id.chatMid][id.groupKeyID] == nil {
+		m.groupSessionChannels[id.chatMid][id.groupKeyID] = make(map[int]int)
+	}
+	if prev, exists := m.groupSessionChannels[id.chatMid][id.groupKeyID][id.senderKeyID]; exists {
+		if prev != chanID {
+			m.releaseChannelLocked(prev)
+		}
+		m.groupSessionChannels[id.chatMid][id.groupKeyID][id.senderKeyID] = chanID
+		m.touchGroupChannelLocked(id)
+		return
+	}
+	for len(m.groupChannelLRU) >= maxCachedGroupChannels {
+		evicted := m.groupChannelLRU[0]
+		m.groupChannelLRU = m.groupChannelLRU[1:]
+		if chatMap := m.groupSessionChannels[evicted.chatMid]; chatMap != nil {
+			if keyMap := chatMap[evicted.groupKeyID]; keyMap != nil {
+				if evictedID, ok := keyMap[evicted.senderKeyID]; ok {
+					delete(keyMap, evicted.senderKeyID)
+					m.releaseChannelLocked(evictedID)
+				}
+			}
+		}
+	}
+	m.groupSessionChannels[id.chatMid][id.groupKeyID][id.senderKeyID] = chanID
+	m.groupChannelLRU = append(m.groupChannelLRU, id)
 }
 
 func DecodeKeyID(b64 string) (int, error) {

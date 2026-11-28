@@ -43,6 +43,22 @@ func TestChannelCreateWithWASMOnlyKeyDoesNotWriteStdout(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("ChannelCreate wrote to stdout: %q", stdout)
 	}
+	if err := r.ReleaseChannel(channelID); err != nil {
+		t.Fatalf("ReleaseChannel failed: %v", err)
+	}
+	if err := r.ReleaseGroupKey(keyID); err != nil {
+		t.Fatalf("ReleaseGroupKey(keyID) failed: %v", err)
+	}
+	if err := r.ReleaseGroupKey(peerKeyID); err != nil {
+		t.Fatalf("ReleaseGroupKey(peerKeyID) failed: %v", err)
+	}
+	// Idempotent release of already-released IDs.
+	if err := r.ReleaseGroupKey(keyID); err != nil {
+		t.Fatalf("idempotent ReleaseGroupKey failed: %v", err)
+	}
+	if err := r.ReleaseChannel(channelID); err != nil {
+		t.Fatalf("idempotent ReleaseChannel failed: %v", err)
+	}
 }
 
 func captureStdout(t *testing.T, fn func()) string {

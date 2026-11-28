@@ -45,9 +45,12 @@ type fakeAPI struct {
 	negotiateErr      error
 	key               *line.E2EEPublicKey
 	lookupIDs         []int
+	lookupErr         error
 	group             *line.E2EEGroupSharedKey
 	groupErr          error
 	groupIDs          []int
+	groupPublicKeys   map[string]line.E2EEPeerPublicKey
+	groupPublicKeyErr error
 	chats             *line.GetChatsResponse
 	registrations     int
 	registeredMembers []string
@@ -70,7 +73,11 @@ func (f *fakeAPI) NegotiateE2EEPublicKey(string) (*line.E2EEPublicKey, error) {
 
 func (f *fakeAPI) GetE2EEPublicKey(_ string, _ int, id int) (*line.E2EEPublicKey, error) {
 	f.lookupIDs = append(f.lookupIDs, id)
-	return f.key, nil
+	return f.key, f.lookupErr
+}
+
+func (f *fakeAPI) GetLastE2EEPublicKeysContext(_ context.Context, _ string) (map[string]line.E2EEPeerPublicKey, error) {
+	return f.groupPublicKeys, f.groupPublicKeyErr
 }
 
 func (f *fakeAPI) GetE2EEGroupSharedKey(_ string, id int) (*line.E2EEGroupSharedKey, error) {
@@ -105,10 +112,12 @@ type fakeCrypto struct {
 	payload      string
 	decryptErr   error
 	encryptErr   error
+	unwrapErr    error
 	loadErr      error
 	loaded       map[string]string
 	registered   []int
 	unwrapped    []int
+	releasedKeys []int
 	decryptCalls int
 	groupVersion int
 }
@@ -129,6 +138,9 @@ func (f *fakeCrypto) HasPeerPublicKey(int) bool { return false }
 func (f *fakeCrypto) RegisterPeerPublicKey(id int, _ string) { f.registered = append(f.registered, id) }
 
 func (f *fakeCrypto) UnwrapGroupSharedKey(_ string, key *line.E2EEGroupSharedKey) (int, error) {
+	if f.unwrapErr != nil {
+		return 0, f.unwrapErr
+	}
 	f.unwrapped = append(f.unwrapped, key.GroupKeyID)
 	return 333, nil
 }
@@ -158,7 +170,20 @@ func (f *fakeCrypto) EncryptGroupMessageVersion(chat, from string, version int, 
 
 func (f *fakeCrypto) GenerateGroupKey() (int, error) { return 33, nil }
 
+func (f *fakeCrypto) ReleaseGroupKey(id int) error {
+	f.releasedKeys = append(f.releasedKeys, id)
+	return nil
+}
+
 func (f *fakeCrypto) WrapGroupKeyForMember(string, int) (string, error) { return "wrapped", nil }
+
+func (f *fakeCrypto) WrapRegistrationGroupKey(pubs []string) ([]string, error) {
+	out := make([]string, len(pubs))
+	for i := range pubs {
+		out[i] = "wrapped"
+	}
+	return out, nil
+}
 
 func encryptedChunks(sender, receiver int) []string {
 	encode := func(id int) string {

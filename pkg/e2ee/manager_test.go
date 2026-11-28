@@ -97,6 +97,10 @@ func TestUnwrapGroupSharedKeyReturnsMissingOwnPrivateKey(t *testing.T) {
 	if !errors.Is(err, ErrMissingOwnPrivateKey) {
 		t.Fatalf("err = %v, want ErrMissingOwnPrivateKey", err)
 	}
+	var missing *MissingOwnKeyError
+	if !errors.As(err, &missing) || missing.KeyID != 5625926 {
+		t.Fatalf("err = %v, want *MissingOwnKeyError{KeyID: 5625926}", err)
+	}
 }
 
 func TestChannelFromKeyIDsReturnsMissingOwnPrivateKeyWhenPeerKeyKnown(t *testing.T) {
@@ -109,8 +113,75 @@ func TestChannelFromKeyIDsReturnsMissingOwnPrivateKeyWhenPeerKeyKnown(t *testing
 	if !errors.Is(err, ErrMissingOwnPrivateKey) {
 		t.Fatalf("err = %v, want ErrMissingOwnPrivateKey", err)
 	}
+	var missing *MissingOwnKeyError
+	if !errors.As(err, &missing) || missing.KeyID != 5920082 {
+		t.Fatalf("err = %v, want *MissingOwnKeyError{KeyID: 5920082}", err)
+	}
 	if !strings.Contains(err.Error(), "5920082") {
 		t.Fatalf("err = %v, want missing key ID in error", err)
+	}
+}
+
+func TestWrapRegistrationGroupKeyReleasesTemporaryHandles(t *testing.T) {
+	m, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownKey, err := m.runner.KeyGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = m.ReleaseGroupKey(ownKey) }()
+	ownPub, err := m.runner.KeyGetPublic(ownKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peerKey, err := m.runner.KeyGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = m.ReleaseGroupKey(peerKey) }()
+	peerPub, err := m.runner.KeyGetPublic(peerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.myKeyID = ownKey
+	m.myRawKeyID = 11
+	m.myPublicB64 = ownPub
+
+	wrapped, err := m.WrapRegistrationGroupKey([]string{ownPub, peerPub})
+	if err != nil {
+		t.Fatalf("WrapRegistrationGroupKey failed: %v", err)
+	}
+	if len(wrapped) != 2 || wrapped[0] == "" || wrapped[1] == "" {
+		t.Fatalf("unexpected wrapped output: %#v", wrapped)
+	}
+}
+
+func TestManagerLRUBoundsPeerAndGroupCaches(t *testing.T) {
+	m := &Manager{
+		channelByPair:        make(map[string]int),
+		groupKeys:            make(map[string]map[int]int),
+		groupSessionChannels: make(map[string]map[int]map[int]int),
+		latestGroupKey:       make(map[string]int),
+	}
+	for i := 0; i < maxCachedPeerChannels+10; i++ {
+		m.putPeerChannelLocked(fmt.Sprintf("1|%d", i), i+1)
+	}
+	if len(m.channelByPair) != maxCachedPeerChannels || len(m.peerChannelLRU) != maxCachedPeerChannels {
+		t.Fatalf("peer channel cache unbounded: map=%d lru=%d", len(m.channelByPair), len(m.peerChannelLRU))
+	}
+	for i := 0; i < maxCachedGroupKeys+10; i++ {
+		m.putGroupKeyLocked(fmt.Sprintf("c-%d", i), i+1, i+100)
+	}
+	if len(m.groupKeyLRU) != maxCachedGroupKeys {
+		t.Fatalf("group key cache unbounded: lru=%d", len(m.groupKeyLRU))
+	}
+	for i := 0; i < maxCachedGroupChannels+10; i++ {
+		m.putGroupChannelLocked(groupChannelCacheID{chatMid: "c-1", groupKeyID: 1, senderKeyID: i}, i+1)
+	}
+	if len(m.groupChannelLRU) != maxCachedGroupChannels {
+		t.Fatalf("group channel cache unbounded: lru=%d", len(m.groupChannelLRU))
 	}
 }
 

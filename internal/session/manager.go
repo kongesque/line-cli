@@ -44,6 +44,7 @@ type API interface {
 	GetE2EEGroupSharedKeyContext(context.Context, string, int) (*line.E2EEGroupSharedKey, error)
 	GetLastE2EEGroupSharedKey(string) (*line.E2EEGroupSharedKey, error)
 	GetLastE2EEGroupSharedKeyContext(context.Context, string) (*line.E2EEGroupSharedKey, error)
+	GetLastE2EEPublicKeysContext(context.Context, string) (map[string]line.E2EEPeerPublicKey, error)
 	GetChats([]string, bool, bool) (*line.GetChatsResponse, error)
 	GetChatsContext(context.Context, []string, bool, bool) (*line.GetChatsResponse, error)
 	RegisterE2EEGroupKey(int, string, []string, []int, []string) error

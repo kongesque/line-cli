@@ -69,6 +69,105 @@ func IsLoggedOut(err error) bool {
 		IsRequestNeedLogin(err)
 }
 
+// LogoutReason returns a safe, bounded classification label when err indicates
+// a LINE forced logout or session invalidation, or "" if err is not a logout
+// error. It never returns arbitrary raw server text.
+func LogoutReason(err error) string {
+	if err == nil || !IsLoggedOut(err) {
+		return ""
+	}
+	msg := protocolMessage(err)
+	if strings.Contains(strings.ToUpper(msg), "V3_TOKEN_CLIENT_LOGGED_OUT") {
+		return "V3_TOKEN_CLIENT_LOGGED_OUT"
+	}
+	if IsInvalidSenderKey(err) {
+		return "INVALID_SENDER_KEY"
+	}
+	if IsRequestNeedLogin(err) {
+		return "REQUEST_NEED_LOGIN"
+	}
+	if data, ok := parseEnvelopeExceptionData(msg); ok {
+		reason := strings.TrimSpace(data.Reason)
+		if isSafeEnumToken(reason) {
+			return reason
+		}
+		if strings.EqualFold(data.Name, "TokenAuthException") && data.Code == 3 {
+			return "TOKEN_AUTH_LOGGED_OUT"
+		}
+		if strings.EqualFold(data.Name, "TalkException") && data.Code == 8 {
+			return "AUTHENTICATION_FAILED"
+		}
+	}
+	return "LOGGED_OUT"
+}
+
+// IsE2EEGroupMemberMismatch returns true when LINE rejects E2EE group key
+// registration with TalkException code 99 (member set/count mismatch).
+func IsE2EEGroupMemberMismatch(err error) bool {
+	if err == nil {
+		return false
+	}
+	return hasResponseErrorCode(protocolMessage(err)) &&
+		isExceptionCode(err, "TalkException", 99)
+}
+
+// IsE2EEReceiverKeyRejected returns true when LINE rejects an E2EE 1:1 send
+// because the peer's receiver key was rotated or rejected (TalkException code
+// 83 with a receiver-key reason, or code 81/82 E2EE retry signals). It
+// excludes "invalid sender key", which indicates own-key/session invalidation.
+func IsE2EEReceiverKeyRejected(err error) bool {
+	if err == nil || IsInvalidSenderKey(err) {
+		return false
+	}
+	msg := protocolMessage(err)
+	if !hasResponseErrorCode(msg) {
+		return false
+	}
+	data, ok := parseEnvelopeExceptionData(msg)
+	if !ok || !strings.EqualFold(data.Name, "TalkException") {
+		return false
+	}
+	reason := strings.ToLower(strings.TrimSpace(data.Reason))
+	if data.Code == 83 {
+		return strings.Contains(reason, "invalid receiver key") ||
+			strings.Contains(reason, "receiver key")
+	}
+	return data.Code == 81 || data.Code == 82
+}
+
+func parseEnvelopeExceptionData(msg string) (talkExceptionData, bool) {
+	start := strings.IndexByte(msg, '{')
+	if start < 0 {
+		return talkExceptionData{}, false
+	}
+	var envelope struct {
+		Data talkExceptionData `json:"data"`
+	}
+	if json.Unmarshal([]byte(msg[start:]), &envelope) != nil {
+		return talkExceptionData{}, false
+	}
+	return envelope.Data, envelope.Data.Name != "" || envelope.Data.Code != 0 || envelope.Data.Reason != ""
+}
+
+func isSafeEnumToken(s string) bool {
+	if len(s) < 2 || len(s) > 64 {
+		return false
+	}
+	hasLetter := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			hasLetter = true
+			continue
+		}
+		if (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return hasLetter
+}
+
 func IsInvalidSenderKey(err error) bool {
 	if err == nil {
 		return false

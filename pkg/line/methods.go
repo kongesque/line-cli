@@ -966,23 +966,37 @@ func (c *Client) CreateChat(mids []string, name string, chatType int) (*Chat, er
 
 // GetLastE2EEPublicKeys fetches the latest E2EE public keys for all members of a chat.
 // Returns a map of member MID → {keyId, keyData}.
-func (c *Client) GetLastE2EEPublicKeys(req GetLastE2EEPublicKeysRequest) (map[string]E2EEPeerPublicKey, error) {
-	resp, err := c.callRPC("TalkService", "getLastE2EEPublicKeys", req)
+func (c *Client) GetLastE2EEPublicKeys(chatMid string) (map[string]E2EEPeerPublicKey, error) {
+	return c.GetLastE2EEPublicKeysContext(context.Background(), chatMid)
+}
+
+func (c *Client) GetLastE2EEPublicKeysContext(ctx context.Context, chatMid string) (map[string]E2EEPeerPublicKey, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getLastE2EEPublicKeys", chatMid)
 	if err != nil {
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int                          `json:"code"`
-		Message string                       `json:"message"`
-		Data    map[string]E2EEPeerPublicKey `json:"data"`
+		Code    *int            `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, fmt.Errorf("failed to parse getLastE2EEPublicKeys response: %w", err)
+		return nil, errors.New("invalid getLastE2EEPublicKeys response")
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getLastE2EEPublicKeys failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getLastE2EEPublicKeys response code")
 	}
-	return wrapper.Data, nil
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	var keys map[string]E2EEPeerPublicKey
+	if err := json.Unmarshal(wrapper.Data, &keys); err != nil {
+		return nil, errors.New("invalid getLastE2EEPublicKeys response")
+	}
+	if keys == nil {
+		return nil, errors.New("missing getLastE2EEPublicKeys response")
+	}
+	return keys, nil
 }
 
 // RegisterE2EEGroupKey registers a shared E2EE group key with the server.
