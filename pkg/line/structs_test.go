@@ -137,3 +137,52 @@ func TestMembershipMapPresenceAndMalformedValues(t *testing.T) {
 		}
 	}
 }
+
+func TestMessageLocationUnmarshalQuotedAndNumericCoordinates(t *testing.T) {
+	valid := []struct {
+		name     string
+		raw      string
+		lat, lng float64
+	}{
+		{"numeric", `{"title":"Tokyo","address":"JP","latitude":35.6762,"longitude":139.6503}`, 35.6762, 139.6503},
+		{"quoted strings", `{"title":"Tokyo","address":"JP","latitude":"35.6762","longitude":"139.6503"}`, 35.6762, 139.6503},
+		{"negative quoted", `{"latitude":"-33.8688","longitude":"-151.2093"}`, -33.8688, -151.2093},
+		{"zero quoted", `{"latitude":"0","longitude":"0"}`, 0, 0},
+	}
+	for _, tc := range valid {
+		t.Run(tc.name, func(t *testing.T) {
+			var loc MessageLocation
+			if err := json.Unmarshal([]byte(tc.raw), &loc); err != nil {
+				t.Fatal(err)
+			}
+			if loc.Malformed() || loc.Latitude != tc.lat || loc.Longitude != tc.lng {
+				t.Fatalf("got %+v (malformed=%v), want (%v,%v)", loc, loc.Malformed(), tc.lat, tc.lng)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name string
+		raw  string
+	}{
+		{"missing", `{}`},
+		{"null", `{"latitude":null,"longitude":1}`},
+		{"non-numeric string", `{"latitude":"abc","longitude":"1"}`},
+		{"NaN string", `{"latitude":"NaN","longitude":"1"}`},
+		{"Inf string", `{"latitude":"Inf","longitude":"1"}`},
+		{"overflow", `{"latitude":"1e309","longitude":"1"}`},
+		{"lat out of range", `{"latitude":"90.1","longitude":"0"}`},
+		{"lng out of range", `{"latitude":"0","longitude":"-180.1"}`},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			var loc MessageLocation
+			if err := json.Unmarshal([]byte(tc.raw), &loc); err != nil {
+				t.Fatal(err)
+			}
+			if !loc.Malformed() {
+				t.Fatalf("accepted invalid location %s: %+v", tc.raw, loc)
+			}
+		})
+	}
+}

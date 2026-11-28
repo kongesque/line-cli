@@ -739,3 +739,97 @@ func TestDownloadAlbumPreviewExact20MiBLimit(t *testing.T) {
 		t.Fatalf("20 MiB + 1: data=%d err=%v, want ErrOBSSizeLimit", len(data), err)
 	}
 }
+
+func TestDownloadOBSOriginal404FallsBackToDefaultVariant(t *testing.T) {
+	installCachedOBSToken(t)
+
+	var requests []observedOBSRequest
+	client := NewClient("line-token")
+	client.OBSClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests = append(requests, observedOBSRequest{path: req.URL.Path, query: req.URL.RawQuery})
+			switch req.URL.Path {
+			case "/r/talk/m/msg-1/object_info.obs":
+				return obsResponse(http.StatusOK, `{"status":"exist","encodeStatus":"done"}`), nil
+			case "/r/talk/m/msg-1/original":
+				return obsResponse(http.StatusNotFound, "original not available"), nil
+			case "/r/talk/m/msg-1":
+				return obsResponse(http.StatusOK, "default-bytes"), nil
+			default:
+				return obsResponse(http.StatusInternalServerError, "unexpected"), nil
+			}
+		}),
+	}
+
+	data, err := client.DownloadOBSWithSIDOptions(context.Background(), "msg-1", "", "m", OBSDownloadOptions{
+		TID:      "original",
+		OBSPop:   "pop-1",
+		MaxBytes: 13,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "default-bytes" {
+		t.Fatalf("data = %q, want default-bytes", data)
+	}
+	if len(requests) != 3 {
+		t.Fatalf("requests = %d, want 3 (preflight + /original + default)", len(requests))
+	}
+	if requests[1].path != "/r/talk/m/msg-1/original" || requests[2].path != "/r/talk/m/msg-1" || requests[2].query != "p=pop-1" {
+		t.Fatalf("unexpected fallback requests: %#v", requests)
+	}
+}
+
+func TestDownloadOBSOriginalFallbackEnforcesMaxBytes(t *testing.T) {
+	installCachedOBSToken(t)
+
+	client := NewClient("line-token")
+	client.OBSClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/r/talk/m/msg-1/object_info.obs":
+				return obsResponse(http.StatusOK, `{"status":"exist","encodeStatus":"done"}`), nil
+			case "/r/talk/m/msg-1/original":
+				return obsResponse(http.StatusNotFound, "long error body exceeding maxBytes"), nil
+			case "/r/talk/m/msg-1":
+				return obsResponse(http.StatusOK, "123456"), nil
+			default:
+				return obsResponse(http.StatusInternalServerError, "unexpected"), nil
+			}
+		}),
+	}
+
+	_, err := client.DownloadOBSWithSIDOptions(context.Background(), "msg-1", "", "m", OBSDownloadOptions{
+		TID:      "original",
+		MaxBytes: 5,
+	})
+	if !errors.Is(err, ErrOBSSizeLimit) {
+		t.Fatalf("err = %v, want ErrOBSSizeLimit", err)
+	}
+}
+
+func TestDownloadOBSOriginalNon404DoesNotFallBack(t *testing.T) {
+	installCachedOBSToken(t)
+
+	var paths []string
+	client := NewClient("line-token")
+	client.OBSClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			paths = append(paths, req.URL.Path)
+			if strings.HasSuffix(req.URL.Path, "object_info.obs") {
+				return obsResponse(http.StatusOK, `{"status":"exist","encodeStatus":"done"}`), nil
+			}
+			return obsResponse(http.StatusForbidden, "forbidden"), nil
+		}),
+	}
+
+	_, err := client.DownloadOBSWithSIDOptions(context.Background(), "msg-1", "", "m", OBSDownloadOptions{
+		TID: "original",
+	})
+	if !IsUnauthorizedStatus(err) {
+		t.Fatalf("err = %v, want unauthorized status", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("paths = %v, must not fall back on 403", paths)
+	}
+}

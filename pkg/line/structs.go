@@ -3,6 +3,7 @@ package line
 import (
 	"encoding/json"
 	"errors"
+	"math"
 )
 
 type FlexibleMidMap map[string]bool
@@ -95,20 +96,30 @@ type MessageLocation struct {
 }
 
 // UnmarshalJSON retains malformed locations for per-message reporting instead
-// of inventing zero coordinates or failing an entire history page.
+// of inventing zero coordinates or failing an entire history page. It accepts
+// both JSON numbers and quoted numeric strings for latitude and longitude.
 func (l *MessageLocation) UnmarshalJSON(data []byte) error {
 	var value struct {
-		Title     string   `json:"title"`
-		Address   string   `json:"address"`
-		Latitude  *float64 `json:"latitude"`
-		Longitude *float64 `json:"longitude"`
+		Title     string       `json:"title"`
+		Address   string       `json:"address"`
+		Latitude  *json.Number `json:"latitude"`
+		Longitude *json.Number `json:"longitude"`
 	}
 	*l = MessageLocation{}
 	if json.Unmarshal(data, &value) != nil || value.Latitude == nil || value.Longitude == nil {
 		l.invalid = true
 		return nil
 	}
-	l.Title, l.Address, l.Latitude, l.Longitude = value.Title, value.Address, *value.Latitude, *value.Longitude
+	lat, errLat := value.Latitude.Float64()
+	lng, errLng := value.Longitude.Float64()
+	if errLat != nil || errLng != nil ||
+		math.IsNaN(lat) || math.IsInf(lat, 0) ||
+		math.IsNaN(lng) || math.IsInf(lng, 0) ||
+		math.Abs(lat) > 90 || math.Abs(lng) > 180 {
+		l.invalid = true
+		return nil
+	}
+	l.Title, l.Address, l.Latitude, l.Longitude = value.Title, value.Address, lat, lng
 	return nil
 }
 

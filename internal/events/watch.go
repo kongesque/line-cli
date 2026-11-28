@@ -166,15 +166,28 @@ func (w *Watcher) Run(ctx context.Context) error {
 		var callbackErr error
 		var eventError error
 		received := false
+		opened := false
+		reconnecting := false
 		streamErr := api.ListenSSE(streamCtx, revision, func(kind, data string) {
-			if callbackErr != nil || eventError != nil || (w.Limit > 0 && count >= w.Limit) {
+			if callbackErr != nil || eventError != nil || reconnecting || (w.Limit > 0 && count >= w.Limit) {
 				return
 			}
-			if kind == "ping" || kind == "connInfoRevision" {
+			switch kind {
+			case line.SSEEventOpen:
+				opened = true
+				return
+			case line.SSEEventPing, "connInfoRevision":
 				recoveredStreamToken = ""
 				return
-			}
-			if kind == "error" {
+			case line.SSEEventReconnect:
+				reconnecting = true
+				cancel()
+				return
+			case line.SSEEventTalkException:
+				eventError = line.NewSSETalkException(data)
+				cancel()
+				return
+			case "error":
 				eventError = errors.New(data)
 				cancel()
 				return
@@ -229,7 +242,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 				cancel()
 			}
 		})
-		probeDue := errors.Is(streamCtx.Err(), context.DeadlineExceeded)
+		probeDue := !reconnecting && eventError == nil && callbackErr == nil && errors.Is(streamCtx.Err(), context.DeadlineExceeded)
 		cancel()
 		if callbackErr != nil {
 			return callbackErr
@@ -293,7 +306,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 			backoff = time.Second
 			continue
 		}
-		if received {
+		if received || (opened && !reconnecting) {
 			backoff = time.Second
 		}
 		if err := w.retry(ctx, backoff); err != nil {

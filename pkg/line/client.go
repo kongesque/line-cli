@@ -999,6 +999,9 @@ func (c *Client) downloadOBSWithServiceAndSIDOptions(ctx context.Context, servic
 		if err == nil {
 			var data []byte
 			data, err = c.downloadOBSObject(ctx, obsURL, obsToken, messageID, opts.MaxBytes)
+			if err != nil && opts.TID == "original" && isOBSHTTPStatus(err, http.StatusNotFound) {
+				data, err = c.downloadOBSObject(ctx, objectInfoURL, obsToken, messageID, opts.MaxBytes)
+			}
 			if err == nil {
 				return data, nil
 			}
@@ -1065,6 +1068,20 @@ func (c *Client) checkOBSObjectReady(ctx context.Context, obsURL, obsToken, mess
 	}
 }
 
+type obsHTTPStatusError struct {
+	status int
+	body   string
+}
+
+func (e *obsHTTPStatusError) Error() string {
+	return fmt.Sprintf("OBS download failed (%d): %s", e.status, e.body)
+}
+
+func isOBSHTTPStatus(err error, status int) bool {
+	var statusErr *obsHTTPStatusError
+	return errors.As(err, &statusErr) && statusErr.status == status
+}
+
 func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messageID string, maxBytes int64) ([]byte, error) {
 	req, err := c.newOBSDownloadRequest(ctx, obsURL, obsToken, messageID)
 	if err != nil {
@@ -1077,23 +1094,25 @@ func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messag
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
 	}
-	if maxBytes == 0 {
-		maxBytes = maxMediaResponseBytes
-	}
-	body, readErr := readResponseBody(resp, maxBytes)
-	if errors.Is(readErr, ErrResponseTooLarge) {
-		return nil, ErrOBSSizeLimit
-	}
-	if readErr != nil {
-		return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)
-	}
 	switch resp.StatusCode {
 	case http.StatusOK:
+		if maxBytes == 0 {
+			maxBytes = maxMediaResponseBytes
+		}
+		body, readErr := readResponseBody(resp, maxBytes)
+		if errors.Is(readErr, ErrResponseTooLarge) {
+			return nil, ErrOBSSizeLimit
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)
+		}
 		return body, nil
 	case http.StatusAccepted:
+		_, _ = readResponseBody(resp, maxOBSMetadataBytes)
 		return nil, ErrOBSEncodingIncomplete
 	default:
-		return nil, fmt.Errorf("OBS download failed (%d): %s", resp.StatusCode, string(body))
+		body, _ := readResponseBody(resp, maxOBSMetadataBytes)
+		return nil, &obsHTTPStatusError{status: resp.StatusCode, body: string(body)}
 	}
 }
 

@@ -530,3 +530,73 @@ func TestWatchStopsWhenLINERejectsRefresh(t *testing.T) {
 		t.Fatalf("rejected refresh: refreshes=%d streams=%d invalidated=%v", f.refreshes, len(f.revisions), s.state.Invalidated)
 	}
 }
+
+func TestWatchHandlesOpenPingReconnectWithoutAdvancingRevision(t *testing.T) {
+	w, f, s, out := setup(t)
+	w.Limit = 1
+	var delays []time.Duration
+	w.Wait = func(_ context.Context, d time.Duration) error {
+		delays = append(delays, d)
+		return nil
+	}
+	f.streams = []stream{
+		{err: io.EOF}, // backoff 1s -> next 2s
+		{frames: []frame{{line.SSEEventOpen, ""}, {line.SSEEventPing, ""}}, err: io.EOF},                                         // open resets backoff -> 1s -> next 2s
+		{frames: []frame{{line.SSEEventOpen, ""}, {line.SSEEventReconnect, ""}}, err: context.Canceled},                          // reconnect uses 2s -> next 4s
+		{frames: []frame{{line.SSEEventOpen, ""}, {line.SSEEventPing, ""}, {line.SSEEventReconnect, ""}}, err: context.Canceled}, // reconnect uses 4s
+		{frames: []frame{{line.SSEEventOpen, ""}, {"operation", incoming}}},
+	}
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	wantDelays := []time.Duration{time.Second, time.Second, 2 * time.Second, 4 * time.Second}
+	if !reflect.DeepEqual(delays, wantDelays) {
+		t.Fatalf("delays = %v, want %v", delays, wantDelays)
+	}
+	if len(outputEvents(t, out)) != 1 || *s.state.WatchRevision != 11 {
+		t.Fatalf("events/revision mismatch: rev=%d", *s.state.WatchRevision)
+	}
+}
+
+func TestWatchTalkExceptionRefreshesOrLogsOut(t *testing.T) {
+	t.Run("refresh required", func(t *testing.T) {
+		w, f, s, out := setup(t)
+		s.state.RefreshToken = "refresh"
+		f.streams = []stream{
+			{frames: []frame{{line.SSEEventOpen, ""}, {line.SSEEventTalkException, `{"code":119,"reason":"MUST_REFRESH_V3_TOKEN"}`}}},
+			{frames: []frame{{line.SSEEventOpen, ""}, {"operation", incoming}}},
+		}
+		if err := w.Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if f.refreshes != 1 || s.state.AccessToken != "rotated" || len(outputEvents(t, out)) != 1 || *s.state.WatchRevision != 11 {
+			t.Fatalf("talkException refresh failed: refreshes=%d token=%s rev=%d", f.refreshes, s.state.AccessToken, *s.state.WatchRevision)
+		}
+	})
+
+	t.Run("forced logout", func(t *testing.T) {
+		w, f, s, out := setup(t)
+		s.state.RefreshToken = "refresh"
+		f.streams = []stream{
+			{frames: []frame{{line.SSEEventOpen, ""}, {line.SSEEventTalkException, `{"code":8,"reason":"V3_TOKEN_CLIENT_LOGGED_OUT","secret":"top-secret"}`}}},
+		}
+		err := w.Run(context.Background())
+		if err == nil || !s.state.Invalidated || f.refreshes != 0 || out.Len() != 0 || *s.state.WatchRevision != 10 {
+			t.Fatalf("talkException logout failed: err=%v invalidated=%v refreshes=%d", err, s.state.Invalidated, f.refreshes)
+		}
+		if strings.Contains(err.Error(), "top-secret") {
+			t.Fatalf("talkException leaked secret: %v", err)
+		}
+	})
+
+	t.Run("non-auth talkException fails safely", func(t *testing.T) {
+		w, f, s, out := setup(t)
+		f.streams = []stream{
+			{frames: []frame{{line.SSEEventOpen, ""}, {line.SSEEventTalkException, `{"code":99,"reason":"secret-detail"}`}}},
+		}
+		err := w.Run(context.Background())
+		if err == nil || strings.Contains(err.Error(), "secret-detail") || out.Len() != 0 || *s.state.WatchRevision != 10 {
+			t.Fatalf("non-auth talkException unsafe: err=%v rev=%d", err, *s.state.WatchRevision)
+		}
+	})
+}

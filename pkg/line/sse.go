@@ -3,6 +3,7 @@ package line
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,54 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+const (
+	SSEEventOpen          = "open"
+	SSEEventPing          = "ping"
+	SSEEventReconnect     = "reconnect"
+	SSEEventTalkException = "talkException"
+)
+
+// NewSSETalkException wraps an SSE talkException payload in LINE's standard
+// gateway 10051 RESPONSE_ERROR envelope so auth/logout/refresh classifiers
+// treat it identically to RPC TalkExceptions without exposing raw server bodies.
+func NewSSETalkException(data string) error {
+	trimmed := strings.TrimSpace(data)
+	if trimmed != "" {
+		var existing struct {
+			Code int             `json:"code"`
+			Data json.RawMessage `json:"data"`
+		}
+		if json.Unmarshal([]byte(trimmed), &existing) == nil && existing.Code == 10051 && len(existing.Data) > 0 {
+			return &ResponseError{Status: http.StatusOK, code: 10051, body: trimmed}
+		}
+	}
+
+	var rawMap map[string]any
+	if trimmed != "" && json.Unmarshal([]byte(trimmed), &rawMap) == nil && rawMap != nil {
+		if name, ok := rawMap["name"].(string); !ok || strings.TrimSpace(name) == "" {
+			rawMap["name"] = "TalkException"
+		}
+	} else {
+		rawMap = map[string]any{
+			"name":   "TalkException",
+			"reason": trimmed,
+		}
+	}
+	payload, err := json.Marshal(struct {
+		Code    int            `json:"code"`
+		Message string         `json:"message"`
+		Data    map[string]any `json:"data"`
+	}{
+		Code:    10051,
+		Message: "RESPONSE_ERROR",
+		Data:    rawMap,
+	})
+	if err != nil {
+		return &ResponseError{Status: http.StatusOK, code: 10051}
+	}
+	return &ResponseError{Status: http.StatusOK, code: 10051, body: string(payload)}
+}
 
 // sseHTTPClient is a dedicated HTTP client for SSE connections with no timeout.
 // Reused across reconnects to avoid allocating a new transport pool each time.
@@ -84,6 +133,11 @@ func (c *Client) ListenSSE(ctx context.Context, localRev int64, callback func(ev
 	})
 	defer stopContextClose()
 
+	callback(SSEEventOpen, "")
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+
 	var currentEvent string
 	var dataLines []string
 	eventBytes, eventLines := 0, 0
@@ -93,12 +147,14 @@ func (c *Client) ListenSSE(ctx context.Context, localRev int64, callback func(ev
 			return
 		}
 		data := strings.Join(dataLines, "\n")
+		eventType := currentEvent
+		if eventType == "" {
+			eventType = "operation"
+		}
 		if data != "" && data != "null" {
-			eventType := currentEvent
-			if eventType == "" {
-				eventType = "operation"
-			}
 			callback(eventType, data)
+		} else if eventType == SSEEventPing || eventType == SSEEventReconnect || eventType == SSEEventOpen {
+			callback(eventType, "")
 		}
 		currentEvent = ""
 		dataLines = nil
