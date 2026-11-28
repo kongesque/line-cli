@@ -436,8 +436,11 @@ func TestGuidedDownloadAlbumChooserAndPreviewPrompt(t *testing.T) {
 	if api.albumPreviewCalls != 1 || api.albumOID != "oid-2" || api.albumID != "v2-guided" {
 		t.Fatalf("guided album download: calls=%d oid=%q album=%q", api.albumPreviewCalls, api.albumOID, api.albumID)
 	}
-	if !strings.Contains(diag.String(), "[Album: Summit photos] (3 previews)") || !strings.Contains(diag.String(), "Preview number (1-3) [1]: ") {
+	if !strings.Contains(diag.String(), "[Album: Summit photos] (3 previews)") || !strings.Contains(diag.String(), "ID 103") || !strings.Contains(diag.String(), "Preview number (1-3) [1]: ") {
 		t.Fatalf("missing album chooser/prompt in:\n%s", diag.String())
+	}
+	if strings.Contains(diag.String(), "line://") {
+		t.Fatalf("download chooser should omit generated post URL:\n%s", diag.String())
 	}
 	if strings.Contains(diag.String(), "Excluded note") || strings.Contains(diag.String(), "Empty album") || strings.Contains(diag.String(), "Cross chat album") {
 		t.Fatalf("ineligible post appeared in chooser:\n%s", diag.String())

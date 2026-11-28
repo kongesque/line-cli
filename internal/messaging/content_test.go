@@ -600,4 +600,23 @@ func TestPostNotificationPreviewMediasAndChatBinding(t *testing.T) {
 	if p := parsePostNotification(v2Chat, v2WrongType); p.status != "ok" || *p.post.PreviewCount != 0 {
 		t.Fatalf("V2 group album with V1 user chatId must not bind: %+v", p)
 	}
+	// Duplicate or invalid homeId suppresses preview eligibility even on exact chatId match
+	for _, rawURL := range []string{
+		"line://group/home/albums/album?albumId=123&homeId=c1234&homeId=c-other",
+		"line://group/home/albums/album?albumId=123&homeId=bad-mid!",
+	} {
+		ambiguous := &line.Message{
+			ContentType: 16,
+			ContentMetadata: map[string]string{
+				"serviceType":   "AB",
+				"albumName":     "Ambiguous",
+				"postEndUrl":    rawURL,
+				"chatId":        "c1234",
+				"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+			},
+		}
+		if p := parsePostNotification("c1234", ambiguous); p.status != "malformed_metadata" || *p.post.PreviewCount != 0 || len(p.oids) != 0 {
+			t.Fatalf("ambiguous homeId %q allowed previews: %+v", rawURL, p)
+		}
+	}
 }

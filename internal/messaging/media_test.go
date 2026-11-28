@@ -393,6 +393,20 @@ func TestAlbumPreviewRejectionsMakeZeroOBSCalls(t *testing.T) {
 			wantCode: "unsupported_content",
 		},
 		{
+			name: "duplicate homeId on exact chatId match",
+			chat: "c1234",
+			msg: &line.Message{
+				ID: "1", ContentType: 16,
+				ContentMetadata: map[string]string{
+					"serviceType":   "AB",
+					"chatId":        "c1234",
+					"postEndUrl":    "line://group/home/albums/album?albumId=123&homeId=c1234&homeId=c-other",
+					"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+				},
+			},
+			wantCode: "unsupported_content",
+		},
+		{
 			name: "note post",
 			chat: "c1234",
 			msg: &line.Message{

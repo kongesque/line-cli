@@ -22,11 +22,11 @@ func (a *App) downloadCommand(args []string) error {
 	fs := newFlagSet("download")
 	timeout := fs.Duration("timeout", 2*time.Minute, "command deadline including preparation, e.g. 30s; 0 disables it")
 	h := commandHelp{Command: "download", Usage: []string{"line download CHAT --message ID --output PATH [--preview N] [--json]", "line download CHAT --message ID --output - [--preview N] | COMMAND"},
-		About:    "Download an image, video, audio, file, or album preview thumbnail (up to 20 MiB).\nExisting files are never overwritten. Encrypted media is verified before the first\nbyte is written.",
+		About:    "Download an image, video, audio, file, or album preview thumbnail (up to 20 MiB).\nUse line messages CHAT --details --json to discover message IDs and album\npreview counts. Existing files are never overwritten. Encrypted media is verified\nbefore the first byte is written.",
 		Groups:   []flagGroup{{"Target", []string{"message", "preview"}}, {"Output", []string{"output", "json"}}, {"Request", []string{"timeout"}}},
 		Examples: []string{`line download "Alice" --message MESSAGE_ID --output ./photo.jpg`, `line download "Weekend Trip" --message ALBUM_MSG_ID --preview 2 --output ./thumb.jpg`, "line download CHAT_ID --message MESSAGE_ID --output - | consumer"}}
 	id := fs.String("message", "", "attachment or album message ID (lookup: up to 10 pages / 1000 records / 30s)")
-	preview := fs.Int("preview", 0, "1-based album preview thumbnail index (album posts only)")
+	preview := fs.Int("preview", 0, "1-based album thumbnail index (defaults to 1 when omitted)")
 	output := fs.String("output", "", "destination path (never overwritten), or - for binary stdout")
 	jsonOutput := fs.Bool("json", false, "write JSON summary")
 	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {

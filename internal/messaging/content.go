@@ -416,6 +416,7 @@ func parsePostNotification(chat string, msg *line.Message) parsedPost {
 
 	albumID := ""
 	urlHomeID := ""
+	homeIDInvalid := false
 	if raw := meta["postEndUrl"]; raw != "" {
 		urlRes := parsePostEndURL(raw, postType == "album")
 		if urlRes.malformed {
@@ -425,6 +426,7 @@ func parsePostNotification(chat string, msg *line.Message) parsedPost {
 		post.AlbumID = urlRes.albumID
 		albumID = urlRes.albumID
 		urlHomeID = urlRes.homeID
+		homeIDInvalid = urlRes.homeIDInvalid
 	}
 
 	var chatID string
@@ -443,7 +445,7 @@ func parsePostNotification(chat string, msg *line.Message) parsedPost {
 		if !ok {
 			markMalformed()
 		}
-		if isSameChatAlbumBinding(chat, chatID, urlHomeID) {
+		if isSameChatAlbumBinding(chat, chatID, urlHomeID, homeIDInvalid) {
 			oids = candidates
 			n := len(oids)
 			post.PreviewCount = &n
@@ -460,19 +462,23 @@ func parsePostNotification(chat string, msg *line.Message) parsedPost {
 }
 
 type postURLResult struct {
-	url       string
-	albumID   string
-	homeID    string
-	malformed bool
+	url           string
+	albumID       string
+	homeID        string
+	homeIDInvalid bool
+	malformed     bool
 }
 
-// isSameChatAlbumBinding verifies that an album notification's OBS X-Line-Mid
-// (chatID) belongs to selectedChat. Exact match handles V1/same-format chats;
-// on modern V2 chats (44-char opaque MID), LINE still puts the 33-char legacy
-// V1 hex MID in contentMetadata["chatId"] (which OBS requires) while binding
-// the album route's postEndUrl homeId to the V2 selectedChat.
-func isSameChatAlbumBinding(selectedChat, chatID, urlHomeID string) bool {
-	if selectedChat == "" || chatID == "" {
+// isSameChatAlbumBinding checks local metadata consistency between selectedChat,
+// contentMetadata["chatId"], and an album route's postEndUrl homeId before
+// enabling preview downloads. Exact chatId equality handles same-format chats;
+// on modern V2 chats (44-char opaque MID), LINE puts the 33-char legacy V1 hex
+// MID in contentMetadata["chatId"] (required by OBS in X-Line-Mid) while
+// setting postEndUrl homeId to the V2 selectedChat. Because both fields come
+// from notification metadata, LINE's OBS endpoint remains the server-side
+// authorization boundary.
+func isSameChatAlbumBinding(selectedChat, chatID, urlHomeID string, homeIDInvalid bool) bool {
+	if homeIDInvalid || selectedChat == "" || chatID == "" {
 		return false
 	}
 	if chatID == selectedChat {
@@ -534,13 +540,14 @@ func parsePostEndURL(raw string, extractAlbumID bool) postURLResult {
 	if extractAlbumID && route == postRouteAlbum {
 		if homeVals := values["homeId"]; len(homeVals) > 1 {
 			res.malformed = true
-			return res
+			res.homeIDInvalid = true
 		} else if len(homeVals) == 1 && homeVals[0] != "" {
 			if ValidateChatID(homeVals[0]) != nil {
 				res.malformed = true
-				return res
+				res.homeIDInvalid = true
+			} else {
+				res.homeID = homeVals[0]
 			}
-			res.homeID = homeVals[0]
 		}
 		v2Vals := values["albumIdV2"]
 		v1Vals := values["albumId"]

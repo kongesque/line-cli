@@ -327,7 +327,13 @@ func (a *App) selectMessageDetail(chat, command string) (messaging.Message, erro
 		if command == "download" && !messaging.IsDownloadableMessage(m) {
 			continue
 		}
-		lines := messageLines(m)
+		display := m
+		if display.Content.Post != nil && display.Content.Post.URL != "" {
+			postCopy := *display.Content.Post
+			postCopy.URL = ""
+			display.Content.Post = &postCopy
+		}
+		lines := messageLines(display)
 		previewSuffix := ""
 		if command == "download" && m.Content.Post != nil && m.Content.Post.Type == "album" && m.Content.Post.PreviewCount != nil && *m.Content.Post.PreviewCount > 1 {
 			previewSuffix = fmt.Sprintf(" (%d previews)", *m.Content.Post.PreviewCount)

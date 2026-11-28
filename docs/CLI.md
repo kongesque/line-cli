@@ -489,6 +489,22 @@ does not convert the format.
 Messages with an external `DOWNLOAD_URL` are not supported. Reading or
 downloading never registers a group encryption key.
 
+To discover downloadable Album previews from scripts or agents, inspect
+`messages --details --json` and check `content.post.preview_count > 0` (which
+covers both native type `16` and plaintext type-0 wrappers):
+
+```sh
+line --error-format=json messages CHAT_ID --details --json --limit 100 |
+  jq -c '.messages[] | select(.content.post.type == "album" and .content.post.preview_count > 0) |
+         {chat_id, message_id: .id, title: .content.post.title, preview_count: .content.post.preview_count}'
+
+line --error-format=json download CHAT_ID --message ALBUM_MESSAGE_ID \
+  --preview 1 --output ./thumb-1.jpg --json
+```
+
+Note that `messages --page` can page farther back than `download`'s lookup
+budget (10 pages, 1,000 records, or 30 seconds).
+
 To send attachment bytes to another command, use an explicit chat and message
 ID:
 
