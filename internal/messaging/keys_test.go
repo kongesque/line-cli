@@ -124,6 +124,29 @@ func TestGroupKeyRegistrationValidatesAuthoritativeKeysAndMismatch(t *testing.T)
 			t.Fatalf("mismatch retried, downgraded, or misclassified: regs=%d sends=%d steps=%+v", registrations, f.sends, detail.Mutation.Steps)
 		}
 	})
+
+	t.Run("HTTP 503 on getLastE2EEPublicKeys never downgrades to plaintext", func(t *testing.T) {
+		c, f, _, store := setup(t, false)
+		f.groupErr = line.ErrGroupKeyNotFound
+		wire := line.NewClient("synthetic-token")
+		wire.HTTPClient.Transport = claimTransport(func(r *http.Request) (*http.Response, error) {
+			return claimResponse(r, http.StatusServiceUnavailable, `{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":100,"reason":"exceed max member"}}`), nil
+		})
+		c.Session.NewClient = func(string) session.API { return &groupKeysWireAPI{fakeAPI: f, wire: wire} }
+		result, err := c.SendMentionsWithOptionsContext(context.Background(), "c-group", "hello", "", nil, SendOptions{AllowPlaintext: true})
+		if err == nil || result != nil || f.registrations != 0 || f.sends != 0 || store.state.LastReqSeq != 0 {
+			t.Fatalf("HTTP 503 downgraded or mutated: result=%+v err=%v regs=%d sends=%d seq=%d", result, err, f.registrations, f.sends, store.state.LastReqSeq)
+		}
+	})
+}
+
+type groupKeysWireAPI struct {
+	*fakeAPI
+	wire *line.Client
+}
+
+func (a *groupKeysWireAPI) GetLastE2EEPublicKeysContext(ctx context.Context, chatMid string) (map[string]line.E2EEPeerPublicKey, error) {
+	return a.wire.GetLastE2EEPublicKeysContext(ctx, chatMid)
 }
 
 func TestSend1to1ReceiverKeyRejectedActionableWithoutRetry(t *testing.T) {

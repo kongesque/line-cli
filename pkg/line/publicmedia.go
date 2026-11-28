@@ -31,6 +31,18 @@ var (
 	ErrPublicMediaRedirectLimit = errors.New("public media exceeded redirect limit")
 )
 
+// PublicMediaStatusError reports a non-success HTTP status from an
+// unauthenticated public OBS or external DOWNLOAD_URL fetch. It is
+// intentionally distinct from ResponseError so an external server's
+// HTTP 401/403 never triggers LINE token refresh or auth errors.
+type PublicMediaStatusError struct {
+	Status int
+}
+
+func (e *PublicMediaStatusError) Error() string {
+	return fmt.Sprintf("public media download failed (status %d)", e.Status)
+}
+
 var (
 	nat64WellKnownPrefix = netip.MustParsePrefix("64:ff9b::/96")
 
@@ -213,7 +225,6 @@ func (t *publicMediaTransport) RoundTrip(req *http.Request) (*http.Response, err
 	if err != nil {
 		return nil, err
 	}
-	pinnedAddr := addrs[0]
 
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if t.tlsConfig != nil {
@@ -228,7 +239,18 @@ func (t *publicMediaTransport) RoundTrip(req *http.Request) (*http.Response, err
 	tr := &http.Transport{
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return dialFn(ctx, network, net.JoinHostPort(pinnedAddr.String(), port))
+			var lastErr error
+			for _, addr := range addrs {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				conn, err := dialFn(ctx, network, net.JoinHostPort(addr.String(), port))
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+			}
+			return nil, lastErr
 		},
 		TLSClientConfig:       tlsCfg,
 		ForceAttemptHTTP2:     true,

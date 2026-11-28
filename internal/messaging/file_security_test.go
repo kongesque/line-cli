@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -29,7 +30,8 @@ func claimResponse(r *http.Request, status int, body string) *http.Response {
 
 type claimFileAPI struct {
 	*fileAPI
-	wire *line.Client
+	wire      *line.Client
+	refreshes int
 }
 
 func (a *claimFileAPI) SendMessageContext(ctx context.Context, seq int64, m *line.Message) (*line.Message, error) {
@@ -38,6 +40,11 @@ func (a *claimFileAPI) SendMessageContext(ctx context.Context, seq int64, m *lin
 
 func (a *claimFileAPI) DownloadOBSPublicResourceWithOptions(ctx context.Context, resourceURL string, opts line.OBSDownloadOptions) ([]byte, error) {
 	return a.wire.DownloadOBSPublicResourceWithOptions(ctx, resourceURL, opts)
+}
+
+func (a *claimFileAPI) RefreshAccessTokenContext(context.Context, string) (*line.TokenV3IssueResult, error) {
+	a.refreshes++
+	return &line.TokenV3IssueResult{AccessToken: "refreshed-token", RefreshToken: "rotated-refresh"}, nil
 }
 
 func TestFileWireEnvelopeProtectsKeyAndName(t *testing.T) {
@@ -195,7 +202,8 @@ func TestEncryptedFileRealRecipientRoundTrip(t *testing.T) {
 }
 
 func TestDownloadExternalURLSafetyAndNoTokenLeak(t *testing.T) {
-	c, f, _, _ := setup(t, false)
+	c, f, _, store := setup(t, false)
+	store.state.RefreshToken = "synthetic-refresh-token"
 	wire := line.NewClient("super-secret-line-token")
 	var seenReq *http.Request
 	wire.PublicMediaClient = &http.Client{
@@ -258,5 +266,31 @@ func TestDownloadExternalURLSafetyAndNoTokenLeak(t *testing.T) {
 	data, err = c.DownloadFile(context.Background(), "u-official", "901")
 	if err != nil || string(data) != "obs-public-bytes" || obsReq == nil || obsReq.Header.Get("X-Line-Access") != "" {
 		t.Fatalf("relative OBS DOWNLOAD_URL failed: data=%q err=%v req=%v", data, err, obsReq)
+	}
+
+	// 5. External 401/403 must never trigger LINE token refresh or classify as LINE auth error.
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		externalHits := 0
+		wire.PublicMediaClient = &http.Client{
+			Transport: claimTransport(func(r *http.Request) (*http.Response, error) {
+				externalHits++
+				return claimResponse(r, status, "external-secret-error"), nil
+			}),
+		}
+		api.refreshes = 0
+		f.history[0].ContentMetadata["DOWNLOAD_URL"] = "https://cdn.example.com/expired-signed-url"
+		data, err = c.DownloadFile(context.Background(), "u-official", "901")
+		if err == nil || data != nil {
+			t.Fatalf("expected error for external status %d, got data=%q err=%v", status, data, err)
+		}
+		if externalHits != 1 || api.refreshes != 0 {
+			t.Fatalf("external %d triggered retry or token refresh: hits=%d refreshes=%d", status, externalHits, api.refreshes)
+		}
+		if line.IsAuthError(session.ProtocolError(err)) || strings.Contains(err.Error(), "external-secret-error") {
+			t.Fatalf("external %d misclassified as LINE auth error or leaked body: %v", status, err)
+		}
+		if !strings.Contains(err.Error(), fmt.Sprintf("status %d", status)) {
+			t.Fatalf("external %d missing status message: %v", status, err)
+		}
 	}
 }

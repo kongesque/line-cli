@@ -175,6 +175,12 @@ func TestPublicMediaTransportPinningRedirectsAndLimits(t *testing.T) {
 		case "/server-error":
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("secret-500-body"))
+		case "/unauthorized":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte("secret-401-body"))
+		case "/forbidden":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("secret-403-body"))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -254,11 +260,57 @@ func TestPublicMediaTransportPinningRedirectsAndLimits(t *testing.T) {
 	if _, err := client.DownloadOBSPublicResourceWithOptions(context.Background(), "https://cdn.example.com/server-error", OBSDownloadOptions{}); err == nil || strings.Contains(err.Error(), "secret-500-body") {
 		t.Fatalf("500 error missing or leaked body: %v", err)
 	}
+	for _, tc := range []struct {
+		path   string
+		status int
+		secret string
+	}{
+		{"/unauthorized", http.StatusUnauthorized, "secret-401-body"},
+		{"/forbidden", http.StatusForbidden, "secret-403-body"},
+	} {
+		_, err := client.DownloadOBSPublicResourceWithOptions(context.Background(), "https://cdn.example.com"+tc.path, OBSDownloadOptions{})
+		var statusErr *PublicMediaStatusError
+		if !errors.As(err, &statusErr) || statusErr.Status != tc.status {
+			t.Fatalf("%s err = %v, want *PublicMediaStatusError(%d)", tc.path, err, tc.status)
+		}
+		if strings.Contains(err.Error(), tc.secret) {
+			t.Fatalf("%s leaked response body: %v", tc.path, err)
+		}
+		if IsAuthError(err) || IsUnauthorizedStatus(err) {
+			t.Fatalf("external %d must not classify as LINE auth error: %v", tc.status, err)
+		}
+	}
 
 	// 6. Mixed DNS response containing any private IP fails closed before dialing.
 	beforeDials := len(dialedAddrs)
 	mixedClient := newClient([]netip.Addr{publicIP, netip.MustParseAddr("10.0.0.1")})
 	if _, err := mixedClient.DownloadOBSPublicResourceWithOptions(context.Background(), "https://cdn.example.com/ok", OBSDownloadOptions{}); !errors.Is(err, ErrPublicMediaBlocked) || len(dialedAddrs) != beforeDials {
 		t.Fatalf("mixed private DNS not blocked before dial: err=%v dials=%d->%d", err, beforeDials, len(dialedAddrs))
+	}
+
+	// 7. Dual-stack fallback dials the next validated public IP when the first fails.
+	var fallbackDials []string
+	dualClient := NewClient("secret-line-token")
+	dualClient.PublicMediaClient = &http.Client{
+		Transport: &publicMediaTransport{
+			resolveIPs: func(context.Context, string) ([]netip.Addr, error) {
+				return []netip.Addr{
+					netip.MustParseAddr("2606:2800:220:1:248:1893:25c8:1946"),
+					publicIP,
+				}, nil
+			},
+			dialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				fallbackDials = append(fallbackDials, addr)
+				if strings.HasPrefix(addr, "[2606:") {
+					return nil, errors.New("network is unreachable")
+				}
+				return (&net.Dialer{}).DialContext(ctx, network, srvAddr)
+			},
+			tlsConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	data, err = dualClient.DownloadOBSPublicResourceWithOptions(context.Background(), "https://cdn.example.com/ok", OBSDownloadOptions{MaxBytes: 1024})
+	if err != nil || string(data) != "public-bytes" || len(fallbackDials) != 2 || fallbackDials[1] != "93.184.216.34:443" {
+		t.Fatalf("dual-stack fallback failed: data=%q err=%v dials=%v", data, err, fallbackDials)
 	}
 }

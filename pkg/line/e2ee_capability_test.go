@@ -92,4 +92,19 @@ func TestGetLastE2EEPublicKeysSingleArgAndErrors(t *testing.T) {
 	if !IsE2EEDisabled(err) || strings.Contains(err.Error(), "hide-me") {
 		t.Fatalf("error misclassified or leaked: %v", err)
 	}
+
+	// HTTP 503 with a TalkException body is a gateway failure, never an explicit E2EE disable signal.
+	c.HTTPClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":100,"reason":"exceed max member"}}`,
+			)),
+		}, nil
+	})
+	_, err = c.GetLastE2EEPublicKeysContext(context.Background(), "c-group-1")
+	if err == nil || IsE2EEDisabled(err) {
+		t.Fatalf("HTTP 503 must not classify as E2EE disabled: %v", err)
+	}
 }

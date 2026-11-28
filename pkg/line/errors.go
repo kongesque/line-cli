@@ -32,6 +32,10 @@ func IsE2EEDisabled(err error) bool {
 	if errors.Is(err, ErrE2EEDisabled) {
 		return true
 	}
+	var respErr *ResponseError
+	if errors.As(err, &respErr) && respErr.Status != 200 && respErr.Status != 400 {
+		return false
+	}
 	msg := protocolMessage(err)
 	start := strings.IndexByte(msg, '{')
 	if start < 0 {

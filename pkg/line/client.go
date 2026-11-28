@@ -882,9 +882,9 @@ func (c *Client) DownloadOBSPublicResourceWithOptions(ctx context.Context, resou
 	if maxBytes <= 0 {
 		maxBytes = maxMediaResponseBytes
 	}
-	body, readErr := readResponseBody(resp, maxBytes)
 	switch resp.StatusCode {
 	case http.StatusOK:
+		body, readErr := readResponseBody(resp, maxBytes)
 		if errors.Is(readErr, ErrResponseTooLarge) {
 			return nil, ErrOBSSizeLimit
 		}
@@ -893,11 +893,14 @@ func (c *Client) DownloadOBSPublicResourceWithOptions(ctx context.Context, resou
 		}
 		return body, nil
 	case http.StatusAccepted:
+		_, _ = readResponseBody(resp, maxErrorResponseBytes)
 		return nil, ErrOBSEncodingIncomplete
 	case http.StatusNotFound:
+		_, _ = readResponseBody(resp, maxErrorResponseBytes)
 		return nil, ErrOBSObjectNotFound
 	default:
-		return nil, &ResponseError{Status: resp.StatusCode}
+		_, _ = readResponseBody(resp, maxErrorResponseBytes)
+		return nil, &PublicMediaStatusError{Status: resp.StatusCode}
 	}
 }
 

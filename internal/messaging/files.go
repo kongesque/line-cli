@@ -316,6 +316,10 @@ func (c *Client) downloadPublicMedia(ctx context.Context, msg *line.Message, dow
 		case errors.Is(err, line.ErrPublicMediaRedirectLimit):
 			return nil, errors.New("external media download exceeded the redirect limit")
 		}
+		var statusErr *line.PublicMediaStatusError
+		if errors.As(err, &statusErr) {
+			return nil, fmt.Errorf("external media download failed (status %d)", statusErr.Status)
+		}
 		return nil, err
 	}
 	if len(data) > MaxAttachmentBytes {
