@@ -2,9 +2,29 @@ package line
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 )
+
+func newContactsTestClientWithStatus(t *testing.T, wantPath string, status int, responseBody string) *Client {
+	t.Helper()
+	client := NewClient("token")
+	client.HTTPClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path != wantPath {
+				t.Fatalf("path = %s, want %s", req.URL.Path, wantPath)
+			}
+			return &http.Response{
+				StatusCode: status,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(responseBody)),
+			}, nil
+		}),
+	}
+	return client
+}
 
 func TestGetContactsV2RequestAndResponse(t *testing.T) {
 	var body string
@@ -102,6 +122,16 @@ func TestGetBuddyProfileRoomsV2AndLogoutContracts(t *testing.T) {
 		if !IsBuddyNotFound(err) || strings.Contains(err.Error(), "hide") {
 			t.Fatalf("buddy not-found misclassified or leaked: %v", err)
 		}
+
+		unavailable := newContactsTestClientWithStatus(t,
+			"/api/talk/thrift/Talk/BuddyService/getBuddyProfile",
+			404,
+			`{"code":10001,"message":"NOT_FOUND","secret":"hide"}`,
+		)
+		_, err = unavailable.GetBuddyProfileContext(context.Background(), "u-normal")
+		if !IsBuddyEndpointUnavailable(err) || !IsBuddyNotFound(err) || strings.Contains(err.Error(), "hide") {
+			t.Fatalf("buddy 404/10001 misclassified or leaked: %v", err)
+		}
 	})
 
 	t.Run("GetRoomsV2Context", func(t *testing.T) {
@@ -170,6 +200,16 @@ func TestContactDiscoveryAndBlockingWireContracts(t *testing.T) {
 		_, err = notFound.FindContactByUseridContext(context.Background(), "nobody")
 		if !IsContactNotFound(err) || strings.Contains(err.Error(), "hide") {
 			t.Fatalf("userid not-found misclassified or leaked: %v", err)
+		}
+
+		illegal := newContactsTestClientWithStatus(t,
+			"/api/talk/thrift/Talk/TalkService/findContactByUserid",
+			400,
+			`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":0,"reason":"invalid userid","secret":"hide"}}`,
+		)
+		_, err = illegal.FindContactByUseridContext(context.Background(), "too_long_userid_handle")
+		if !IsTalkExceptionIllegalArgument(err) || IsContactNotFound(err) || strings.Contains(err.Error(), "hide") {
+			t.Fatalf("userid illegal argument misclassified or leaked: %v", err)
 		}
 	})
 

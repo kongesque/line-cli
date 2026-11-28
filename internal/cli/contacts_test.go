@@ -358,6 +358,14 @@ func TestContactLookupFallsBackToBuddyProfile(t *testing.T) {
 		t.Fatalf("unexpected buddy row: %+v", rows[0])
 	}
 
+	// HTTP 404 / gateway code 10001 stops BuddyService fallback immediately without failing lookup.
+	out.Reset()
+	f.buddyErr = &line.ResponseError{Status: 404}
+	err := a.Run([]string{"contacts", "--mid", unknown, "--json"})
+	if err == nil || !strings.Contains(err.Error(), "1 of 1 requested contacts unavailable") {
+		t.Fatalf("expected unavailable status on 404 buddy endpoint: err=%v out=%q", err, out.String())
+	}
+
 	// Transient BuddyService errors propagate without partial output.
 	out.Reset()
 	f.buddyErr = errors.New("network unavailable")

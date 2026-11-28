@@ -354,8 +354,12 @@ func (a *App) findContactByUserID(userid string, jsonOutput bool) error {
 		return
 	})
 	if err != nil {
-		if line.IsContactNotFound(session.ProtocolError(err)) {
+		protoErr := session.ProtocolError(err)
+		if line.IsContactNotFound(protoErr) {
 			return fault.New("not_found", "lookup", "No LINE user was found for that LINE ID.", err)
+		}
+		if line.IsTalkExceptionIllegalArgument(protoErr) {
+			return fault.New("invalid_arguments", "lookup", "LINE rejected that LINE ID as invalid.", err)
 		}
 		return err
 	}
@@ -372,8 +376,12 @@ func (a *App) findContactByPhone(phone string, jsonOutput bool) error {
 		return
 	})
 	if err != nil {
-		if line.IsContactNotFound(session.ProtocolError(err)) {
+		protoErr := session.ProtocolError(err)
+		if line.IsContactNotFound(protoErr) {
 			return fault.New("not_found", "lookup", "No LINE user was found for that phone number.", err)
+		}
+		if line.IsTalkExceptionIllegalArgument(protoErr) {
+			return fault.New("invalid_arguments", "lookup", "LINE rejected that phone number as invalid.", err)
 		}
 		return err
 	}
@@ -586,7 +594,11 @@ func (a *App) fetchBuddyProfiles(ctx context.Context, mids []string) (map[string
 			return
 		})
 		if err != nil {
-			if line.IsBuddyNotFound(session.ProtocolError(err)) {
+			protoErr := session.ProtocolError(err)
+			if line.IsBuddyEndpointUnavailable(protoErr) {
+				break
+			}
+			if line.IsBuddyNotFound(protoErr) {
 				continue
 			}
 			return nil, err

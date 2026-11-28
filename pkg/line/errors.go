@@ -328,6 +328,21 @@ func IsTalkExceptionNotFound(err error) bool {
 			strings.Contains(msg, "\"reason\": \"not found\""))
 }
 
+// IsBuddyEndpointUnavailable returns true when the LINE Chrome gateway rejects
+// BuddyService/getBuddyProfile with HTTP 404 (e.g. gateway code 10001),
+// indicating that the endpoint is not exposed on the gateway. Transient and
+// authentication errors never match.
+func IsBuddyEndpointUnavailable(err error) bool {
+	if err == nil || IsAuthError(err) || IsTransientError(err) {
+		return false
+	}
+	var response *ResponseError
+	if !errors.As(err, &response) {
+		return false
+	}
+	return response.Status == 404 && (response.code == 10001 || response.code == 0)
+}
+
 // IsBuddyNotFound returns true when BuddyService/getBuddyProfile indicates that
 // the target MID is not an official/business account. Transient and auth errors
 // never match.
@@ -335,7 +350,7 @@ func IsBuddyNotFound(err error) bool {
 	if err == nil || IsAuthError(err) || IsTransientError(err) {
 		return false
 	}
-	if errors.Is(err, ErrBuddyNotFound) || IsTalkExceptionNotFound(err) {
+	if errors.Is(err, ErrBuddyNotFound) || IsTalkExceptionNotFound(err) || IsBuddyEndpointUnavailable(err) {
 		return true
 	}
 	msg := protocolMessage(err)
@@ -345,6 +360,16 @@ func IsBuddyNotFound(err error) bool {
 	return isExceptionCode(err, "TalkException", 5) ||
 		isExceptionCode(err, "TalkException", 35) ||
 		isExceptionCode(err, "BuddyException", 5)
+}
+
+// IsTalkExceptionIllegalArgument returns true when LINE rejects an RPC
+// parameter with TalkException code 0 (ILLEGAL_ARGUMENT).
+func IsTalkExceptionIllegalArgument(err error) bool {
+	if err == nil || IsAuthError(err) || IsTransientError(err) {
+		return false
+	}
+	return hasResponseErrorCode(protocolMessage(err)) &&
+		isExceptionCode(err, "TalkException", 0)
 }
 
 // IsContactNotFound returns true when LINE reports that a contact lookup
