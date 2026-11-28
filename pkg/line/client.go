@@ -238,10 +238,7 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	}
 	req.Header.Set("x-hmac", signature)
 
-	pollClient := c.HTTPClient
-	if pollClient == nil {
-		pollClient = &http.Client{Timeout: 200 * time.Second}
-	}
+	pollClient := c.loginPollHTTPClient(200 * time.Second)
 	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
@@ -288,6 +285,14 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	}
 	res.NoE2EE = true
 	return res, nil
+}
+
+func (c *Client) loginPollHTTPClient(timeout time.Duration) *http.Client {
+	pollClient := &http.Client{Timeout: timeout}
+	if c.HTTPClient != nil && c.HTTPClient.Transport != nil {
+		pollClient.Transport = c.HTTPClient.Transport
+	}
+	return pollClient
 }
 
 // checkLoginPollingStatus detects gateway 10052 + nested statusCode 410
@@ -343,10 +348,7 @@ func (c *Client) waitForLoginLF1(verifier string) (*LoginResult, error) {
 	}
 	req.Header.Set("x-hmac", signature)
 
-	pollClient := c.HTTPClient
-	if pollClient == nil {
-		pollClient = &http.Client{Timeout: 120 * time.Second}
-	}
+	pollClient := c.loginPollHTTPClient(120 * time.Second)
 	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOBSTokenCacheScopedPerClient(t *testing.T) {
@@ -101,6 +102,16 @@ func TestWaitForLoginJQUsesReturnedVerifierAndClassifiesExpired410(t *testing.T)
 			if strings.Contains(err.Error(), "never-leak") {
 				t.Fatalf("noE2EE=%v leaked response body: %v", noE2EE, err)
 			}
+		}
+	})
+
+	t.Run("long-poll HTTP client keeps 120s/200s timeout instead of 30s RPC timeout", func(t *testing.T) {
+		c := NewClient("")
+		if got := c.loginPollHTTPClient(120 * time.Second).Timeout; got != 120*time.Second {
+			t.Fatalf("LF1 poll timeout = %s, want 120s", got)
+		}
+		if got := c.loginPollHTTPClient(200 * time.Second).Timeout; got != 200*time.Second {
+			t.Fatalf("JQ poll timeout = %s, want 200s", got)
 		}
 	})
 }
