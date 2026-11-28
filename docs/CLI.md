@@ -148,6 +148,7 @@ protocol errors.
 | --- | --- |
 | `download` | `2m` |
 | `doctor` | `30s` |
+| `logout` | `15s` |
 | `whoami`, `contacts`, `chats`, `members`, `invites`, `messages`, `send`, `read`, `react`, `unsend` | `0` (no command deadline) |
 
 For example: `line send "Alice" --text "Hello" --timeout 30s`. The deadline starts
@@ -203,10 +204,14 @@ line contacts
 line contacts --search "Alice"
 ```
 
-`chats` shows conversations, while `contacts` lists friends. Both show 20
-results by default in human output. JSON output shows all matches unless you
-set `--limit`. Use `--limit 0` for every result in human output. `chats --all`
-includes inactive conversations.
+`chats` shows conversations (including legacy multi-person `r...` rooms, deriving
+a display name from room members when unnamed), while `contacts` lists friends.
+When LINE's regular contact lookup omits an official/business account, `chats`,
+`contacts`, `messages --details --resolve-names`, and `watch` fall back to
+`BuddyService/getBuddyProfile` to resolve its display name. Both `chats` and
+`contacts` show 20 results by default in human output. JSON output shows all
+matches unless you set `--limit`. Use `--limit 0` for every result in human
+output. `chats --all` includes inactive conversations.
 
 `chats --unread` keeps only chats whose unread count, as reported by LINE, is
 above zero. It combines with `--search`, `--limit`, `--all`, `--show-ids`,
@@ -223,13 +228,17 @@ fails instead and lists up to five similar names with full IDs. A partial or
 similar name is never used for a send or other change unless you chose it.
 IDs are more reliable in scripts because names can change.
 
-To look up someone who is not in your friend list, use their full user MID
-(LINE's user ID). For example, a group message's `from` field in
-`line messages CHAT_ID --json` contains its sender's MID.
+To look up someone who is not in your friend list, use their full user MID,
+public LINE ID (`--userid`), or international phone number (`--phone`):
 
 ```sh
 line contacts --mid USER_MID
 line contacts --mid FIRST_USER_MID --mid SECOND_USER_MID --json
+line contacts --userid @alice --json
+line contacts --phone "+81 9012345678" --json
+line contacts --blocked --show-ids
+line contacts block USER_MID
+line contacts unblock USER_MID --json
 ```
 
 Repeat `--mid` for each person. The command looks up only those IDs, keeps
@@ -238,11 +247,24 @@ does not add anyone as a friend. Use a full user MID, not a group/room ID,
 display name, or public LINE username. The CLI accepts legacy `u` plus 32
 lowercase hex digits and current `u`/`U` plus 43 base64url characters.
 
+`--userid` strips an optional leading `@` and lowercases the handle before
+querying `findContactByUserid`. `--phone` accepts international `+`-prefixed
+numbers (such as `+819012345678` or `"+81 9012345678"`) and formats them for
+`findContactsByPhone`. Neither adds anyone as a friend; if LINE returns no
+matching user, the command exits 1 (`not_found` in `--error-format=json`).
+
+`--blocked` lists blocked contacts and blocked recommendations with resolved
+names where available; it works in `--read-only` mode. `contacts block USER_MID`
+and `contacts unblock USER_MID` require a full user MID (never your own account
+or a group/room ID), reserve a persisted request sequence, execute once, and are
+refused by `--read-only`.
+
 Human output pairs every MID with its name. Your custom contact name takes
 precedence over the profile name. `(unavailable)` means LINE did not return
 that profile; `(name unavailable)` means LINE returned a profile without a
 usable name. Neither result tells you whether an account was deleted.
-`--search` and `--limit` cannot be combined with `--mid`. See
+`--mid`, `--userid`, `--phone`, and `--blocked` are mutually exclusive and
+cannot be combined with `--search` or `--limit`. See
 [JSON lookup results](#json-lookup-results) for script behavior.
 
 ### Read messages
@@ -336,7 +358,9 @@ The `schema_version:1` envelope also has `chat`, `members_complete`, and
 incomplete. Failed profile lookups leave names unavailable without discarding
 the membership snapshot. Self is marked only if returned; no member is invented.
 Completeness describes the membership response, not profile availability or
-future changes. Direct chats and legacy rooms are unsupported by `members`.
+future changes. Direct chats are unsupported by `members`. Legacy multi-person
+rooms (`r...`) are supported via `getRoomsV2` and report `invitees: []` with
+`invitees_complete: true`.
 It never negotiates or registers encryption keys or sends read receipts.
 
 `--mentions` is an explicit JSON array, limited to 100 entries. `start` is
@@ -486,7 +510,13 @@ without downloadable previews are rejected with `unsupported_content`, and
 `--preview` on non-Album attachments fails with `invalid_arguments`. It saves
 the full media or thumbnail bytes unchanged, so changing the output extension
 does not convert the format.
-Messages with an external `DOWNLOAD_URL` are not supported. Reading or
+Non-encrypted messages with a `DOWNLOAD_URL` (such as official-account or
+external CDN media) are downloaded through an SSRF-hardened public media
+transport: it blocks loopback, private, link-local, CGNAT, documentation,
+reserved, and NAT64-mapped private IP addresses, rejects non-standard ports,
+userinfo, and URL fragments, caps redirects at 3, enforces the 20 MiB limit,
+and never sends LINE authentication headers to external hosts. Encrypted
+messages with a `DOWNLOAD_URL` are rejected rather than downgraded. Reading or
 downloading never registers a group encryption key.
 
 To discover downloadable Album previews from scripts or agents, inspect
@@ -675,6 +705,9 @@ Ordinary CLI and network errors exit 1. Storage errors have
 | `whoami` | Profile and account ID. |
 | `contacts` | Friend names and IDs. |
 | `contacts --mid MID` | One record per unique requested MID, with a lookup status. |
+| `contacts --userid HANDLE`, `contacts --phone +CCNUMBER` | One resolved contact lookup object (exits 1 with `not_found` when unmatched). |
+| `contacts --blocked` | Array of blocked contacts and blocked recommendations. |
+| `contacts block`, `contacts unblock` | Action (`block_contact` or `unblock_contact`), `chat_id`, and `request_sequence`. |
 | `chats` | ID, type, unread count, and optional activity time. |
 | `messages` | ID, sender, time, content, encryption, and status. |
 | `send` | Message ID, chat ID, encryption, group-key registration, and sequence. |
@@ -719,10 +752,11 @@ line --read-only --error-format=json send CHAT_ID --text "hi"   # refused
 ```
 
 Read-only mode refuses `send`, `read`, `react`, `unsend`, `invites accept`,
-`invites reject`, `login`, `logout`,
+`invites reject`, `contacts block`, `contacts unblock`, `login`, `logout`,
 `auth migrate`, and `update` (installing). It stops before prompts, stdin,
 attachments, the session lock, credential storage, the network, or a request
-sequence. Reads, `watch` (its resume position is a local cursor), `download`,
+sequence. Reads (including `contacts --blocked`, `--userid`, and `--phone`),
+`watch` (its resume position is a local cursor), `download`,
 `auth status`, `doctor`, `update --check`, `help`, and `version` keep working, and reads
 may still refresh the access token.
 
@@ -786,13 +820,20 @@ Secret Service may report `interactive_check_required`; their full write checks
 run during interactive login. Headless reboot access remains
 `expected_not_verified` until you test it on your host.
 
-To remove the local session:
+To sign out and revoke this device's session on LINE's servers:
 
 ```sh
 line logout
+line logout --local-only
 ```
 
-Logout does not revoke the session on LINE's servers.
+By default, `line logout` calls `AuthService/logoutV2` (with `--timeout`,
+default `15s`) and then deletes saved local credentials. Signing out here does
+not sign out your phone or other devices, and your LINE account stays active.
+If LINE confirms the session is already logged out, local credentials are still
+removed cleanly. If remote revocation fails (for example, while offline), local
+credentials are kept intact; retry when online or pass `--local-only` to delete
+local credentials without contacting LINE.
 
 ### Token refresh
 

@@ -18,7 +18,9 @@ diagnostics go to stderr. Use full chat IDs and keep message IDs as strings.
 | `line chats --details --json` | Schema-1 `chats` envelope with explicit unknown values. |
 | `line watch --json` | Existing NDJSON stream; no detailed-content envelope. Also the output whenever stdout is not a terminal. Without `--json`, a terminal gets readable lines instead. |
 | `line invites --json` | Schema-1 object with `invitations`: `chat_id`, nullable `name`, `name_status` (`resolved` or `unavailable`). |
-| `line read`, `line invites accept\|reject` `--json` | One receipt object: `action`, `chat_id`, `request_sequence`, plus `message_id` for `read`. |
+| `line contacts --userid HANDLE --json`, `line contacts --phone +CCNUMBER --json` | One contact lookup object (`mid`, profile fields, `effectiveDisplayName`, `status: "resolved"`). |
+| `line contacts --blocked --json` | Contact array of blocked contacts and blocked recommendations. |
+| `line read`, `line invites accept\|reject`, `line contacts block\|unblock` `--json` | One receipt object: `action`, `chat_id`, `request_sequence`, plus `message_id` for `read`. |
 | `line doctor --json` | Schema-1 report: `checks` with `id`, `status` (`pass`, `warn`, `fail`, `skipped`), `message`, optional `next_step` and string-valued `details`; plus `summary` counts. Exits 1 only when a check fails; with `--error-format=json` that failure is `operation_failed` at stage `completion`, after the report is written. |
 | `line --error-format=json COMMAND ... --json` | Usual success/partial output on stdout; one structured error on stderr when the supported command fails. |
 
@@ -256,10 +258,13 @@ reports returned IDs before decryption without message text or encrypted data.
 | `invalid_cursor` | Malformed/unsupported history cursor or cursor bound to another chat. |
 | `history_invalid` | History has invalid identity/order/data or no valid delivered-time continuation anchor. |
 | `message_not_found` | Target absent from available history in the selected chat; older history may be unavailable. For `read` without `--message`: no message from someone else among the latest 50, so nothing was sent. |
+| `not_found` | Requested LINE ID (`--userid`) or phone number (`--phone`) matched no LINE user. |
 | `lookup_incomplete` | The 10-page lookup budget was reached before finding the target. |
-| `unsupported_content` | Requested download content is unsupported. |
+| `unsupported_content` | Requested download content is unsupported or blocked by the external public-media network safety policy. |
 | `decryption_failed` | History contains failed decryptions, or an attachment could not be decrypted/authenticated. |
 | `encryption_failed` | Message encryption/key preparation failed. |
+| `group_member_mismatch` | Group membership changed during E2EE group key registration; nothing was sent; retry `line send`. |
+| `e2ee_receiver_key_rejected` | LINE rejected the recipient's Letter Sealing key (their device key may have changed); nothing was sent; retry `line send`. |
 | `encryption_required` | Explicit non-E2EE capability blocked by strict mode; no message action attempted. |
 | `encrypted_image_unavailable` | Encrypted native images disabled; no upload, group-key registration, or send attempted. |
 | `remote_failed` | Remote request failed or a send receipt was missing. |
@@ -273,7 +278,7 @@ reports returned IDs before decryption without message text or encrypted data.
 Stages identify where work stopped: `validation`, `lock`, `storage`,
 `preparation`, `lookup`, `decode`, `persist_sequence`, `group_key_registration`,
 `attachment_upload`, `preview_upload`, `send`, `read`, `react`, `remove_reaction`, `unsend`,
-`accept_invitation`, `reject_invitation`, `output`, or
+`accept_invitation`, `reject_invitation`, `block_contact`, `unblock_contact`, `output`, or
 `completion` (a signal after the command completed).
 
 Exit codes are unchanged: ordinary errors are 1, storage errors retain
@@ -287,8 +292,8 @@ strings, and input message text are excluded from machine errors.
 ### Interpret each remote step separately
 
 The top-level `mutation` describes the requested action (`send`, `read`,
-`react`, `remove_reaction`, `unsend`, `accept_invitation`, or
-`reject_invitation`). Invitation changes have no `message_id`. `steps` describes the ordered mutation stages,
+`react`, `remove_reaction`, `unsend`, `accept_invitation`, `reject_invitation`,
+`block_contact`, or `unblock_contact`). Invitation and contact block changes have no `message_id`. `steps` describes the ordered mutation stages,
 including preparation side effects. Reads and credential recovery are not listed
 as message mutation steps. `attempted` means the command handed the operation to
 the mutation API; it does not prove a packet reached LINE.
