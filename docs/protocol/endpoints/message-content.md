@@ -45,7 +45,7 @@ been verified).
   never opened or fetched by history, watch, or download. Only `https://line.me/...`
   and `line://group/...` / `line://home/...` post/album navigation routes with
   recognized query parameters (`postId`, `homeId`, `groupId`, `albumId`,
-  `albumIdV2`, `source`, `type`) are emitted. Well-formed LINE URLs with an
+  `albumIdV2`, `noteEntryType`, `source`, `type`) are emitted. Well-formed LINE URLs with an
   unrecognized route or unknown query parameter omit `url` with `status: "ok"`.
   Malformed, relative, plain `http://`, port/userinfo, control/whitespace, or
   unsafe-scheme URLs set `status: "malformed_metadata"` and omit `url`/`album_id`.
@@ -58,8 +58,11 @@ been verified).
   `mediaType: "I"` items with safe OIDs (<= 256 bytes, no path separators, `..`,
   whitespace, or controls); top-level `mediaOid` fallback is deliberately not
   used. `preview_count` is emitted on Albums only and counts eligible previews
-  bound to the exact selected chat (`chatId == selectedChat`). Full Note body
-  retrieval is out of scope.
+  bound to the selected chat: either exact `chatId == selectedChat` (with no
+  conflicting `postEndUrl` `homeId`), or on modern V2 opaque chats
+  (`[uUcCrR]<43 base64url>`) a same-type legacy V1 hex `chatId` (`[ucr]<32 hex>`)
+  paired with an accepted album `postEndUrl` whose `homeId` equals `selectedChat`.
+  Full Note body retrieval is out of scope.
 
 Detailed output uses an allowlist, never generic metadata serialization. Input
 JSON fields are capped at 64 KiB. Rich traversal visits only known layout children

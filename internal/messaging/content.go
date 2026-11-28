@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -337,15 +338,21 @@ const (
 	postRouteAlbum
 )
 
-var allowedPostQueryParams = map[string]bool{
-	"postId":    true,
-	"homeId":    true,
-	"groupId":   true,
-	"albumId":   true,
-	"albumIdV2": true,
-	"source":    true,
-	"type":      true,
-}
+var (
+	v2ChatIDPattern       = regexp.MustCompile(`^[uUcCrR][A-Za-z0-9_-]{43}$`)
+	legacyV1ChatIDPattern = regexp.MustCompile(`^[ucr][0-9a-f]{32}$`)
+
+	allowedPostQueryParams = map[string]bool{
+		"postId":        true,
+		"homeId":        true,
+		"groupId":       true,
+		"albumId":       true,
+		"albumIdV2":     true,
+		"noteEntryType": true,
+		"source":        true,
+		"type":          true,
+	}
+)
 
 func hasPostEncryptionMarkers(msg *line.Message) bool {
 	return msg != nil && (len(msg.Chunks) > 0 || msg.ContentMetadata["e2eeVersion"] != "")
@@ -408,6 +415,7 @@ func parsePostNotification(chat string, msg *line.Message) parsedPost {
 	}
 
 	albumID := ""
+	urlHomeID := ""
 	if raw := meta["postEndUrl"]; raw != "" {
 		urlRes := parsePostEndURL(raw, postType == "album")
 		if urlRes.malformed {
@@ -416,6 +424,7 @@ func parsePostNotification(chat string, msg *line.Message) parsedPost {
 		post.URL = urlRes.url
 		post.AlbumID = urlRes.albumID
 		albumID = urlRes.albumID
+		urlHomeID = urlRes.homeID
 	}
 
 	var chatID string
@@ -434,7 +443,7 @@ func parsePostNotification(chat string, msg *line.Message) parsedPost {
 		if !ok {
 			markMalformed()
 		}
-		if chatID != "" && chat != "" && chatID == chat {
+		if isSameChatAlbumBinding(chat, chatID, urlHomeID) {
 			oids = candidates
 			n := len(oids)
 			post.PreviewCount = &n
@@ -453,7 +462,26 @@ func parsePostNotification(chat string, msg *line.Message) parsedPost {
 type postURLResult struct {
 	url       string
 	albumID   string
+	homeID    string
 	malformed bool
+}
+
+// isSameChatAlbumBinding verifies that an album notification's OBS X-Line-Mid
+// (chatID) belongs to selectedChat. Exact match handles V1/same-format chats;
+// on modern V2 chats (44-char opaque MID), LINE still puts the 33-char legacy
+// V1 hex MID in contentMetadata["chatId"] (which OBS requires) while binding
+// the album route's postEndUrl homeId to the V2 selectedChat.
+func isSameChatAlbumBinding(selectedChat, chatID, urlHomeID string) bool {
+	if selectedChat == "" || chatID == "" {
+		return false
+	}
+	if chatID == selectedChat {
+		return urlHomeID == "" || urlHomeID == selectedChat
+	}
+	return v2ChatIDPattern.MatchString(selectedChat) &&
+		legacyV1ChatIDPattern.MatchString(chatID) &&
+		toType(chatID) == toType(selectedChat) &&
+		urlHomeID == selectedChat
 }
 
 func parsePostEndURL(raw string, extractAlbumID bool) postURLResult {
@@ -504,6 +532,16 @@ func parsePostEndURL(raw string, extractAlbumID bool) postURLResult {
 		res.url = raw
 	}
 	if extractAlbumID && route == postRouteAlbum {
+		if homeVals := values["homeId"]; len(homeVals) > 1 {
+			res.malformed = true
+			return res
+		} else if len(homeVals) == 1 && homeVals[0] != "" {
+			if ValidateChatID(homeVals[0]) != nil {
+				res.malformed = true
+				return res
+			}
+			res.homeID = homeVals[0]
+		}
 		v2Vals := values["albumIdV2"]
 		v1Vals := values["albumId"]
 		if len(v2Vals) > 1 || len(v1Vals) > 1 {

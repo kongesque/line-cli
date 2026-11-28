@@ -152,9 +152,12 @@ PRs #226/#361/#367; verified with synthetic transports, not live Chrome testing)
   - Only positively-identified `previewMedias` entries (`svc == "album"`,
     `sid == "a"`, `mediaType == "I"`) with safe OIDs are accepted; top-level
     `mediaOid` fallback is not implemented.
-  - Exact same-chat binding (`chatId == selectedChat`) is enforced before any
-    channel token or OBS call; cross-chat shared albums have zero downloadable
-    previews.
+  - Same-chat binding is enforced before any channel token or OBS call: either
+    exact `chatId == selectedChat`, or on V2 opaque chats (`[uUcCrR]<43 chars>`)
+    a same-type legacy V1 hex `chatId` (`[ucr]<32 hex>`, which LINE's album OBS
+    endpoint requires in `X-Line-Mid`) bound by an accepted album `postEndUrl`
+    whose `homeId == selectedChat`. Cross-chat shared albums have zero
+    downloadable previews.
   - HTTP `200 OK` responses are capped at an exact 20 MiB (`20 << 20` bytes).
   - HTTP status codes (`202` encoding incomplete, `404` missing object,
     `401`/`403` status-bearing unauthorized response without raw OBS body) are

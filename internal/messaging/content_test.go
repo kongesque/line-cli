@@ -396,6 +396,7 @@ func TestPostNotificationURLAndQueryAllowlist(t *testing.T) {
 		wantAlbumID string
 	}{
 		{"https note post", "GB", "https://line.me/R/group/home/posts/post?homeId=c1234&postId=99", "ok", "https://line.me/R/group/home/posts/post?homeId=c1234&postId=99", ""},
+		{"https note post with noteEntryType", "GB", "https://line.me/R/group/home/posts/post?homeId=c1234&noteEntryType=post_noti&postId=99", "ok", "https://line.me/R/group/home/posts/post?homeId=c1234&noteEntryType=post_noti&postId=99", ""},
 		{"https home post", "GB", "https://line.me/R/home/public/post?postId=99&source=talk", "ok", "https://line.me/R/home/public/post?postId=99&source=talk", ""},
 		{"line group album", "AB", "line://group/home/albums/album?albumId=12&albumIdV2=v2-id", "ok", "line://group/home/albums/album?albumId=12&albumIdV2=v2-id", "v2-id"},
 		{"line home post", "GB", "line://home/posts/post?postId=55", "ok", "line://home/posts/post?postId=55", ""},
@@ -547,5 +548,56 @@ func TestPostNotificationPreviewMediasAndChatBinding(t *testing.T) {
 	gotBadChat := decodeContent("c-selected", badChat, false, "")
 	if gotBadChat.Status != "malformed_metadata" || *gotBadChat.Post.PreviewCount != 0 {
 		t.Fatalf("invalid chatId album: %+v", gotBadChat)
+	}
+
+	// V2 selected group chat with legacy V1 hex chatId and matching postEndUrl homeId -> bound
+	v2Chat := "C" + strings.Repeat("a", 43)
+	v2Other := "C" + strings.Repeat("b", 43)
+	v1Group := "c" + strings.Repeat("1", 32)
+	v1User := "u" + strings.Repeat("1", 32)
+	v2Album := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"albumName":     "V2 Group Album",
+			"postEndUrl":    "line://group/home/albums/album?albumId=123&homeId=" + v2Chat + "&albumIdV2=123",
+			"chatId":        v1Group,
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"},{"svc":"album","sid":"a","mediaOid":"oid-2","mediaType":"I"}]`,
+		},
+	}
+	parsedV2 := parsePostNotification(v2Chat, v2Album)
+	if parsedV2.status != "ok" || parsedV2.chatID != v1Group || parsedV2.post.PreviewCount == nil || *parsedV2.post.PreviewCount != 2 || len(parsedV2.oids) != 2 {
+		t.Fatalf("V2 group album binding failed: %+v", parsedV2)
+	}
+	// V2 group chat with cross-chat homeId -> preview_count 0
+	v2Cross := parsePostNotification(v2Other, v2Album)
+	if v2Cross.status != "ok" || *v2Cross.post.PreviewCount != 0 || len(v2Cross.oids) != 0 {
+		t.Fatalf("V2 cross-chat album must not bind: %+v", v2Cross)
+	}
+	// V2 group chat with missing homeId -> preview_count 0
+	v2NoHome := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"postEndUrl":    "line://group/home/albums/album?albumId=123&albumIdV2=123",
+			"chatId":        v1Group,
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	if p := parsePostNotification(v2Chat, v2NoHome); p.status != "ok" || *p.post.PreviewCount != 0 {
+		t.Fatalf("V2 album without homeId must not bind: %+v", p)
+	}
+	// V2 group chat with mismatched chat type V1 user MID -> preview_count 0
+	v2WrongType := &line.Message{
+		ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"postEndUrl":    "line://group/home/albums/album?albumId=123&homeId=" + v2Chat + "&albumIdV2=123",
+			"chatId":        v1User,
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	if p := parsePostNotification(v2Chat, v2WrongType); p.status != "ok" || *p.post.PreviewCount != 0 {
+		t.Fatalf("V2 group album with V1 user chatId must not bind: %+v", p)
 	}
 }
