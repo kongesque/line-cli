@@ -98,6 +98,9 @@ func (a *App) Run(args []string) (err error) {
 	if command == "invites" && len(args) > 1 && (args[1] == "accept" || args[1] == "reject") {
 		a.errorMutation = &fault.Mutation{Action: args[1] + "_invitation", Outcome: fault.NotAttempted}
 	}
+	if command == "contacts" && len(args) > 1 && (args[1] == "block" || args[1] == "unblock") {
+		a.errorMutation = &fault.Mutation{Action: args[1] + "_contact", Outcome: fault.NotAttempted}
+	}
 	if a.readOnly && a.Manager != nil {
 		// Defense in depth: the session refuses mutations even if a command
 		// path forgets its own gate.

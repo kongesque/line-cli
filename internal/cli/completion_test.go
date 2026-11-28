@@ -180,6 +180,8 @@ func TestBashCompletionBehavior(t *testing.T) {
 		{[]string{"line", "auth", ""}, "status migrate"},
 		{[]string{"line", "auth", "status", "--"}, "--check --json --help"},
 		{[]string{"line", "invites", "accept", "--j"}, "--json"},
+		{[]string{"line", "contacts", ""}, "block unblock"},
+		{[]string{"line", "contacts", "block", "--j"}, "--json"},
 		{[]string{"line", "react", "x", "--reaction", "l"}, "like love laugh"},
 		{[]string{"line", "download", "c1234", "--pr"}, "--preview"},
 		{[]string{"line", "completion", "f"}, "fish"},
@@ -220,6 +222,7 @@ func TestZshCompletionBehavior(t *testing.T) {
 		{[]string{"line", "send", "Alice", "--file", ""}, "FILES"},
 		{[]string{"line", "--error-format", "json", "auth", ""}, "status migrate"},
 		{[]string{"line", "invites", "reject", "--"}, "--timeout --json --help"},
+		{[]string{"line", "contacts", "unblock", "--"}, "--timeout --json --help"},
 		{[]string{"line", "download", "c1234", "--"}, "--timeout --message --preview --output --json --help"},
 		{[]string{"line", "react", "x", "--reaction", ""}, "like love laugh surprise sad angry"},
 	} {

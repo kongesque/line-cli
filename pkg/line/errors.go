@@ -20,6 +20,7 @@ var (
 	ErrNoUsableE2EEGroupKey  = errors.New("no usable E2EE group key")
 	ErrGroupKeyNotFound      = errors.New("group key not found")
 	ErrBuddyNotFound         = errors.New("buddy profile not found")
+	ErrContactNotFound       = errors.New("contact not found")
 )
 
 // IsE2EEDisabled accepts explicit capability responses only. Unlike the legacy
@@ -344,6 +345,24 @@ func IsBuddyNotFound(err error) bool {
 	return isExceptionCode(err, "TalkException", 5) ||
 		isExceptionCode(err, "TalkException", 35) ||
 		isExceptionCode(err, "BuddyException", 5)
+}
+
+// IsContactNotFound returns true when LINE reports that a contact lookup
+// (by userid or phone number) matched no available user. Transient and auth
+// errors never match.
+func IsContactNotFound(err error) bool {
+	if err == nil || IsAuthError(err) || IsTransientError(err) {
+		return false
+	}
+	if errors.Is(err, ErrContactNotFound) || IsTalkExceptionNotFound(err) {
+		return true
+	}
+	msg := protocolMessage(err)
+	if !hasResponseErrorCode(msg) {
+		return false
+	}
+	return isExceptionCode(err, "TalkException", 5) ||
+		isExceptionCode(err, "TalkException", 35)
 }
 
 // IsNotAMemberError returns true when the API reports the user is not a member of a chat.

@@ -20,7 +20,7 @@ var completionShells = []string{"bash", "zsh", "fish", "powershell"}
 
 // Flags that take a value, and the fixed values some of them accept.
 var (
-	completionValueFlags = map[string]bool{"timeout": true, "email": true, "search": true, "limit": true, "mid": true, "cursor": true,
+	completionValueFlags = map[string]bool{"timeout": true, "email": true, "search": true, "limit": true, "mid": true, "userid": true, "phone": true, "cursor": true,
 		"mentions": true, "text": true, "file": true, "image": true, "reply-to": true, "message": true, "preview": true, "reaction": true,
 		"output": true, "storage": true, "error-format": true}
 	completionFileFlags = []string{"file", "image", "output"}
@@ -45,7 +45,10 @@ func completionSpec() []completionCommand {
 	commands := []completionCommand{
 		{name: "login", about: "Sign in by QR code or email", flags: []string{"email", "qr", "qr-url", "require-pin", "force", "headless"}},
 		{name: "whoami", about: "Show your signed-in account", flags: []string{"timeout", "show-ids", "json"}},
-		{name: "contacts", about: "Find friends or look up people", flags: []string{"timeout", "search", "limit", "mid", "show-ids", "json"}},
+		{name: "contacts", about: "Find friends, look up people, or manage blocks", flags: []string{"timeout", "search", "limit", "mid", "userid", "phone", "blocked", "show-ids", "json"}, subs: []completionCommand{
+			{name: "block", about: "Block a LINE user by full user ID", flags: invite},
+			{name: "unblock", about: "Unblock a LINE user by full user ID", flags: invite},
+		}},
 		{name: "chats", about: "Browse recent conversations", flags: []string{"timeout", "all", "search", "limit", "show-ids", "unread", "details", "json"}},
 		{name: "members", about: "List group or room members and invitees", flags: []string{"json", "timeout"}},
 		{name: "invites", about: "List, accept, or reject group invitations", flags: invite, subs: []completionCommand{
@@ -189,7 +192,7 @@ _line_completion() {
 	fmt.Fprintf(&b, "        case \"$cur\" in -*) COMPREPLY=( $(compgen -W %q -- \"$cur\") ) ;; *) COMPREPLY=( $(compgen -W %q -- \"$cur\") ) ;; esac\n        return 0\n    fi\n",
 		strings.Join(globalFlags(), " "), strings.Join(commandNames(spec), " "))
 	b.WriteString(`    local key="$cmd" opts="" args=""
-    case "$cmd" in auth|invites) if [ -n "$sub" ]; then key="$cmd $sub"; fi ;; esac
+    case "$cmd" in auth|invites|contacts) if [ -n "$sub" ]; then key="$cmd $sub"; fi ;; esac
     case "$key" in
 `)
 	for _, c := range completionKeys(spec) {
@@ -240,7 +243,7 @@ func zshCompletion(spec []completionCommand) string {
 	b.WriteString("    esac\n    if [[ -z $cmd ]]; then\n")
 	fmt.Fprintf(&b, "        if [[ $PREFIX == -* ]]; then compadd -- %s; else _describe -t commands 'line command' commands; fi\n        return\n    fi\n", strings.Join(globalFlags(), " "))
 	b.WriteString(`    key=$cmd
-    if [[ ( $cmd == auth || $cmd == invites ) && -n $sub ]]; then key="$cmd $sub"; fi
+    if [[ ( $cmd == auth || $cmd == invites || $cmd == contacts ) && -n $sub ]]; then key="$cmd $sub"; fi
     case $key in
 `)
 	for _, c := range completionKeys(spec) {
@@ -287,7 +290,7 @@ function __line_key
             end
         else if not string match -q -- '-*' $t
             switch $cmd
-                case auth invites
+                case auth invites contacts
                     echo "$cmd $t"
                     return 0
             end
@@ -386,7 +389,7 @@ func powershellCompletion(spec []completionCommand) string {
         $candidates = if ($wordToComplete.StartsWith('-')) { $globals } else { $commands }
     } else {
         $key = $cmd
-        if (($cmd -eq 'auth' -or $cmd -eq 'invites') -and $sub -ne '') { $key = "$cmd $sub" }
+        if (($cmd -eq 'auth' -or $cmd -eq 'invites' -or $cmd -eq 'contacts') -and $sub -ne '') { $key = "$cmd $sub" }
         if ($wordToComplete.StartsWith('-')) { $candidates = $options[$key] }
         else { $candidates = $positional[$key] }
     }

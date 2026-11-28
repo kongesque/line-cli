@@ -145,3 +145,101 @@ func TestGetBuddyProfileRoomsV2AndLogoutContracts(t *testing.T) {
 		}
 	})
 }
+
+func TestContactDiscoveryAndBlockingWireContracts(t *testing.T) {
+	t.Run("FindContactByUseridContext", func(t *testing.T) {
+		var body string
+		client := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/TalkService/findContactByUserid",
+			`{"code":0,"data":{"mid":"u-found","displayName":"Alice"}}`,
+			&body,
+		)
+		contact, err := client.FindContactByUseridContext(context.Background(), "alice")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body != `["alice"]` || contact.Mid != "u-found" || contact.DisplayName != "Alice" {
+			t.Fatalf("unexpected userid lookup: body=%s contact=%+v", body, contact)
+		}
+
+		notFound := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/TalkService/findContactByUserid",
+			`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":5,"reason":"not found","secret":"hide"}}`,
+			nil,
+		)
+		_, err = notFound.FindContactByUseridContext(context.Background(), "nobody")
+		if !IsContactNotFound(err) || strings.Contains(err.Error(), "hide") {
+			t.Fatalf("userid not-found misclassified or leaked: %v", err)
+		}
+	})
+
+	t.Run("FindContactByPhoneContext", func(t *testing.T) {
+		var body string
+		client := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/TalkService/findContactsByPhone",
+			`{"code":0,"data":{"+81 9012345678":{"mid":"u-phone","displayName":"Bob"}}}`,
+			&body,
+		)
+		contact, err := client.FindContactByPhoneContext(context.Background(), "+81 9012345678")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body != `[["+81 9012345678"]]` || contact.Mid != "u-phone" || contact.DisplayName != "Bob" {
+			t.Fatalf("unexpected phone lookup: body=%s contact=%+v", body, contact)
+		}
+
+		empty := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/TalkService/findContactsByPhone",
+			`{"code":0,"data":{}}`,
+			nil,
+		)
+		_, err = empty.FindContactByPhoneContext(context.Background(), "+81 9000000000")
+		if !IsContactNotFound(err) {
+			t.Fatalf("empty phone map should be not-found: %v", err)
+		}
+	})
+
+	t.Run("GetBlockedRecommendationIdsContext", func(t *testing.T) {
+		var body string
+		client := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/TalkService/getBlockedRecommendationIds",
+			`{"code":0,"data":["u-rec1","u-rec2"]}`,
+			&body,
+		)
+		ids, err := client.GetBlockedRecommendationIdsContext(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body != `[]` || len(ids) != 2 || ids[0] != "u-rec1" || ids[1] != "u-rec2" {
+			t.Fatalf("unexpected blocked recommendation ids: body=%s ids=%v", body, ids)
+		}
+	})
+
+	t.Run("SetContactBlockedContext", func(t *testing.T) {
+		var blockBody string
+		blockClient := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/TalkService/blockContact",
+			`{"code":0,"data":null}`,
+			&blockBody,
+		)
+		if err := blockClient.SetContactBlockedContext(context.Background(), 42, "u-target", true); err != nil {
+			t.Fatal(err)
+		}
+		if blockBody != `[42,"u-target"]` {
+			t.Fatalf("blockContact body = %s, want [42,\"u-target\"]", blockBody)
+		}
+
+		var unblockBody string
+		unblockClient := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/TalkService/unblockContact",
+			`{"code":0,"data":null}`,
+			&unblockBody,
+		)
+		if err := unblockClient.SetContactBlockedContext(context.Background(), 43, "u-target", false); err != nil {
+			t.Fatal(err)
+		}
+		if unblockBody != `[43,"u-target",""]` {
+			t.Fatalf("unblockContact body = %s, want [43,\"u-target\",\"\"]", unblockBody)
+		}
+	})
+}

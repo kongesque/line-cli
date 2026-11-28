@@ -1117,22 +1117,92 @@ func (c *Client) RejectChatInvitationContext(ctx context.Context, reqSeq int64, 
 
 // FindContactByUserid looks up a LINE user by their user ID (not MID).
 func (c *Client) FindContactByUserid(userid string) (*Contact, error) {
-	resp, err := c.callRPC("TalkService", "findContactByUserid", userid)
+	return c.FindContactByUseridContext(context.Background(), userid)
+}
+
+func (c *Client) FindContactByUseridContext(ctx context.Context, userid string) (*Contact, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "findContactByUserid", userid)
 	if err != nil {
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int     `json:"code"`
-		Message string  `json:"message"`
-		Data    Contact `json:"data"`
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, fmt.Errorf("failed to parse findContactByUserid response: %w", err)
+		return nil, errors.New("invalid findContactByUserid response")
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("findContactByUserid failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing findContactByUserid response code")
 	}
-	return &wrapper.Data, nil
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	if len(wrapper.Data) == 0 || string(wrapper.Data) == "null" {
+		return nil, ErrContactNotFound
+	}
+	var contact Contact
+	if err := json.Unmarshal(wrapper.Data, &contact); err != nil {
+		return nil, errors.New("invalid findContactByUserid response")
+	}
+	if contact.Mid == "" {
+		return nil, ErrContactNotFound
+	}
+	return &contact, nil
+}
+
+// FindContactByPhone looks up a LINE user by phone number formatted as
+// "+<countryCode> <nationalNumber>" via TalkService/findContactsByPhone.
+func (c *Client) FindContactByPhone(phone string) (*Contact, error) {
+	return c.FindContactByPhoneContext(context.Background(), phone)
+}
+
+func (c *Client) FindContactByPhoneContext(ctx context.Context, phone string) (*Contact, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "findContactsByPhone", []string{phone})
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(resp, &wrapper); err != nil {
+		return nil, errors.New("invalid findContactsByPhone response")
+	}
+	if wrapper.Code == nil {
+		return nil, errors.New("missing findContactsByPhone response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	if len(wrapper.Data) == 0 || string(wrapper.Data) == "null" {
+		return nil, ErrContactNotFound
+	}
+	var contacts map[string]Contact
+	if err := json.Unmarshal(wrapper.Data, &contacts); err != nil {
+		return nil, errors.New("invalid findContactsByPhone response")
+	}
+	if exact, ok := contacts[phone]; ok && exact.Mid != "" {
+		return &exact, nil
+	}
+	var keys []string
+	for k := range contacts {
+		keys = append(keys, k)
+	}
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[j] < keys[i] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	for _, k := range keys {
+		contact := contacts[k]
+		if contact.Mid != "" {
+			return &contact, nil
+		}
+	}
+	return nil, ErrContactNotFound
 }
 
 // GetAllContactIds returns the MIDs of all contacts.
@@ -1181,6 +1251,60 @@ func (c *Client) GetBlockedContactIdsContext(ctx context.Context) ([]string, err
 		return nil, fmt.Errorf("getBlockedContactIds failed: %s", wrapper.Message)
 	}
 	return wrapper.Data, nil
+}
+
+// GetBlockedRecommendationIds returns the MIDs of blocked recommended contacts.
+func (c *Client) GetBlockedRecommendationIds() ([]string, error) {
+	return c.GetBlockedRecommendationIdsContext(context.Background())
+}
+
+func (c *Client) GetBlockedRecommendationIdsContext(ctx context.Context) ([]string, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getBlockedRecommendationIds")
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(resp, &wrapper); err != nil {
+		return nil, errors.New("invalid getBlockedRecommendationIds response")
+	}
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getBlockedRecommendationIds response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	if len(wrapper.Data) == 0 || string(wrapper.Data) == "null" {
+		return []string{}, nil
+	}
+	var ids []string
+	if err := json.Unmarshal(wrapper.Data, &ids); err != nil {
+		return nil, errors.New("invalid getBlockedRecommendationIds response")
+	}
+	return ids, nil
+}
+
+// SetContactBlocked blocks or unblocks a contact on LINE.
+func (c *Client) SetContactBlocked(reqSeq int64, mid string, blocked bool) error {
+	return c.SetContactBlockedContext(context.Background(), reqSeq, mid, blocked)
+}
+
+func (c *Client) SetContactBlockedContext(ctx context.Context, reqSeq int64, mid string, blocked bool) error {
+	var (
+		resp []byte
+		err  error
+	)
+	if blocked {
+		resp, err = c.callRPCContext(ctx, "TalkService", "blockContact", reqSeq, mid)
+	} else {
+		resp, err = c.callRPCContext(ctx, "TalkService", "unblockContact", reqSeq, mid, "")
+	}
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
 }
 
 // DetermineMediaMessageFlow asks the server which upload path to use for media

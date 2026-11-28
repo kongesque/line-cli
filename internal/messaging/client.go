@@ -378,7 +378,7 @@ func (c *Client) send(ctx context.Context, chat, text, replyTo string, file *Att
 		}
 		for _, mid := range blocked {
 			if mid == chat {
-				return nil, errors.New("contact is blocked on LINE; unblock them on your phone before sending")
+				return nil, errors.New("contact is blocked on LINE; run line contacts unblock USER_MID or unblock them on your phone before sending")
 			}
 		}
 	}

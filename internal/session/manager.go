@@ -39,6 +39,10 @@ type API interface {
 	GetPreviousMessagesV2Context(context.Context, string, line.MessageIDWrapper, int) ([]*line.Message, error)
 	GetBlockedContactIds() ([]string, error)
 	GetBlockedContactIdsContext(context.Context) ([]string, error)
+	GetBlockedRecommendationIdsContext(context.Context) ([]string, error)
+	FindContactByUseridContext(context.Context, string) (*line.Contact, error)
+	FindContactByPhoneContext(context.Context, string) (*line.Contact, error)
+	SetContactBlockedContext(context.Context, int64, string, bool) error
 	NegotiateE2EEPublicKey(string) (*line.E2EEPublicKey, error)
 	NegotiateE2EEPublicKeyContext(context.Context, string) (*line.E2EEPublicKey, error)
 	GetE2EEPublicKey(string, int, int) (*line.E2EEPublicKey, error)
