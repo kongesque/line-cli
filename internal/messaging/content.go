@@ -4,15 +4,21 @@ import (
 	"encoding/json"
 	"math"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/kongesque/line-cli/pkg/line"
 )
 
-const maxContentBytes = 64 * 1024
+const (
+	maxContentBytes        = 64 * 1024
+	maxPostPreviewMedias   = 64
+	maxPostIdentifierBytes = 256
+)
 
 // Content is an allowlisted view, never a copy of protocol metadata. Status is
 // independent of the legacy Message status so existing JSON remains compatible.
@@ -26,6 +32,15 @@ type Content struct {
 	Contact    *SharedContact        `json:"contact,omitempty"`
 	Sticker    *Sticker              `json:"sticker,omitempty"`
 	Rich       *RichContent          `json:"rich,omitempty"`
+	Post       *PostNotification     `json:"post,omitempty"`
+}
+type PostNotification struct {
+	Type         string `json:"type"`
+	Title        string `json:"title,omitempty"`
+	Text         string `json:"text,omitempty"`
+	URL          string `json:"url,omitempty"`
+	AlbumID      string `json:"album_id,omitempty"`
+	PreviewCount *int   `json:"preview_count,omitempty"`
 }
 type Mention struct {
 	Start int    `json:"start"`
@@ -56,17 +71,31 @@ type RichContent struct {
 }
 
 func contentKind(t int) string {
-	if name, ok := map[int]string{0: "text", 1: "image", 2: "video", 3: "audio", 7: "sticker", 13: "contact", 14: "file", 15: "location", 17: "rich", 22: "flex"}[t]; ok {
+	if name, ok := map[int]string{0: "text", 1: "image", 2: "video", 3: "audio", 7: "sticker", 13: "contact", 14: "file", 15: "location", 16: "post_notification", 17: "rich", 22: "flex"}[t]; ok {
 		return name
 	}
 	return "unsupported"
 }
 
-func decodeContent(msg *line.Message, encrypted bool, payload string) Content {
+func decodeContent(chat string, msg *line.Message, encrypted bool, payload string) Content {
 	c := Content{Kind: contentKind(msg.ContentType), Status: "ok"}
 	if c.Kind == "unsupported" {
 		c.Status = "unsupported"
 		return c
+	}
+	if msg.ContentType == 16 {
+		if encrypted || hasPostEncryptionMarkers(msg) {
+			c.Status = "unsupported"
+			return c
+		}
+		parsed := parsePostNotification(chat, msg)
+		c.Status = parsed.status
+		c.Post = parsed.post
+		return c
+	}
+	if !encrypted && isPlaintextPostWrapper(msg) {
+		parsed := parsePostNotification(chat, msg)
+		return Content{Kind: "post_notification", Status: parsed.status, Post: parsed.post}
 	}
 	text, location, name := msg.Text, msg.Location, msg.ContentMetadata["FILE_NAME"]
 	if encrypted {
@@ -291,4 +320,401 @@ func decodeRich(alt, raw string) (*RichContent, bool) {
 		return true
 	}
 	return r, walk(root, 0)
+}
+
+type parsedPost struct {
+	post    *PostNotification
+	chatID  string
+	albumID string
+	oids    []string
+	status  string
+}
+
+type postURLRoute int
+
+const (
+	postRouteNone postURLRoute = iota
+	postRoutePost
+	postRouteAlbum
+)
+
+var (
+	v2ChatIDPattern       = regexp.MustCompile(`^[uUcCrR][A-Za-z0-9_-]{43}$`)
+	legacyV1ChatIDPattern = regexp.MustCompile(`^[ucr][0-9a-f]{32}$`)
+
+	allowedPostQueryParams = map[string]bool{
+		"postId":        true,
+		"homeId":        true,
+		"groupId":       true,
+		"albumId":       true,
+		"albumIdV2":     true,
+		"noteEntryType": true,
+		"source":        true,
+		"type":          true,
+	}
+)
+
+func hasPostEncryptionMarkers(msg *line.Message) bool {
+	return msg != nil && (len(msg.Chunks) > 0 || msg.ContentMetadata["e2eeVersion"] != "")
+}
+
+func isPlaintextPostWrapper(msg *line.Message) bool {
+	return msg != nil &&
+		msg.ContentType == 0 &&
+		!hasPostEncryptionMarkers(msg) &&
+		msg.Location == nil &&
+		msg.ContentMetadata["ORGCONTP"] == "POSTNOTIFICATION"
+}
+
+func isPostNotificationMessage(msg *line.Message) bool {
+	return msg != nil && (msg.ContentType == 16 || isPlaintextPostWrapper(msg))
+}
+
+func parsePostNotification(chat string, msg *line.Message) parsedPost {
+	if !isPostNotificationMessage(msg) || hasPostEncryptionMarkers(msg) {
+		return parsedPost{status: "unsupported"}
+	}
+	meta := msg.ContentMetadata
+	status := "ok"
+	markMalformed := func() { status = "malformed_metadata" }
+
+	serviceType := ""
+	if raw := meta["serviceType"]; raw != "" {
+		if len(raw) > maxContentBytes || !utf8.ValidString(raw) {
+			markMalformed()
+		} else {
+			serviceType = strings.ToUpper(strings.TrimSpace(raw))
+		}
+	}
+	postType := "unknown"
+	switch serviceType {
+	case "GB":
+		postType = "note"
+	case "AB":
+		postType = "album"
+	}
+
+	post := &PostNotification{Type: postType}
+
+	if raw := meta["text"]; raw != "" {
+		if len(raw) > maxContentBytes || !utf8.ValidString(raw) {
+			markMalformed()
+		} else {
+			post.Text = raw
+		}
+	}
+
+	if postType != "note" {
+		if raw := meta["albumName"]; raw != "" {
+			if len(raw) > maxContentBytes || !utf8.ValidString(raw) {
+				markMalformed()
+			} else {
+				post.Title = strings.TrimSpace(raw)
+			}
+		}
+	}
+
+	albumID := ""
+	urlHomeID := ""
+	homeIDInvalid := false
+	if raw := meta["postEndUrl"]; raw != "" {
+		urlRes := parsePostEndURL(raw, postType == "album")
+		if urlRes.malformed {
+			markMalformed()
+		}
+		post.URL = urlRes.url
+		post.AlbumID = urlRes.albumID
+		albumID = urlRes.albumID
+		urlHomeID = urlRes.homeID
+		homeIDInvalid = urlRes.homeIDInvalid
+	}
+
+	var chatID string
+	var oids []string
+	if postType == "album" {
+		count := 0
+		post.PreviewCount = &count
+		if raw := meta["chatId"]; raw != "" {
+			if len(raw) > maxContentBytes || !utf8.ValidString(raw) || ValidateChatID(raw) != nil {
+				markMalformed()
+			} else {
+				chatID = raw
+			}
+		}
+		candidates, ok := parsePostPreviewMedias(meta["previewMedias"])
+		if !ok {
+			markMalformed()
+		}
+		if isSameChatAlbumBinding(chat, chatID, urlHomeID, homeIDInvalid) {
+			oids = candidates
+			n := len(oids)
+			post.PreviewCount = &n
+		}
+	}
+
+	return parsedPost{
+		post:    post,
+		chatID:  chatID,
+		albumID: albumID,
+		oids:    oids,
+		status:  status,
+	}
+}
+
+type postURLResult struct {
+	url           string
+	albumID       string
+	homeID        string
+	homeIDInvalid bool
+	malformed     bool
+}
+
+// isSameChatAlbumBinding checks local metadata consistency between selectedChat,
+// contentMetadata["chatId"], and an album route's postEndUrl homeId before
+// enabling preview downloads. Exact chatId equality handles same-format chats;
+// on modern V2 chats (44-char opaque MID), LINE puts the 33-char legacy V1 hex
+// MID in contentMetadata["chatId"] (required by OBS in X-Line-Mid) while
+// setting postEndUrl homeId to the V2 selectedChat. Because both fields come
+// from notification metadata, LINE's OBS endpoint remains the server-side
+// authorization boundary.
+func isSameChatAlbumBinding(selectedChat, chatID, urlHomeID string, homeIDInvalid bool) bool {
+	if homeIDInvalid || selectedChat == "" || chatID == "" {
+		return false
+	}
+	if chatID == selectedChat {
+		return urlHomeID == "" || urlHomeID == selectedChat
+	}
+	return v2ChatIDPattern.MatchString(selectedChat) &&
+		legacyV1ChatIDPattern.MatchString(chatID) &&
+		toType(chatID) == toType(selectedChat) &&
+		urlHomeID == selectedChat
+}
+
+func parsePostEndURL(raw string, extractAlbumID bool) postURLResult {
+	if len(raw) > maxContentBytes || !utf8.ValidString(raw) {
+		return postURLResult{malformed: true}
+	}
+	if strings.ContainsFunc(raw, func(r rune) bool { return unicode.IsControl(r) || unicode.IsSpace(r) }) {
+		return postURLResult{malformed: true}
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.Opaque != "" || u.User != nil || strings.Contains(u.Host, ":") {
+		return postURLResult{malformed: true}
+	}
+	switch u.Scheme {
+	case "https":
+		if u.Host != "line.me" {
+			return postURLResult{malformed: true}
+		}
+	case "line":
+	default:
+		return postURLResult{malformed: true}
+	}
+	if hasUnsafeURLPath(u.Path) || hasUnsafeURLPath(u.RawPath) {
+		return postURLResult{malformed: true}
+	}
+	values, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return postURLResult{malformed: true}
+	}
+	hasUnknownParam := u.Fragment != ""
+	for k, vals := range values {
+		if !utf8.ValidString(k) || hasUnsafeURLParamText(k) {
+			return postURLResult{malformed: true}
+		}
+		if !allowedPostQueryParams[k] {
+			hasUnknownParam = true
+		}
+		for _, v := range vals {
+			if !utf8.ValidString(v) || hasUnsafeURLParamText(v) {
+				return postURLResult{malformed: true}
+			}
+		}
+	}
+
+	route := classifyPostRoute(u)
+	var res postURLResult
+	if route != postRouteNone && !hasUnknownParam {
+		res.url = raw
+	}
+	if extractAlbumID && route == postRouteAlbum {
+		if homeVals := values["homeId"]; len(homeVals) > 1 {
+			res.malformed = true
+			res.homeIDInvalid = true
+		} else if len(homeVals) == 1 && homeVals[0] != "" {
+			if ValidateChatID(homeVals[0]) != nil {
+				res.malformed = true
+				res.homeIDInvalid = true
+			} else {
+				res.homeID = homeVals[0]
+			}
+		}
+		v2Vals := values["albumIdV2"]
+		v1Vals := values["albumId"]
+		if len(v2Vals) > 1 || len(v1Vals) > 1 {
+			res.malformed = true
+			return res
+		}
+		if len(v2Vals) == 1 && v2Vals[0] != "" && !isValidPostAlbumID(v2Vals[0]) {
+			res.malformed = true
+			return res
+		}
+		if len(v1Vals) == 1 && v1Vals[0] != "" && !isValidPostAlbumID(v1Vals[0]) {
+			res.malformed = true
+			return res
+		}
+		if len(v2Vals) == 1 && v2Vals[0] != "" {
+			res.albumID = v2Vals[0]
+		} else if len(v1Vals) == 1 && v1Vals[0] != "" {
+			res.albumID = v1Vals[0]
+		}
+	}
+	return res
+}
+
+func hasUnsafeURLPath(p string) bool {
+	if p == "" {
+		return false
+	}
+	if strings.Contains(p, "\\") || strings.Contains(p, "//") {
+		return true
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUnsafeURLParamText(s string) bool {
+	if strings.Contains(s, "://") || strings.Contains(s, "@") {
+		return true
+	}
+	return strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.IsSpace(r) })
+}
+
+func matchPathPrefix(path, prefix string) bool {
+	if path == prefix {
+		return true
+	}
+	if !strings.HasPrefix(path, prefix+"/") {
+		return false
+	}
+	rest := strings.TrimPrefix(path, prefix+"/")
+	return rest != "" && !strings.HasSuffix(rest, "/")
+}
+
+func classifyPostRoute(u *url.URL) postURLRoute {
+	path := u.Path
+	if path == "" || !strings.HasPrefix(path, "/") {
+		return postRouteNone
+	}
+	switch u.Scheme {
+	case "https":
+		if u.Host != "line.me" {
+			return postRouteNone
+		}
+		if matchPathPrefix(path, "/R/group/home/albums") || matchPathPrefix(path, "/R/home/albums") {
+			return postRouteAlbum
+		}
+		if matchPathPrefix(path, "/R/group/home/posts") {
+			return postRoutePost
+		}
+		if strings.HasPrefix(path, "/R/home/") && len(path) > len("/R/home/") && !strings.HasSuffix(path, "/") {
+			return postRoutePost
+		}
+	case "line":
+		switch u.Host {
+		case "group":
+			if matchPathPrefix(path, "/home/albums") || matchPathPrefix(path, "/albums") || matchPathPrefix(path, "/album") {
+				return postRouteAlbum
+			}
+			if matchPathPrefix(path, "/home/posts") || matchPathPrefix(path, "/posts") || matchPathPrefix(path, "/post") {
+				return postRoutePost
+			}
+		case "home":
+			if matchPathPrefix(path, "/albums") || matchPathPrefix(path, "/album") {
+				return postRouteAlbum
+			}
+			if matchPathPrefix(path, "/posts") || matchPathPrefix(path, "/post") || matchPathPrefix(path, "/public/post") {
+				return postRoutePost
+			}
+		}
+	}
+	return postRouteNone
+}
+
+func isValidPostAlbumID(s string) bool {
+	if s == "" || len(s) > maxPostIdentifierBytes || !utf8.ValidString(s) {
+		return false
+	}
+	for _, r := range s {
+		if r < 0x21 || r > 0x7E {
+			return false
+		}
+	}
+	return true
+}
+
+func isSafePreviewOID(oid string) bool {
+	if oid == "" || len(oid) > maxPostIdentifierBytes || !utf8.ValidString(oid) {
+		return false
+	}
+	if oid == "." || strings.Contains(oid, "..") || strings.ContainsAny(oid, "/\\") {
+		return false
+	}
+	return !strings.ContainsFunc(oid, func(r rune) bool { return unicode.IsControl(r) || unicode.IsSpace(r) })
+}
+
+func parsePostPreviewMedias(raw string) ([]string, bool) {
+	if len(raw) > maxContentBytes || !utf8.ValidString(raw) {
+		return nil, false
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, true
+	}
+	if !strings.HasPrefix(trimmed, "[") {
+		return nil, false
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &items); err != nil {
+		return nil, false
+	}
+	if len(items) > maxPostPreviewMedias {
+		return nil, false
+	}
+	ok := true
+	seen := make(map[string]bool, len(items))
+	oids := make([]string, 0, len(items))
+	for _, item := range items {
+		itemTrimmed := strings.TrimSpace(string(item))
+		if !strings.HasPrefix(itemTrimmed, "{") {
+			ok = false
+			continue
+		}
+		var entry struct {
+			SVC       string `json:"svc"`
+			SID       string `json:"sid"`
+			MediaOID  string `json:"mediaOid"`
+			MediaType string `json:"mediaType"`
+		}
+		if err := json.Unmarshal(item, &entry); err != nil {
+			ok = false
+			continue
+		}
+		if entry.SVC != "album" || entry.SID != "a" || entry.MediaType != "I" {
+			continue
+		}
+		if !isSafePreviewOID(entry.MediaOID) {
+			ok = false
+			continue
+		}
+		if !seen[entry.MediaOID] {
+			seen[entry.MediaOID] = true
+			oids = append(oids, entry.MediaOID)
+		}
+	}
+	return oids, ok
 }

@@ -239,6 +239,10 @@ type guidedAPI struct {
 	invited, accepts, rejects                   []string
 	inviteSeqs                                  []int64
 	inviteErr, listErr                          error
+	albumPreviewCalls                           int
+	albumOID, albumChatID, albumID              string
+	albumData                                   []byte
+	albumErr                                    error
 }
 
 func (f *guidedAPI) SendChatCheckedContext(_ context.Context, seq int64, chat, message string) error {
@@ -267,6 +271,18 @@ func (f *guidedAPI) UnsendMessage(_ int64, _ string) error { f.unsends++; return
 
 func (f *guidedAPI) DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error) {
 	return []byte("file bytes"), nil
+}
+
+func (f *guidedAPI) DownloadAlbumPreview(_ context.Context, oid, chatID, albumID string) ([]byte, error) {
+	f.albumPreviewCalls++
+	f.albumOID, f.albumChatID, f.albumID = oid, chatID, albumID
+	if f.albumErr != nil {
+		return nil, f.albumErr
+	}
+	if f.albumData != nil {
+		return f.albumData, nil
+	}
+	return []byte("album preview bytes"), nil
 }
 
 func (f *guidedAPI) Login(email, password, certificate string) (*line.LoginResult, error) {

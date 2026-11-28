@@ -2,10 +2,12 @@ package cli
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,11 +21,12 @@ func (a *App) downloadCommand(args []string) error {
 	}
 	fs := newFlagSet("download")
 	timeout := fs.Duration("timeout", 2*time.Minute, "command deadline including preparation, e.g. 30s; 0 disables it")
-	h := commandHelp{Command: "download", Usage: []string{"line download CHAT --message ID --output PATH [--json]", "line download CHAT --message ID --output - | COMMAND"},
-		About:    "Download an image, video, audio, or file (up to 20 MiB). Existing files are\nnever overwritten. Encrypted media is verified before the first byte is written.",
-		Groups:   []flagGroup{{"Target", []string{"message"}}, {"Output", []string{"output", "json"}}, {"Request", []string{"timeout"}}},
-		Examples: []string{`line download "Alice" --message MESSAGE_ID --output ./photo.jpg`, "line download CHAT_ID --message MESSAGE_ID --output - | consumer"}}
-	id := fs.String("message", "", "attachment message ID (lookup: up to 10 pages / 1000 records / 30s)")
+	h := commandHelp{Command: "download", Usage: []string{"line download CHAT --message ID --output PATH [--preview N] [--json]", "line download CHAT --message ID --output - [--preview N] | COMMAND"},
+		About:    "Download an image, video, audio, file, or album preview thumbnail (up to 20 MiB).\nUse line messages CHAT --details --json to discover message IDs and album\npreview counts. Existing files are never overwritten. Encrypted media is verified\nbefore the first byte is written.",
+		Groups:   []flagGroup{{"Target", []string{"message", "preview"}}, {"Output", []string{"output", "json"}}, {"Request", []string{"timeout"}}},
+		Examples: []string{`line download "Alice" --message MESSAGE_ID --output ./photo.jpg`, `line download "Weekend Trip" --message ALBUM_MSG_ID --preview 2 --output ./thumb.jpg`, "line download CHAT_ID --message MESSAGE_ID --output - | consumer"}}
+	id := fs.String("message", "", "attachment or album message ID (lookup: up to 10 pages / 1000 records / 30s)")
+	preview := fs.Int("preview", 0, "1-based album thumbnail index (defaults to 1 when omitted)")
 	output := fs.String("output", "", "destination path (never overwritten), or - for binary stdout")
 	jsonOutput := fs.Bool("json", false, "write JSON summary")
 	if shown, err := a.parseFlags(fs, h, args); shown || err != nil {
@@ -38,6 +41,15 @@ func (a *App) downloadCommand(args []string) error {
 		chat = fs.Arg(0)
 	} else if fs.NArg() != 0 {
 		return errors.New("unexpected download arguments")
+	}
+	previewSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "preview" {
+			previewSet = true
+		}
+	})
+	if previewSet && *preview < 1 {
+		return errors.New("--preview must be a positive integer starting at 1")
 	}
 	if err := a.validateDownloadOutput(*output, *jsonOutput); err != nil {
 		return err
@@ -68,9 +80,29 @@ func (a *App) downloadCommand(args []string) error {
 			return err
 		}
 		if *id == "" {
-			*id, err = a.selectMessage(chat, "download")
+			selected, err := a.selectMessageDetail(chat, "download")
 			if err != nil {
 				return err
+			}
+			*id = selected.ID
+			if !previewSet && selected.Content.Post != nil && selected.Content.Post.Type == "album" && selected.Content.Post.PreviewCount != nil && *selected.Content.Post.PreviewCount > 1 {
+				maxPreview := *selected.Content.Post.PreviewCount
+				answer, err := a.ask(fmt.Sprintf("Preview number (1-%d) [1]: ", maxPreview))
+				if err != nil {
+					return err
+				}
+				answer = strings.TrimSpace(answer)
+				if answer == "" {
+					*preview = 1
+					previewSet = true
+				} else {
+					n, err := strconv.Atoi(answer)
+					if err != nil || n < 1 || n > maxPreview {
+						return fmt.Errorf("choose a preview number between 1 and %d", maxPreview)
+					}
+					*preview = n
+					previewSet = true
+				}
 			}
 		}
 		if *output == "" {
@@ -118,7 +150,12 @@ func (a *App) downloadCommand(args []string) error {
 		return err
 	}
 	ctx := a.loginContext()
-	data, err := c.DownloadFile(ctx, chat, *id)
+	var opts messaging.DownloadOptions
+	if previewSet {
+		p := *preview
+		opts.Preview = &p
+	}
+	data, err := c.DownloadFileWithOptions(ctx, chat, *id, opts)
 	if err != nil {
 		return err
 	}

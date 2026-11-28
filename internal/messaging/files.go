@@ -29,6 +29,21 @@ const MaxAttachmentBytes = 20 << 20
 // IsDownloadable reports whether a message type has a supported OBS attachment.
 func IsDownloadable(contentType int) bool { return attachmentSID(contentType) != "" }
 
+// IsDownloadableMessage reports whether a decoded message is eligible for
+// download (media attachments or same-chat album posts with preview thumbnails).
+func IsDownloadableMessage(m Message) bool {
+	if IsDownloadable(m.ContentType) {
+		return true
+	}
+	return m.Content.Post != nil && m.Content.Post.Type == "album" && m.Content.Post.PreviewCount != nil && *m.Content.Post.PreviewCount > 0
+}
+
+// DownloadOptions configures optional download parameters.
+type DownloadOptions struct {
+	// Preview selects the 1-based album preview thumbnail index when set.
+	Preview *int
+}
+
 func attachmentSID(contentType int) string {
 	switch contentType {
 	case 1:
@@ -152,9 +167,19 @@ func (c *Client) uploadFile(ctx context.Context, file *Attachment, metadata map[
 	return json.Marshal(map[string]string{"keyMaterial": key, "fileName": file.Name})
 }
 
-// DownloadFile downloads images, videos, audio, and generic files. Encrypted
-// attachments are authenticated before returning bytes; keys/URLs stay private.
+// DownloadFile downloads images, videos, audio, generic files, and the first
+// preview thumbnail of same-chat album posts. Encrypted attachments are
+// authenticated before returning bytes; keys/URLs stay private.
 func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, error) {
+	return c.DownloadFileWithOptions(ctx, chat, id, DownloadOptions{})
+}
+
+// DownloadFileWithOptions downloads media attachments or a selected 1-based
+// preview thumbnail from a same-chat album post notification.
+func (c *Client) DownloadFileWithOptions(ctx context.Context, chat, id string, opts DownloadOptions) ([]byte, error) {
+	if opts.Preview != nil && *opts.Preview < 1 {
+		return nil, fault.New("invalid_arguments", "validation", "--preview must be a positive integer starting at 1", nil)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -163,7 +188,13 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 		return nil, err
 	}
 	if !IsDownloadable(msg.ContentType) {
-		return nil, fault.New("unsupported_content", "lookup", "download supports image, video, audio, and file messages only", nil)
+		if isPostNotificationMessage(msg) {
+			return c.downloadAlbumPreview(ctx, chat, msg, opts.Preview)
+		}
+		return nil, fault.New("unsupported_content", "lookup", "download supports image, video, audio, file, and album preview messages only", nil)
+	}
+	if opts.Preview != nil {
+		return nil, fault.New("invalid_arguments", "lookup", "--preview is only supported for album preview messages", nil)
 	}
 	if msg.ContentMetadata["DOWNLOAD_URL"] != "" {
 		return nil, fault.New("unsupported_content", "lookup", "downloads from external media URLs are not supported", nil)
@@ -207,13 +238,13 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 			return nil, errors.New("encrypted attachment key metadata is inconsistent")
 		}
 	}
-	opts := line.OBSDownloadOptions{OBSPop: msg.ContentMetadata["OBS_POP"], MaxBytes: MaxAttachmentBytes + sha256.Size}
+	obsOpts := line.OBSDownloadOptions{OBSPop: msg.ContentMetadata["OBS_POP"], MaxBytes: MaxAttachmentBytes + sha256.Size}
 	if sid == "m" {
 		var info struct {
 			Category string `json:"category"`
 		}
 		if json.Unmarshal([]byte(msg.ContentMetadata["MEDIA_CONTENT_INFO"]), &info) == nil && info.Category == "original" {
-			opts.TID = "original"
+			obsOpts.TID = "original"
 		}
 	}
 	var data []byte
@@ -221,7 +252,7 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 		return nil, err
 	}
 	if err := c.Session.DoContext(ctx, func(api session.API) (err error) {
-		data, err = api.DownloadOBSWithSIDOptions(ctx, oid, talkMeta, sid, opts)
+		data, err = api.DownloadOBSWithSIDOptions(ctx, oid, talkMeta, sid, obsOpts)
 		return
 	}); err != nil {
 		switch {
@@ -249,6 +280,57 @@ func (c *Client) DownloadFile(ctx context.Context, chat, id string) ([]byte, err
 	}
 	if len(data) > MaxAttachmentBytes {
 		return nil, errors.New("attachment exceeds the CLI limit of 20 MiB")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (c *Client) downloadAlbumPreview(ctx context.Context, chat string, msg *line.Message, preview *int) ([]byte, error) {
+	parsed := parsePostNotification(chat, msg)
+	if parsed.status == "unsupported" || parsed.post == nil || parsed.post.Type != "album" {
+		return nil, fault.New("unsupported_content", "lookup", "download supports image, video, audio, file, and album preview messages only", nil)
+	}
+	if len(parsed.oids) == 0 {
+		return nil, fault.New("unsupported_content", "lookup", "this album post has no downloadable previews for this chat", nil)
+	}
+	index := 1
+	if preview != nil {
+		index = *preview
+	}
+	if index > len(parsed.oids) {
+		unit := "previews"
+		if len(parsed.oids) == 1 {
+			unit = "preview"
+		}
+		return nil, fault.New("invalid_arguments", "lookup", fmt.Sprintf("album has %d downloadable %s; choose --preview between 1 and %d", len(parsed.oids), unit, len(parsed.oids)), nil)
+	}
+	oid := parsed.oids[index-1]
+	var data []byte
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := c.Session.DoContext(ctx, func(api session.API) (err error) {
+		data, err = api.DownloadAlbumPreview(ctx, oid, parsed.chatID, parsed.albumID)
+		return
+	}); err != nil {
+		switch {
+		case errors.Is(err, context.Canceled):
+			return nil, context.Canceled
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, context.DeadlineExceeded
+		case errors.Is(err, line.ErrOBSObjectNotFound):
+			return nil, errors.New("album preview is no longer available from LINE")
+		case errors.Is(err, line.ErrOBSEncodingIncomplete):
+			return nil, errors.New("LINE is still processing this album preview; try again later")
+		case errors.Is(err, line.ErrOBSSizeLimit):
+			return nil, errors.New("album preview exceeds the CLI limit of 20 MiB")
+		}
+		return nil, err
+	}
+	if len(data) > MaxAttachmentBytes {
+		return nil, errors.New("album preview exceeds the CLI limit of 20 MiB")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

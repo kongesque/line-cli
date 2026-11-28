@@ -789,21 +789,30 @@ func (c *Client) AcquireEncryptedAccessTokenContext(ctx context.Context) (string
 // AcquireChannelAccessToken returns a cached token for an official LINE
 // channel, issuing one through ChannelService when necessary.
 func (c *Client) AcquireChannelAccessToken(channelID string) (string, error) {
+	return c.AcquireChannelAccessTokenContext(context.Background(), channelID)
+}
+
+// AcquireChannelAccessTokenContext returns a cached token for an official LINE
+// channel, releasing channelTokenMu during the network call so canceled
+// concurrent callers never stall behind an in-flight RPC.
+func (c *Client) AcquireChannelAccessTokenContext(ctx context.Context, channelID string) (string, error) {
 	if channelID == "" {
 		return "", fmt.Errorf("channel ID is required")
 	}
-
-	c.channelTokenMu.Lock()
-	defer c.channelTokenMu.Unlock()
-
-	now := time.Now()
-	if cached, ok := c.channelTokenCache[channelID]; ok &&
-		cached.token != "" &&
-		now.Before(cached.expiresAt) {
-		return cached.token, nil
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 
-	resp, err := c.callRPC("ChannelService", "issueChannelToken", channelID)
+	c.channelTokenMu.Lock()
+	if cached, ok := c.channelTokenCache[channelID]; ok &&
+		cached.token != "" &&
+		time.Now().Before(cached.expiresAt) {
+		c.channelTokenMu.Unlock()
+		return cached.token, nil
+	}
+	c.channelTokenMu.Unlock()
+
+	resp, err := c.callRPCContext(ctx, "ChannelService", "issueChannelToken", channelID)
 	if err != nil {
 		return "", err
 	}
@@ -825,7 +834,8 @@ func (c *Client) AcquireChannelAccessToken(channelID string) (string, error) {
 		return "", fmt.Errorf("issueChannelToken returned an empty token")
 	}
 
-	expiresAt := parseChannelTokenExpiration(wrapper.Data.Expiration, now)
+	expiresAt := parseChannelTokenExpiration(wrapper.Data.Expiration, time.Now())
+	c.channelTokenMu.Lock()
 	if c.channelTokenCache == nil {
 		c.channelTokenCache = make(map[string]cachedChannelAccessToken)
 	}
@@ -833,6 +843,7 @@ func (c *Client) AcquireChannelAccessToken(channelID string) (string, error) {
 		token:     wrapper.Data.ChannelAccessToken,
 		expiresAt: expiresAt,
 	}
+	c.channelTokenMu.Unlock()
 	return wrapper.Data.ChannelAccessToken, nil
 }
 

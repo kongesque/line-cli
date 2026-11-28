@@ -155,3 +155,102 @@ func TestDecodedPreviewDoesNotUseOuterFileName(t *testing.T) {
 		t.Fatal("unsupported rich message disappeared")
 	}
 }
+
+func TestPostNotificationReadableAndDetailedRendering(t *testing.T) {
+	a, out, _ := testApp(nil)
+	f := &chatAPI{
+		names: map[string]string{"u-alice": "Alice", "u-bob": "Bob", "u-carol": "Carol", "c1234": "Weekend Trip"},
+	}
+	f.history = []*line.Message{
+		{
+			ID: "5001", From: "u-alice", To: "c1234", ToType: 2, CreatedTime: "1795673400000", ContentType: 16,
+			ContentMetadata: map[string]string{
+				"serviceType": "GB",
+				"text":        "Packing checklist\nTent, stove, headlamps",
+				"postEndUrl":  "https://line.me/R/group/home/posts/post?homeId=c1234&postId=119988",
+			},
+		},
+		{
+			ID: "5002", From: "u-bob", To: "c1234", ToType: 2, CreatedTime: "1795673700000", ContentType: 16,
+			ContentMetadata: map[string]string{
+				"serviceType":   "AB",
+				"albumName":     "Summit photos",
+				"postEndUrl":    "line://group/home/albums/album?albumId=123&albumIdV2=abc-v2",
+				"chatId":        "c1234",
+				"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"},"bad-entry"]`,
+			},
+		},
+		{
+			ID: "5003", From: "u-carol", To: "c1234", ToType: 2, CreatedTime: "1795673880000", ContentType: 16,
+		},
+		{
+			ID: "5004", From: "u-alice", To: "c1234", ToType: 2, CreatedTime: "1795674000000", ContentType: 0,
+			Text: "Alice created a note fallback sentence.",
+			ContentMetadata: map[string]string{
+				"ORGCONTP":    "POSTNOTIFICATION",
+				"serviceType": "GB",
+				"text":        "Shared reminder\nDon't forget sunscreen",
+				"postEndUrl":  "https://line.me/R/group/home/posts/post?homeId=c1234&postId=119990",
+			},
+		},
+	}
+	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "synthetic", NoE2EE: true}}
+	a.Manager.NewClient = func(string) session.API { return f }
+
+	// Readable messages output
+	if err := a.Run([]string{"messages", "id:c1234"}); err != nil {
+		t.Fatal(err)
+	}
+	readable := out.String()
+	for _, want := range []string{
+		"       [Note: Packing checklist]\n       Tent, stove, headlamps\n       https://line.me/R/group/home/posts/post?homeId=c1234&postId=119988\n",
+		"       [Album: Summit photos]\n       line://group/home/albums/album?albumId=123&albumIdV2=abc-v2\n",
+		"       [Post notification]\n",
+		"       [Note: Shared reminder]\n       Don't forget sunscreen\n       https://line.me/R/group/home/posts/post?homeId=c1234&postId=119990\n",
+	} {
+		if !strings.Contains(readable, want) {
+			t.Fatalf("readable missing %q in:\n%s", want, readable)
+		}
+	}
+	if strings.Contains(readable, "fallback sentence") || strings.Contains(readable, "[Malformed message content]") {
+		t.Fatalf("readable leaked fallback sentence or hid retained fields:\n%s", readable)
+	}
+
+	// Detailed JSON output
+	out.Reset()
+	if err := a.Run([]string{"messages", "id:c1234", "--details", "--json", "--resolve-names"}); err != nil {
+		t.Fatal(err)
+	}
+	var detailed detailedHistory
+	if err := json.Unmarshal(out.Bytes(), &detailed); err != nil {
+		t.Fatal(err)
+	}
+	if len(detailed.Messages) != 4 {
+		t.Fatalf("detailed count = %d", len(detailed.Messages))
+	}
+	if detailed.Messages[0].Content.Kind != "post_notification" || detailed.Messages[0].Text != "" || detailed.Messages[0].Content.Post.PreviewCount != nil {
+		t.Fatalf("detailed note: %+v", detailed.Messages[0])
+	}
+	if detailed.Messages[1].Status != "malformed_metadata" || detailed.Messages[1].Content.Post.Title != "Summit photos" || detailed.Messages[1].Content.Post.AlbumID != "abc-v2" || *detailed.Messages[1].Content.Post.PreviewCount != 1 {
+		t.Fatalf("detailed partial album: %+v", detailed.Messages[1])
+	}
+	if detailed.Messages[3].ContentType != 0 || detailed.Messages[3].Text != "" || detailed.Messages[3].Content.Kind != "post_notification" || detailed.Messages[3].Content.Post.Type != "note" {
+		t.Fatalf("detailed wrapper note: %+v", detailed.Messages[3])
+	}
+	if strings.Contains(out.String(), "oid-1") || strings.Contains(out.String(), "fallback sentence") {
+		t.Fatalf("detailed JSON leaked private/fallback data:\n%s", out.String())
+	}
+
+	// Legacy JSON preserves original wire projection
+	out.Reset()
+	if err := a.Run([]string{"messages", "id:c1234", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	var legacy []messaging.Message
+	if err := json.Unmarshal(out.Bytes(), &legacy); err != nil || len(legacy) != 4 {
+		t.Fatalf("legacy decode: %v", err)
+	}
+	if legacy[0].Status != "unsupported" || legacy[0].Text != "" || legacy[3].Status != "plaintext" || legacy[3].Text != "Alice created a note fallback sentence." {
+		t.Fatalf("legacy projection changed: %+v", legacy)
+	}
+}

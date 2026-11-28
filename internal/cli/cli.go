@@ -35,7 +35,7 @@ Everyday commands:
 More commands:
   auth        Inspect local session storage (auth status)
   watch       Stream new messages and events (--json for scripts)
-  download    Save an image, video, audio, or file attachment
+  download    Save an image, video, audio, file, or album preview
   read        Mark a chat as read (others see "Read")
   react       Add or remove a reaction
   unsend      Retract one of your own messages

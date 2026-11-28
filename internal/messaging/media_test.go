@@ -10,9 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/kongesque/line-cli/internal/fault"
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
 )
@@ -283,5 +286,291 @@ func TestVideoDecryptionWebCryptoVectors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func intPtr(n int) *int { return &n }
+
+func albumPreviewFixture(t *testing.T, chat string, msg *line.Message) (*Client, *fileAPI) {
+	t.Helper()
+	c, f, _, _ := setup(t, true)
+	api := &fileAPI{fakeAPI: f, albumData: []byte("jpeg-thumb")}
+	c.Session.NewClient = func(string) session.API { return api }
+	if msg.From == "" {
+		msg.From = "u-bob"
+	}
+	if toType(chat) != 0 {
+		msg.To = chat
+		msg.ToType = toType(chat)
+	} else {
+		msg.From = chat
+		msg.To = "u-self"
+		msg.ToType = 0
+	}
+	f.history = []*line.Message{msg}
+	return c, api
+}
+
+func TestAlbumPreviewDownloadSelectionAndValidation(t *testing.T) {
+	albumMsg := &line.Message{
+		ID: "5002", From: "u-bob", To: "c1234", ToType: 2, ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType": "AB",
+			"albumName":   "Summit photos",
+			"postEndUrl":  "line://group/home/albums/album?albumId=123&albumIdV2=abc-v2",
+			"chatId":      "c1234",
+			"previewMedias": `[
+				{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"},
+				"malformed-entry",
+				{"svc":"album","sid":"a","mediaOid":"../bad","mediaType":"I"},
+				{"svc":"album","sid":"a","mediaOid":"oid-2","mediaType":"I"}
+			]`,
+		},
+	}
+
+	c, api := albumPreviewFixture(t, "c1234", albumMsg)
+	decoded := c.Decode("c1234", albumMsg)
+	if decoded.Content.Post == nil || decoded.Content.Post.PreviewCount == nil || *decoded.Content.Post.PreviewCount != 2 {
+		t.Fatalf("unexpected decoded preview_count: %+v", decoded.Content)
+	}
+
+	// Default omitted preview downloads index 1
+	data, err := c.DownloadFileWithOptions(context.Background(), "c1234", "5002", DownloadOptions{})
+	if err != nil || string(data) != "jpeg-thumb" || api.albumOID != "oid-1" || api.albumChatID != "c1234" || api.albumID != "abc-v2" {
+		t.Fatalf("index 1 download: data=%q err=%v oid=%q chat=%q album=%q", data, err, api.albumOID, api.albumChatID, api.albumID)
+	}
+
+	// Explicit index 2 matches the second retained valid sibling
+	data, err = c.DownloadFileWithOptions(context.Background(), "c1234", "5002", DownloadOptions{Preview: intPtr(2)})
+	if err != nil || string(data) != "jpeg-thumb" || api.albumOID != "oid-2" || api.albumChatID != "c1234" || api.albumID != "abc-v2" {
+		t.Fatalf("index 2 download: data=%q err=%v oid=%q chat=%q album=%q", data, err, api.albumOID, api.albumChatID, api.albumID)
+	}
+
+	// Out-of-range index 3 fails with invalid_arguments and makes no OBS call
+	before := api.albumPreviewCalls
+	_, err = c.DownloadFileWithOptions(context.Background(), "c1234", "5002", DownloadOptions{Preview: intPtr(3)})
+	var fe *fault.Error
+	if !errors.As(err, &fe) || fe.Code != "invalid_arguments" || !strings.Contains(fe.Message, "between 1 and 2") || api.albumPreviewCalls != before {
+		t.Fatalf("out-of-range err = %v, calls = %d", err, api.albumPreviewCalls-before)
+	}
+
+	// Plaintext type-0 ORGCONTP Album wrapper also downloads cleanly
+	wrapAlbum := &line.Message{
+		ID: "5003", From: "u-bob", To: "c1234", ToType: 2, ContentType: 0, Text: "Bob added photos",
+		ContentMetadata: map[string]string{
+			"ORGCONTP":      "POSTNOTIFICATION",
+			"serviceType":   "AB",
+			"albumName":     "Wrapped",
+			"chatId":        "c1234",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-w1","mediaType":"I"}]`,
+		},
+	}
+	c2, api2 := albumPreviewFixture(t, "c1234", wrapAlbum)
+	if _, err := c2.DownloadFile(context.Background(), "c1234", "5003"); err != nil || api2.albumOID != "oid-w1" || api2.albumChatID != "c1234" || api2.albumID != "" {
+		t.Fatalf("wrapper album download failed: %v oid=%q", err, api2.albumOID)
+	}
+}
+
+func TestAlbumPreviewRejectionsMakeZeroOBSCalls(t *testing.T) {
+	cases := []struct {
+		name     string
+		chat     string
+		msg      *line.Message
+		preview  *int
+		wantCode string
+	}{
+		{
+			name: "cross-chat album",
+			chat: "c-selected",
+			msg: &line.Message{
+				ID: "1", ContentType: 16,
+				ContentMetadata: map[string]string{
+					"serviceType":   "AB",
+					"chatId":        "c-other",
+					"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+				},
+			},
+			wantCode: "unsupported_content",
+		},
+		{
+			name: "duplicate homeId on exact chatId match",
+			chat: "c1234",
+			msg: &line.Message{
+				ID: "1", ContentType: 16,
+				ContentMetadata: map[string]string{
+					"serviceType":   "AB",
+					"chatId":        "c1234",
+					"postEndUrl":    "line://group/home/albums/album?albumId=123&homeId=c1234&homeId=c-other",
+					"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+				},
+			},
+			wantCode: "unsupported_content",
+		},
+		{
+			name: "note post",
+			chat: "c1234",
+			msg: &line.Message{
+				ID: "1", ContentType: 16,
+				ContentMetadata: map[string]string{"serviceType": "GB", "text": "hello"},
+			},
+			wantCode: "unsupported_content",
+		},
+		{
+			name: "album with 0 previews",
+			chat: "c1234",
+			msg: &line.Message{
+				ID: "1", ContentType: 16,
+				ContentMetadata: map[string]string{"serviceType": "AB", "chatId": "c1234", "previewMedias": `[]`},
+			},
+			wantCode: "unsupported_content",
+		},
+		{
+			name: "encrypted native 16",
+			chat: "c1234",
+			msg: &line.Message{
+				ID: "1", ContentType: 16, Chunks: encryptedChunks(22, 11),
+				ContentMetadata: map[string]string{
+					"serviceType":   "AB",
+					"chatId":        "c1234",
+					"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+				},
+			},
+			wantCode: "unsupported_content",
+		},
+		{
+			name: "encrypted type 0 ORGCONTP",
+			chat: "c1234",
+			msg: &line.Message{
+				ID: "1", ContentType: 0, Chunks: encryptedChunks(22, 11),
+				ContentMetadata: map[string]string{
+					"ORGCONTP":      "POSTNOTIFICATION",
+					"serviceType":   "AB",
+					"chatId":        "c1234",
+					"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+				},
+			},
+			wantCode: "unsupported_content",
+		},
+		{
+			name:     "explicit --preview on ordinary image",
+			chat:     "u-peer",
+			msg:      &line.Message{ID: "1", ContentType: 1},
+			preview:  intPtr(1),
+			wantCode: "invalid_arguments",
+		},
+		{
+			name: "explicit --preview on type 14 attachment with ORGCONTP",
+			chat: "u-peer",
+			msg: &line.Message{
+				ID: "1", ContentType: 14,
+				ContentMetadata: map[string]string{"ORGCONTP": "POSTNOTIFICATION", "serviceType": "AB", "chatId": "u-peer"},
+			},
+			preview:  intPtr(1),
+			wantCode: "invalid_arguments",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, api := albumPreviewFixture(t, tc.chat, tc.msg)
+			data, err := c.DownloadFileWithOptions(context.Background(), tc.chat, "1", DownloadOptions{Preview: tc.preview})
+			var fe *fault.Error
+			if err == nil || data != nil || !errors.As(err, &fe) || fe.Code != tc.wantCode {
+				t.Fatalf("err = %v, data = %v, want code %s", err, data, tc.wantCode)
+			}
+			if api.albumPreviewCalls != 0 || api.downloads != 0 {
+				t.Fatalf("unexpected download calls: album=%d obs=%d", api.albumPreviewCalls, api.downloads)
+			}
+		})
+	}
+}
+
+func TestAlbumPreviewSizeLimitReturnsNoData(t *testing.T) {
+	msg := &line.Message{
+		ID: "5002", ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"chatId":        "c1234",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	c, api := albumPreviewFixture(t, "c1234", msg)
+	api.albumData = nil
+	api.albumErr = line.ErrOBSSizeLimit
+	data, err := c.DownloadFileWithOptions(context.Background(), "c1234", "5002", DownloadOptions{})
+	if err == nil || data != nil || !strings.Contains(err.Error(), "20 MiB") {
+		t.Fatalf("oversized error = %v, data = %v", err, data)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestAlbumPreview403OversizedBodyRecoversViaRefresh(t *testing.T) {
+	albumMsg := &line.Message{
+		ID: "5002", From: "u-bob", To: "c1234", ToType: 2, ContentType: 16,
+		ContentMetadata: map[string]string{
+			"serviceType":   "AB",
+			"chatId":        "c1234",
+			"postEndUrl":    "line://group/home/albums/album?albumIdV2=v2-1",
+			"previewMedias": `[{"svc":"album","sid":"a","mediaOid":"oid-1","mediaType":"I"}]`,
+		},
+	}
+	historyJSON, _ := json.Marshal(map[string]any{"code": 0, "message": "OK", "data": []*line.Message{albumMsg}})
+	large403 := "private-html-" + strings.Repeat("x", 8192)
+
+	var channelTokens, obsCalls, refreshes int
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/TalkService/getRecentMessagesV2"):
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(string(historyJSON)))}, nil
+		case strings.HasSuffix(req.URL.Path, "/ChannelService/issueChannelToken"):
+			channelTokens++
+			tok := fmt.Sprintf("ch-tok-%d", channelTokens)
+			body := fmt.Sprintf(`{"code":0,"message":"OK","data":{"channelAccessToken":%q,"expiration":9999999999999}}`, tok)
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+		case strings.HasSuffix(req.URL.Path, "/api/auth/tokenRefresh"):
+			refreshes++
+			body := `{"accessToken":"refreshed-token","refreshToken":"new-refresh","durationUntilRefreshInSec":"3600"}`
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+		case req.URL.Host == "obs.line-apps.com" && req.URL.Path == "/r/album/a/oid-1/f482x482":
+			obsCalls++
+			if req.Header.Get("X-Line-Access") == "stale-token" {
+				return &http.Response{StatusCode: http.StatusForbidden, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(large403))}, nil
+			}
+			if req.Header.Get("X-Line-ChannelToken") != "ch-tok-2" || req.Header.Get("X-Line-Album") != "v2-1" || req.Header.Get("X-Line-Mid") != "c1234" {
+				return &http.Response{StatusCode: http.StatusBadRequest, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("wrong headers"))}, nil
+			}
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("recovered-jpeg"))}, nil
+		default:
+			return &http.Response{StatusCode: http.StatusNotFound, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("unexpected " + req.URL.String()))}, nil
+		}
+	})
+
+	store := &memStore{state: &session.State{
+		Version:      1,
+		Generation:   "gen-1",
+		MID:          "u-self",
+		AccessToken:  "stale-token",
+		RefreshToken: "refresh-1",
+		NoE2EE:       true,
+	}}
+	mgr := session.NewManager(store)
+	mgr.NewClient = func(token string) session.API {
+		cl := line.NewClient(token)
+		cl.HTTPClient = &http.Client{Transport: transport}
+		cl.OBSClient = &http.Client{Transport: transport}
+		return cl
+	}
+	client, err := newClient(mgr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := client.DownloadFileWithOptions(context.Background(), "c1234", "5002", DownloadOptions{})
+	if err != nil || string(data) != "recovered-jpeg" {
+		t.Fatalf("recovery failed: data=%q err=%v", data, err)
+	}
+	if refreshes != 1 || channelTokens != 2 || obsCalls != 2 {
+		t.Fatalf("counts: refreshes=%d channelTokens=%d obsCalls=%d", refreshes, channelTokens, obsCalls)
 	}
 }

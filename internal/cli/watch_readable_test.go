@@ -157,3 +157,64 @@ func TestWatchReadableVerboseLimitAndLookupFailure(t *testing.T) {
 		t.Fatalf("hidden event counted: revision %d\n%s", *store.state.WatchRevision, out.String())
 	}
 }
+
+func TestWatchReadablePostNotifications(t *testing.T) {
+	created := json.Number(fmt.Sprint(time.Now().UnixMilli()))
+	frames := []string{
+		operation(2, 26, &line.Message{
+			ID: "5001", From: "u-alice", To: "c-group", ToType: 2, CreatedTime: created, ContentType: 16,
+			ContentMetadata: map[string]string{
+				"serviceType": "GB",
+				"text":        "Packing checklist\nTent, stove, headlamps",
+				"postEndUrl":  "https://line.me/R/group/home/posts/post?homeId=c-group&postId=119988",
+			},
+		}),
+		operation(3, 26, &line.Message{
+			ID: "5002", From: "u-bob", To: "c-group", ToType: 2, CreatedTime: created, ContentType: 16,
+			ContentMetadata: map[string]string{
+				"serviceType":   "AB",
+				"albumName":     "Summit photos",
+				"postEndUrl":    "line://group/home/albums/album?albumId=123&albumIdV2=abc-v2",
+				"chatId":        "c-group",
+				"previewMedias": `"malformed"`,
+			},
+		}),
+		operation(4, 26, &line.Message{
+			ID: "5003", From: "u-alice", To: "c-group", ToType: 2, CreatedTime: created, ContentType: 0,
+			Text: "Alice created a note fallback.",
+			ContentMetadata: map[string]string{
+				"ORGCONTP":    "POSTNOTIFICATION",
+				"serviceType": "GB",
+				"text":        "Shared note",
+			},
+		}),
+	}
+	f := &streamAPI{frames: frames}
+	a, out, _ := watchApp(t, true, f)
+	if err := a.Run([]string{"watch", "--timeout", "200ms"}); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"Family · Alice: [Note: Packing checklist] ↵ Tent, stove, headlamps ↵ https://line.me/R/group/home/posts/post?homeId=c-group&postId=119988\n",
+		"Family · Bob [2J: [Album: Summit photos] ↵ line://group/home/albums/album?albumId=123&albumIdV2=abc-v2\n",
+		"Family · Alice: [Note: Shared note]\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "fallback") || strings.Contains(got, "[Malformed message content]") {
+		t.Fatalf("watch leaked fallback or hid retained album fields:\n%s", got)
+	}
+
+	// Watch --json preserves legacy NDJSON projection
+	fJSON := &streamAPI{frames: frames}
+	aJSON, outJSON, _ := watchApp(t, true, fJSON)
+	if err := aJSON.Run([]string{"watch", "--json", "--timeout", "200ms"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(outJSON.String(), `"text":"Alice created a note fallback."`) {
+		t.Fatalf("watch --json altered legacy wrapper text:\n%s", outJSON.String())
+	}
+}

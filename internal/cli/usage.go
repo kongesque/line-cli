@@ -27,8 +27,8 @@ type flagGroup struct {
 // Placeholders shown after flags that take a value.
 var flagPlaceholders = map[string]string{
 	"text": "TEXT", "file": "PATH", "image": "PATH", "output": "PATH", "message": "ID", "reply-to": "ID",
-	"timeout": "DURATION", "limit": "N", "search": "NAME", "mid": "MID", "cursor": "CURSOR", "mentions": "JSON",
-	"reaction": "REACTION", "email": "ADDRESS", "storage": "BACKEND",
+	"preview": "N", "timeout": "DURATION", "limit": "N", "search": "NAME", "mid": "MID", "cursor": "CURSOR",
+	"mentions": "JSON", "reaction": "REACTION", "email": "ADDRESS", "storage": "BACKEND",
 }
 
 // newFlagSet returns a flag set that never prints; parseFlags reports help

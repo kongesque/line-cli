@@ -12,8 +12,24 @@ import (
 )
 
 func messagePreview(m messaging.Message) string {
+	return strings.Join(messageLines(m), "\n")
+}
+
+func messageLines(m messaging.Message) []string {
+	raw := messageRawPreview(m)
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = terminalText(line)
+	}
+	return lines
+}
+
+func messageRawPreview(m messaging.Message) string {
 	if m.Content.Status == "decryption_failed" || m.Error != "" {
 		return "[Unable to decrypt this message]"
+	}
+	if m.Content.Post != nil {
+		return formatPostNotification(m.Content.Post)
 	}
 	if m.Content.Status == "malformed_metadata" {
 		return "[Malformed message content]"
@@ -26,7 +42,13 @@ func messagePreview(m messaging.Message) string {
 		return "[Contact: " + terminalText(m.Content.Contact.DisplayName) + " · " + terminalText(m.Content.Contact.MID) + "]"
 	}
 	if m.Content.Rich != nil && (m.Content.Rich.AltText != "" || len(m.Content.Rich.Text) > 0 || len(m.Content.Rich.Links) > 0) {
-		return terminalText(strings.Join(append(append([]string{m.Content.Rich.AltText}, m.Content.Rich.Text...), m.Content.Rich.Links...), "\n"))
+		var parts []string
+		if m.Content.Rich.AltText != "" {
+			parts = append(parts, m.Content.Rich.AltText)
+		}
+		parts = append(parts, m.Content.Rich.Text...)
+		parts = append(parts, m.Content.Rich.Links...)
+		return strings.Join(parts, "\n")
 	}
 	if m.Content.Sticker != nil {
 		return "[Sticker: " + terminalText(m.Content.Sticker.PackageID) + "/" + terminalText(m.Content.Sticker.ID) + "]"
@@ -42,13 +64,64 @@ func messagePreview(m messaging.Message) string {
 		return "[File: " + terminalText(m.FileName) + "]"
 	}
 	if m.ContentType != 0 {
-		kind := map[int]string{1: "Image", 2: "Video", 3: "Audio", 7: "Sticker", 13: "Contact", 22: "Rich message"}[m.ContentType]
+		kind := map[int]string{1: "Image", 2: "Video", 3: "Audio", 7: "Sticker", 13: "Contact", 16: "Post notification", 22: "Rich message"}[m.ContentType]
 		if kind == "" {
 			kind = fmt.Sprintf("Content type %d", m.ContentType)
 		}
 		return "[" + kind + "]"
 	}
-	return terminalText(m.Text)
+	if m.Content.Kind == "" || m.Content.Kind == "text" {
+		return m.Text
+	}
+	return ""
+}
+
+func formatPostNotification(p *messaging.PostNotification) string {
+	var lines []string
+	switch p.Type {
+	case "note":
+		if p.Text != "" {
+			textLines := strings.Split(strings.ReplaceAll(p.Text, "\r\n", "\n"), "\n")
+			if strings.TrimSpace(textLines[0]) != "" {
+				lines = append(lines, "[Note: "+textLines[0]+"]")
+			} else {
+				lines = append(lines, "[Note]")
+			}
+			lines = append(lines, textLines[1:]...)
+		} else {
+			lines = append(lines, "[Note]")
+		}
+	case "album":
+		if p.Title != "" {
+			lines = append(lines, "[Album: "+p.Title+"]")
+		} else {
+			lines = append(lines, "[Album]")
+		}
+		if p.Text != "" {
+			lines = append(lines, strings.Split(strings.ReplaceAll(p.Text, "\r\n", "\n"), "\n")...)
+		}
+	default:
+		if p.Title != "" {
+			lines = append(lines, "[Post notification: "+p.Title+"]")
+			if p.Text != "" {
+				lines = append(lines, strings.Split(strings.ReplaceAll(p.Text, "\r\n", "\n"), "\n")...)
+			}
+		} else if p.Text != "" {
+			textLines := strings.Split(strings.ReplaceAll(p.Text, "\r\n", "\n"), "\n")
+			if strings.TrimSpace(textLines[0]) != "" {
+				lines = append(lines, "[Post notification: "+textLines[0]+"]")
+			} else {
+				lines = append(lines, "[Post notification]")
+			}
+			lines = append(lines, textLines[1:]...)
+		} else {
+			lines = append(lines, "[Post notification]")
+		}
+	}
+	if p.URL != "" {
+		lines = append(lines, p.URL)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (a *App) renderMessages(chat string, messages []messaging.Message, ids bool) error {
@@ -132,13 +205,9 @@ func (a *App) renderMessages(chat string, messages []messaging.Message, ids bool
 				return err
 			}
 		}
-		body := messagePreview(m)
-		if m.ContentType == 0 && m.Error == "" && m.Content.Kind != "location" && m.Content.Status != "malformed_metadata" {
-			body = m.Text
-		}
 		// Preserve line breaks; terminals wrap Unicode using their own cell widths.
-		for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
-			if _, err := fmt.Fprintln(a.Out, "       "+terminalText(line)); err != nil {
+		for _, line := range messageLines(m) {
+			if _, err := fmt.Fprintln(a.Out, "       "+line); err != nil {
 				return err
 			}
 		}

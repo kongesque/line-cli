@@ -256,6 +256,9 @@ line messages CHAT_ID --json
 
 `messages` reads 20 recent messages by default; `--limit` accepts 1–100.
 Human output shows the oldest first; ordinary `--json` preserves server order.
+Notes and Albums (content type 16 and plaintext `POSTNOTIFICATION` wrappers)
+render as `[Note: <first line>]` (with remaining lines and allowlisted LINE link)
+or `[Album: <title>]` (with link) in both `messages` and readable `watch`.
 `--show-ids` includes IDs for replies, reactions, downloads, and unsend.
 Reading never sends read receipts or saves message text locally; use
 [`line read`](#mark-a-chat-as-read) to mark a chat as read. Some older
@@ -450,6 +453,7 @@ Find a message ID with `line messages CHAT --show-ids` or `--json`:
 ```sh
 line download "Alice" --message MESSAGE_ID --output ./received.pdf
 line download "Alice" --message IMAGE_MESSAGE_ID --output ./photo.jpg
+line download "Weekend Trip" --message ALBUM_MESSAGE_ID --preview 2 --output ./thumb-2.jpg
 line react "Alice" --message MESSAGE_ID --reaction love
 line react "Alice" --message MESSAGE_ID --remove
 line unsend "Alice" --message MY_MESSAGE_ID
@@ -472,11 +476,34 @@ specify an older message ID directly to search further. Downloads verify
 encrypted data before saving, never overwrite an existing file, and never let
 remote metadata choose the output path.
 
-`download` supports image, video, audio, and generic file messages up to 20
-MiB, with a two-minute command deadline by default (`--timeout` overrides it). It saves the full media bytes
-unchanged, so changing the output extension does not convert the format.
+`download` supports image, video, audio, generic file, and same-chat Album
+preview thumbnail messages up to 20 MiB, with a two-minute command deadline by
+default (`--timeout` overrides it). For Album posts with preview thumbnails,
+`--preview N` chooses the 1-based thumbnail index (default `1` when omitted);
+interactive `line download` lists multi-preview Albums with `(N previews)` and
+prompts for the preview number. Notes, cross-chat shared Albums, and Albums
+without downloadable previews are rejected with `unsupported_content`, and
+`--preview` on non-Album attachments fails with `invalid_arguments`. It saves
+the full media or thumbnail bytes unchanged, so changing the output extension
+does not convert the format.
 Messages with an external `DOWNLOAD_URL` are not supported. Reading or
 downloading never registers a group encryption key.
+
+To discover downloadable Album previews from scripts or agents, inspect
+`messages --details --json` and check `content.post.preview_count > 0` (which
+covers both native type `16` and plaintext type-0 wrappers):
+
+```sh
+line --error-format=json messages CHAT_ID --details --json --limit 100 |
+  jq -c '.messages[] | select(.content.post.type == "album" and .content.post.preview_count > 0) |
+         {chat_id, message_id: .id, title: .content.post.title, preview_count: .content.post.preview_count}'
+
+line --error-format=json download CHAT_ID --message ALBUM_MESSAGE_ID \
+  --preview 1 --output ./thumb-1.jpg --json
+```
+
+Note that `messages --page` can page farther back than `download`'s lookup
+budget (10 pages, 1,000 records, or 30 seconds).
 
 To send attachment bytes to another command, use an explicit chat and message
 ID:
