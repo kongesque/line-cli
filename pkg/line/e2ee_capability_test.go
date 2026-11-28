@@ -108,3 +108,27 @@ func TestGetLastE2EEPublicKeysSingleArgAndErrors(t *testing.T) {
 		t.Fatalf("HTTP 503 must not classify as E2EE disabled: %v", err)
 	}
 }
+
+func TestE2EEKeyMethodsRejectMissingCodeEnvelope(t *testing.T) {
+	c := NewClient("token")
+	// Malformed JSON missing "code" must NOT decode as code=0 and fall through to ErrE2EEDisabled.
+	c.HTTPClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"data":{"specVersion":-1,"allowedTypes":[]}}`)),
+		}, nil
+	})
+	if _, err := c.NegotiateE2EEPublicKeyContext(context.Background(), "u-peer"); err == nil || IsE2EEDisabled(err) {
+		t.Fatalf("NegotiateE2EEPublicKey missing code accepted or downgraded: %v", err)
+	}
+	if _, err := c.GetE2EEPublicKeyContext(context.Background(), "u-peer", 1, 22); err == nil || IsE2EEDisabled(err) {
+		t.Fatalf("GetE2EEPublicKey missing code accepted or downgraded: %v", err)
+	}
+	if _, err := c.GetE2EEGroupSharedKeyContext(context.Background(), "c-group", 33); err == nil || IsGroupKeyNotFound(err) || IsE2EEDisabled(err) {
+		t.Fatalf("GetE2EEGroupSharedKey missing code accepted: %v", err)
+	}
+	if _, err := c.GetLastE2EEGroupSharedKeyContext(context.Background(), "c-group"); err == nil || IsGroupKeyNotFound(err) || IsE2EEDisabled(err) {
+		t.Fatalf("GetLastE2EEGroupSharedKey missing code accepted: %v", err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -177,6 +178,9 @@ func DescribeError(err error, stage string, op *fault.Mutation) *fault.Error {
 		code, message = "no_session", "No saved LINE session; run line login."
 	case errors.Is(err, session.ErrSessionInvalidated):
 		code, message = "invalid_session", "The LINE session was invalidated; run line login."
+		if reason := session.InvalidationReason(err); reason != "" {
+			message = fmt.Sprintf("The LINE session was invalidated (%s); run line login.", reason)
+		}
 	case errors.Is(err, session.ErrSessionChanged):
 		code, message = "session_changed", "The saved account changed during the command."
 	case errors.Is(err, session.ErrBusy):

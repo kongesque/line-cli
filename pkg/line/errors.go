@@ -15,12 +15,30 @@ import (
 var (
 	// ErrE2EEDisabled distinguishes explicit capability responses from missing
 	// or malformed keys. Callers must not downgrade encryption on the latter.
-	ErrE2EEDisabled          = errors.New("letter sealing is explicitly unavailable")
-	ErrNoUsableE2EEPublicKey = errors.New("no usable E2EE public key")
-	ErrNoUsableE2EEGroupKey  = errors.New("no usable E2EE group key")
-	ErrGroupKeyNotFound      = errors.New("group key not found")
-	ErrBuddyNotFound         = errors.New("buddy profile not found")
-	ErrContactNotFound       = errors.New("contact not found")
+	ErrE2EEDisabled             = errors.New("letter sealing is explicitly unavailable")
+	ErrLoginVerificationExpired = errors.New("LINE login verification expired")
+	ErrNoUsableE2EEPublicKey    = errors.New("no usable E2EE public key")
+	ErrNoUsableE2EEGroupKey     = errors.New("no usable E2EE group key")
+	ErrGroupKeyNotFound         = errors.New("group key not found")
+	ErrBuddyNotFound            = errors.New("buddy profile not found")
+	ErrContactNotFound          = errors.New("contact not found")
+)
+
+const (
+	TalkExceptionNotAvailableUser    = 7
+	TalkExceptionNotAuthorizedDevice = 8
+
+	talkExceptionDBFailed         = 2
+	talkExceptionExcessiveAccess  = 4
+	talkExceptionSystemError      = 15
+	talkExceptionInternalError    = 20
+	talkExceptionMaintenanceError = 33
+
+	talkExceptionE2EEUpdateReceiverKey  = 84
+	talkExceptionE2EEInvalidVersion     = 86
+	talkExceptionE2EESenderDisabled     = 87
+	talkExceptionE2EEReceiverDisabled   = 88
+	talkExceptionE2EEReceiverNotAllowed = 90
 )
 
 // IsE2EEDisabled accepts explicit capability responses only. Unlike the legacy
@@ -69,7 +87,8 @@ func IsLoggedOut(err error) bool {
 		return false
 	}
 	return strings.Contains(strings.ToUpper(protocolMessage(err)), "V3_TOKEN_CLIENT_LOGGED_OUT") ||
-		isExceptionCode(err, "TalkException", 8) ||
+		isExceptionCode(err, "TalkException", TalkExceptionNotAvailableUser) ||
+		isExceptionCode(err, "TalkException", TalkExceptionNotAuthorizedDevice) ||
 		isExceptionCode(err, "TokenAuthException", 3) ||
 		IsInvalidSenderKey(err) ||
 		IsRequestNeedLogin(err)
@@ -100,7 +119,10 @@ func LogoutReason(err error) string {
 		if strings.EqualFold(data.Name, "TokenAuthException") && data.Code == 3 {
 			return "TOKEN_AUTH_LOGGED_OUT"
 		}
-		if strings.EqualFold(data.Name, "TalkException") && data.Code == 8 {
+		if strings.EqualFold(data.Name, "TalkException") && data.Code == TalkExceptionNotAvailableUser {
+			return "NOT_AVAILABLE_USER"
+		}
+		if strings.EqualFold(data.Name, "TalkException") && data.Code == TalkExceptionNotAuthorizedDevice {
 			return "AUTHENTICATION_FAILED"
 		}
 	}
@@ -117,28 +139,57 @@ func IsE2EEGroupMemberMismatch(err error) bool {
 		isExceptionCode(err, "TalkException", 99)
 }
 
-// IsE2EEReceiverKeyRejected returns true when LINE rejects an E2EE 1:1 send
-// because the peer's receiver key was rotated or rejected (TalkException code
-// 83 with a receiver-key reason, or code 81/82 E2EE retry signals). It
+// IsE2EEReceiverKeyRejected returns true when LINE authoritatively rejects an
+// E2EE 1:1 send because the receiver's key or E2EE state is incompatible
+// (TalkException codes 84, 86, 87, 88, 90, or 83 with explicit "invalid
+// receiver key") inside an HTTP 200/400 gateway 10051 envelope. It strictly
 // excludes "invalid sender key", which indicates own-key/session invalidation.
 func IsE2EEReceiverKeyRejected(err error) bool {
 	if err == nil || IsInvalidSenderKey(err) {
 		return false
 	}
+	data, ok := parseAuthoritativeTalkException(err)
+	if !ok {
+		return false
+	}
+	switch data.Code {
+	case talkExceptionE2EEUpdateReceiverKey,
+		talkExceptionE2EEInvalidVersion,
+		talkExceptionE2EESenderDisabled,
+		talkExceptionE2EEReceiverDisabled,
+		talkExceptionE2EEReceiverNotAllowed:
+		return true
+	case 83:
+		return strings.Contains(strings.ToLower(strings.TrimSpace(data.Reason)), "invalid receiver key")
+	default:
+		return false
+	}
+}
+
+func parseAuthoritativeTalkException(err error) (talkExceptionData, bool) {
+	if err == nil {
+		return talkExceptionData{}, false
+	}
+	var respErr *ResponseError
+	if errors.As(err, &respErr) && respErr.Status != 200 && respErr.Status != 400 {
+		return talkExceptionData{}, false
+	}
 	msg := protocolMessage(err)
-	if !hasResponseErrorCode(msg) {
-		return false
+	start := strings.IndexByte(msg, '{')
+	if start < 0 {
+		return talkExceptionData{}, false
 	}
-	data, ok := parseEnvelopeExceptionData(msg)
-	if !ok || !strings.EqualFold(data.Name, "TalkException") {
-		return false
+	var envelope struct {
+		Code int               `json:"code"`
+		Data talkExceptionData `json:"data"`
 	}
-	reason := strings.ToLower(strings.TrimSpace(data.Reason))
-	if data.Code == 83 {
-		return strings.Contains(reason, "invalid receiver key") ||
-			strings.Contains(reason, "receiver key")
+	if json.Unmarshal([]byte(msg[start:]), &envelope) != nil {
+		return talkExceptionData{}, false
 	}
-	return data.Code == 81 || data.Code == 82
+	if envelope.Code != 10051 || !strings.EqualFold(envelope.Data.Name, "TalkException") {
+		return talkExceptionData{}, false
+	}
+	return envelope.Data, true
 }
 
 func parseEnvelopeExceptionData(msg string) (talkExceptionData, bool) {
@@ -257,11 +308,11 @@ func IsRefreshRejected(err error) bool {
 	return errors.As(err, &rejected)
 }
 
-// IsGroupKeyNotFound returns true when the error is specifically code 5 "not found"
-// from getE2EEGroupSharedKey / getLastE2EEGroupSharedKey — meaning no group key has been
-// registered yet, but E2EE is supported. Callers should attempt to register a key.
-// Matches both the processed error (ErrGroupKeyNotFound) and the raw HTTP 400 error
-// from callRPC which contains the TalkException JSON payload.
+// IsGroupKeyNotFound returns true when the error is specifically an
+// authoritative TalkException code 5 ("not found") inside an HTTP 200/400
+// gateway 10051 envelope (or ErrGroupKeyNotFound) from getE2EEGroupSharedKey /
+// getLastE2EEGroupSharedKey — meaning no group key has been registered yet,
+// while E2EE is supported. Non-200/400 gateway errors never match.
 func IsGroupKeyNotFound(err error) bool {
 	if err == nil {
 		return false
@@ -269,14 +320,15 @@ func IsGroupKeyNotFound(err error) bool {
 	if errors.Is(err, ErrGroupKeyNotFound) {
 		return true
 	}
-	msg := strings.ToLower(protocolMessage(err))
-	if strings.Contains(msg, "group key not found: not found") {
-		return true
+	var respErr *ResponseError
+	if errors.As(err, &respErr) && respErr.Status != 200 && respErr.Status != 400 {
+		return false
 	}
-	// Match raw API error: HTTP 400 with TalkException code 5 "not found"
-	return strings.Contains(msg, "\"code\":10051") &&
-		strings.Contains(msg, "talkexception") &&
-		(strings.Contains(msg, "\"code\":5,") || strings.Contains(msg, "\"code\":5}"))
+	if data, ok := parseAuthoritativeTalkException(err); ok {
+		return data.Code == 5
+	}
+	msg := strings.ToLower(protocolMessage(err))
+	return strings.Contains(msg, "group key not found: not found")
 }
 
 // IsNoUsableE2EEGroupKey returns true when a group has no shared E2EE key
@@ -504,14 +556,28 @@ func protocolMessage(err error) string {
 	return msg
 }
 
-// IsTransientError is used only for token refresh. Mutations never use it.
+// IsTransientError is used only for read-only key fetches and token refresh.
+// Mutations never use it.
 func IsTransientError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || IsAuthError(err) {
 		return false
 	}
 	var response *ResponseError
 	if errors.As(err, &response) {
-		return response.Status == 408 || response.Status == 429 || response.Status >= 500 && response.Status <= 599
+		if response.Status == 408 || response.Status == 429 || (response.Status >= 500 && response.Status <= 599) {
+			return true
+		}
+		if talk, ok := parseAuthoritativeTalkException(err); ok {
+			switch talk.Code {
+			case talkExceptionDBFailed,
+				talkExceptionExcessiveAccess,
+				talkExceptionSystemError,
+				talkExceptionInternalError,
+				talkExceptionMaintenanceError:
+				return true
+			}
+		}
+		return false
 	}
 	var network net.Error
 	return errors.As(err, &network) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)

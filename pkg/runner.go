@@ -21,7 +21,6 @@ type Runner struct {
 	token         string
 	clientVersion string
 	skPtr         uint32         // SecureKey from loadToken
-	signingSKPtr  uint32         // Separate SecureKey used for request signing
 	storageKey    uint32         // AesKey ptr (after StorageInit)
 	loginCurveKey uint32         // Active email or QR login Curve25519Key ptr
 	qrLoginOwner  *QRLoginKey    // Exclusive owner through QR key export
@@ -29,8 +28,15 @@ type Runner struct {
 	keyClass      map[int]string // internal ID -> embind class name for destroy
 	channelStore  map[int]uint32 // internal ID -> E2EEChannel ptr
 	nextID        int
+	resetEpoch    uint64
 	mu            sync.Mutex
 
+	// Request signing uses a dedicated LTSM runtime (beeper/line#249) so a
+	// signing abort or periodic recycle never invalidates E2EE messaging handles.
+	signingMu       sync.Mutex
+	signingRT       *ltsm.Runtime
+	signingSKPtr    uint32
+	signingCount    int
 	signingContexts map[[sha256.Size]byte]signingContext
 	signingLRU      [][sha256.Size]byte
 
@@ -42,7 +48,10 @@ type Runner struct {
 	goChannels map[int]*ltsm.Channel // internal ID -> pure Go channel
 }
 
-const signingCacheCapacity = 4
+const (
+	signingCacheCapacity = 4
+	signingRecycleLimit  = 1024
+)
 
 type signingContext struct {
 	derivedKeyPtr uint32
@@ -317,6 +326,29 @@ func (r *Runner) ReleaseChannel(channelID int) (err error) {
 	return err
 }
 
+// ResetEpoch returns a monotonic counter incremented whenever the messaging
+// LTSM runtime is reset after an abort, invalidating prior native handles.
+func (r *Runner) ResetEpoch() uint64 {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.resetEpoch
+}
+
+// ResetRuntime recreates the messaging LTSM runtime and clears all cached
+// native key and channel handles, bumping ResetEpoch. Signing runtime state is
+// isolated and unaffected.
+func (r *Runner) ResetRuntime() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.resetRuntimeLocked()
+}
+
 func (r *Runner) resetRuntimeLocked() error {
 	rt, err := ltsm.NewRuntime()
 	if err != nil {
@@ -332,20 +364,54 @@ func (r *Runner) resetRuntimeLocked() error {
 	}
 	r.rt = rt
 	r.skPtr = skPtr
-	r.signingSKPtr = 0
 	r.storageKey = 0
 	r.loginCurveKey = 0
-	r.signingContexts = make(map[[sha256.Size]byte]signingContext)
-	r.signingLRU = nil
 	r.keyStore = make(map[int]uint32)
 	r.keyClass = make(map[int]string)
 	r.channelStore = make(map[int]uint32)
+	r.goKeys = make(map[int]*goKeyEntry)
+	r.goChannels = make(map[int]*ltsm.Channel)
+	r.resetEpoch++
 	return nil
 }
 
 func (r *Runner) recoverAbortLocked(err error) {
 	if errors.Is(err, ltsm.ErrAbort) {
 		_ = r.resetRuntimeLocked()
+	}
+}
+
+func (r *Runner) resetSigningRuntimeLocked() error {
+	rt, err := ltsm.NewRuntime()
+	if err != nil {
+		return err
+	}
+	skPtr, err := rt.SecureKeyLoadToken(r.token)
+	if err != nil {
+		rt.Close()
+		return err
+	}
+	if r.signingRT != nil {
+		r.signingRT.Close()
+	}
+	r.signingRT = rt
+	r.signingSKPtr = skPtr
+	r.signingCount = 0
+	r.signingContexts = make(map[[sha256.Size]byte]signingContext)
+	r.signingLRU = nil
+	return nil
+}
+
+func (r *Runner) ensureSigningRuntimeLocked() error {
+	if r.signingRT != nil && r.signingSKPtr != 0 {
+		return nil
+	}
+	return r.resetSigningRuntimeLocked()
+}
+
+func (r *Runner) recoverSigningAbortLocked(err error) {
+	if errors.Is(err, ltsm.ErrAbort) {
+		_ = r.resetSigningRuntimeLocked()
 	}
 }
 
@@ -421,12 +487,12 @@ func (r *Runner) hmacDigestPanicSafe(hmacPtr uint32, data []byte) (sig []byte, e
 		if recovered := recover(); recovered != nil {
 			sig = nil
 			err = ltsmPanicError("ltsm Hmac.digest", recovered)
-			r.recoverAbortLocked(err)
+			r.recoverSigningAbortLocked(err)
 		}
 	}()
-	sig, err = r.rt.HmacDigest(hmacPtr, data)
+	sig, err = r.signingRT.HmacDigest(hmacPtr, data)
 	if err != nil {
-		r.recoverAbortLocked(err)
+		r.recoverSigningAbortLocked(err)
 	}
 	return sig, err
 }
@@ -439,7 +505,11 @@ func (r *Runner) exportE2EEKeyPanicSafe(keyPtr uint32) (exported []byte, err err
 			r.recoverAbortLocked(err)
 		}
 	}()
-	return r.rt.E2EEKeyExportKey(keyPtr)
+	exported, err = r.rt.E2EEKeyExportKey(keyPtr)
+	if err != nil {
+		r.recoverAbortLocked(err)
+	}
+	return exported, err
 }
 
 func (r *Runner) unwrapGroupSharedKeyPanicSafe(chanPtr uint32, encKey []byte) (keyPtr uint32, err error) {
@@ -450,7 +520,11 @@ func (r *Runner) unwrapGroupSharedKeyPanicSafe(chanPtr uint32, encKey []byte) (k
 			r.recoverAbortLocked(err)
 		}
 	}()
-	return r.rt.E2EEChannelUnwrapGroupSharedKey(chanPtr, encKey)
+	keyPtr, err = r.rt.E2EEChannelUnwrapGroupSharedKey(chanPtr, encKey)
+	if err != nil {
+		r.recoverAbortLocked(err)
+	}
+	return keyPtr, err
 }
 
 func (r *Runner) encryptV1PanicSafe(chanPtr uint32, plaintext []byte) (ciphertext []byte, err error) {
@@ -461,7 +535,11 @@ func (r *Runner) encryptV1PanicSafe(chanPtr uint32, plaintext []byte) (ciphertex
 			r.recoverAbortLocked(err)
 		}
 	}()
-	return r.rt.E2EEChannelEncryptV1(chanPtr, plaintext)
+	ciphertext, err = r.rt.E2EEChannelEncryptV1(chanPtr, plaintext)
+	if err != nil {
+		r.recoverAbortLocked(err)
+	}
+	return ciphertext, err
 }
 
 func (r *Runner) encryptV2PanicSafe(chanPtr uint32, to, from string, senderKeyID, receiverKeyID, contentType int, seq int64, plaintext []byte) (ciphertext []byte, err error) {
@@ -472,7 +550,11 @@ func (r *Runner) encryptV2PanicSafe(chanPtr uint32, to, from string, senderKeyID
 			r.recoverAbortLocked(err)
 		}
 	}()
-	return r.rt.E2EEChannelEncryptV2(chanPtr, to, from, senderKeyID, receiverKeyID, contentType, seq, plaintext)
+	ciphertext, err = r.rt.E2EEChannelEncryptV2(chanPtr, to, from, senderKeyID, receiverKeyID, contentType, seq, plaintext)
+	if err != nil {
+		r.recoverAbortLocked(err)
+	}
+	return ciphertext, err
 }
 
 func (r *Runner) decryptV1PanicSafe(chanPtr uint32, ciphertext []byte) (plaintext []byte, err error) {
@@ -483,7 +565,11 @@ func (r *Runner) decryptV1PanicSafe(chanPtr uint32, ciphertext []byte) (plaintex
 			r.recoverAbortLocked(err)
 		}
 	}()
-	return r.rt.E2EEChannelDecryptV1(chanPtr, ciphertext)
+	plaintext, err = r.rt.E2EEChannelDecryptV1(chanPtr, ciphertext)
+	if err != nil {
+		r.recoverAbortLocked(err)
+	}
+	return plaintext, err
 }
 
 func (r *Runner) decryptV2PanicSafe(chanPtr uint32, to, from string, senderKeyID, receiverKeyID, contentType int, ciphertext []byte) (plaintext []byte, err error) {
@@ -494,7 +580,11 @@ func (r *Runner) decryptV2PanicSafe(chanPtr uint32, to, from string, senderKeyID
 			r.recoverAbortLocked(err)
 		}
 	}()
-	return r.rt.E2EEChannelDecryptV2(chanPtr, to, from, senderKeyID, receiverKeyID, contentType, ciphertext)
+	plaintext, err = r.rt.E2EEChannelDecryptV2(chanPtr, to, from, senderKeyID, receiverKeyID, contentType, ciphertext)
+	if err != nil {
+		r.recoverAbortLocked(err)
+	}
+	return plaintext, err
 }
 
 func (r *Runner) touchSigningContext(key [sha256.Size]byte) {
@@ -509,34 +599,34 @@ func (r *Runner) touchSigningContext(key [sha256.Size]byte) {
 }
 
 func (r *Runner) destroySigningContext(ctx signingContext) error {
-	hmacErr := r.rt.HmacDestroy(ctx.hmacPtr)
-	keyErr := r.rt.SecureKeyDestroy(ctx.derivedKeyPtr)
+	if r.signingRT == nil {
+		return nil
+	}
+	hmacErr := r.signingRT.HmacDestroy(ctx.hmacPtr)
+	keyErr := r.signingRT.SecureKeyDestroy(ctx.derivedKeyPtr)
 	return errors.Join(hmacErr, keyErr)
 }
 
 func (r *Runner) signingHMAC(accessToken string) (uint32, error) {
+	if err := r.ensureSigningRuntimeLocked(); err != nil {
+		return 0, err
+	}
 	key := sha256.Sum256([]byte(accessToken))
 	if ctx, ok := r.signingContexts[key]; ok {
 		r.touchSigningContext(key)
 		return ctx.hmacPtr, nil
 	}
 
-	if r.signingSKPtr == 0 {
-		var err error
-		r.signingSKPtr, err = r.rt.SecureKeyLoadToken(r.token)
-		if err != nil {
-			return 0, err
-		}
-	}
-
 	clientVersionHash := sha256.Sum256([]byte(r.clientVersion))
-	derivedKeyPtr, err := r.rt.SecureKeyDeriveKey(r.signingSKPtr, clientVersionHash[:], key[:])
+	derivedKeyPtr, err := r.signingRT.SecureKeyDeriveKey(r.signingSKPtr, clientVersionHash[:], key[:])
 	if err != nil {
+		r.recoverSigningAbortLocked(err)
 		return 0, err
 	}
-	hmacPtr, err := r.rt.HmacNew(derivedKeyPtr)
+	hmacPtr, err := r.signingRT.HmacNew(derivedKeyPtr)
 	if err != nil {
-		_ = r.rt.SecureKeyDestroy(derivedKeyPtr)
+		_ = r.signingRT.SecureKeyDestroy(derivedKeyPtr)
+		r.recoverSigningAbortLocked(err)
 		return 0, err
 	}
 	ctx := signingContext{derivedKeyPtr: derivedKeyPtr, hmacPtr: hmacPtr}
@@ -548,6 +638,7 @@ func (r *Runner) signingHMAC(accessToken string) (uint32, error) {
 		r.signingLRU = r.signingLRU[1:]
 		if err = r.destroySigningContext(evicted); err != nil {
 			_ = r.destroySigningContext(ctx)
+			r.recoverSigningAbortLocked(err)
 			return 0, fmt.Errorf("failed to destroy evicted signing context: %w", err)
 		}
 	}
@@ -564,8 +655,14 @@ func (r *Runner) GetSignature(reqPath, body, accessToken string) (string, error)
 		reqPath = "/" + reqPath
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.signingMu.Lock()
+	defer r.signingMu.Unlock()
+
+	if r.signingCount >= signingRecycleLimit {
+		if err := r.resetSigningRuntimeLocked(); err != nil {
+			return "", err
+		}
+	}
 
 	hmacPtr, err := r.signingHMAC(accessToken)
 	if err != nil {
@@ -578,6 +675,7 @@ func (r *Runner) GetSignature(reqPath, body, accessToken string) (string, error)
 	if len(sig) == 0 {
 		return "", fmt.Errorf("runner returned empty signature")
 	}
+	r.signingCount++
 	return base64.StdEncoding.EncodeToString(sig), nil
 }
 

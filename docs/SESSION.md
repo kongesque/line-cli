@@ -100,13 +100,15 @@ Public source snapshots inspected:
 | Diagnostics/tests/docs suggested Chrome sessions expire at 168 hours | Treat 168 hours as the normal access-token refresh boundary; describe refresh rejection separately from forced logout |
 
 Gateway code 10051 alone means RESPONSE_ERROR, not necessarily authentication.
-TalkException 119 / refresh-required text trigger recovery. TalkException 8 and
-TokenAuthException 3 identify unauthorized-device failures; existing explicit
-V3_TOKEN_CLIENT_LOGGED_OUT, REQUEST_NEED_LOGIN/10004, and invalid-sender-key
-logout classifications are retained. TokenAuthException 1/2 indicate an auth
-rejection without proving a forced logout. Generic 401/403 can trigger recovery
-but never alone persist invalidation. A logout code cannot reliably prove which
-other client, if any, displaced the session; diagnostics do not invent that cause.
+TalkException 119 / refresh-required text trigger recovery. TalkException 7
+(`NOT_AVAILABLE_USER`), TalkException 8 (`NOT_AUTHORIZED_DEVICE`), and
+TokenAuthException 3 identify forced-logout/unauthorized-device failures;
+existing explicit V3_TOKEN_CLIENT_LOGGED_OUT, REQUEST_NEED_LOGIN/10004, and
+invalid-sender-key logout classifications are retained. TokenAuthException 1/2
+indicate an auth rejection without proving a forced logout. Generic 401/403 can
+trigger recovery on reads but never alone persist invalidation or confirm remote
+logout. A logout code cannot reliably prove which other client, if any,
+displaced the session; diagnostics do not invent that cause.
 
 <a id="refresh-follow-up-issue-29"></a>
 
@@ -150,11 +152,12 @@ connection (`remote_failed`). No live capture was made for this follow-up.
 | peer negotiation, peer/group key reads, membership reads | Manager.Do |
 | send/reply, react/cancel reaction, unsend | Manager.Mutate; persisted sequence; no replay |
 | encrypted/plain file uploads, group-key registration | Manager.Mutate; no replay |
-| file/media downloads, including channel/encrypted OBS token acquisition | Entire safe read flow runs inside Manager.Do |
+| file/media downloads, including channel/encrypted OBS token acquisition | Authenticated OBS flows run inside Manager.Do; unauthenticated external `DOWNLOAD_URL` downloads run outside Manager.Do so external errors never enter LINE auth recovery |
 | watch revision/profile probes | Manager.DoContext |
 | SSE transport | Direct API client only for the stream; Manager.RecoverStream under command lock for auth, generation/token comparison before invalidation |
 | QR/email authentication and immediate setup | Direct clients inside Manager login lifecycle; complete new state saved by finishLogin |
-| auth status/check/migrate and local logout | Local storage only; do not contact LINE |
+| logout (`line logout`) | Single-attempt `AuthService/logoutV2` before deleting local credentials; `--local-only` skips remote call |
+| auth status/check/migrate | Local storage only; do not contact LINE |
 
 No ordinary CLI command constructs a pkg/line.Client to bypass Manager. External
 users of pkg/line.Client remain responsible for their own session persistence;

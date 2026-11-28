@@ -293,4 +293,33 @@ func TestDownloadExternalURLSafetyAndNoTokenLeak(t *testing.T) {
 			t.Fatalf("external %d missing status message: %v", status, err)
 		}
 	}
+
+	// 6. External transport errors containing LINE-like auth tokens/codes never
+	// trigger LINE token refresh, session invalidation, or auth-error classification.
+	for _, spoof := range []string{
+		"HTTP 401 V3_TOKEN_CLIENT_LOGGED_OUT",
+		`{"code":10004,"message":"REQUEST_NEED_LOGIN"}`,
+		`{"code":119,"message":"must_refresh_v3_token"}`,
+	} {
+		externalHits := 0
+		wire.PublicMediaClient = &http.Client{
+			Transport: claimTransport(func(r *http.Request) (*http.Response, error) {
+				externalHits++
+				return nil, fmt.Errorf("dial failed: %s", spoof)
+			}),
+		}
+		api.refreshes = 0
+		f.history[0].ContentMetadata["DOWNLOAD_URL"] = "https://cdn.example.com/spoof-auth-error"
+		data, err = c.DownloadFile(context.Background(), "u-official", "901")
+		if err == nil || data != nil {
+			t.Fatalf("expected transport error for %q, got data=%q err=%v", spoof, data, err)
+		}
+		if externalHits != 1 || api.refreshes != 0 || store.state.Invalidated {
+			t.Fatalf("spoofed external error %q triggered retry, refresh, or invalidation: hits=%d refreshes=%d invalidated=%v",
+				spoof, externalHits, api.refreshes, store.state.Invalidated)
+		}
+		if line.IsAuthError(session.ProtocolError(err)) || strings.Contains(err.Error(), "spoof-auth-error") {
+			t.Fatalf("spoofed external error %q classified as auth or leaked URL: %v", spoof, err)
+		}
+	}
 }

@@ -295,11 +295,13 @@ func (c *Client) downloadPublicMedia(ctx context.Context, msg *line.Message, dow
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	var data []byte
-	if err := c.Session.DoContext(ctx, func(api session.API) (err error) {
-		data, err = api.DownloadOBSPublicResourceWithOptions(ctx, downloadURL, line.OBSDownloadOptions{MaxBytes: MaxAttachmentBytes})
-		return
-	}); err != nil {
+	// Public OBS and external DOWNLOAD_URL fetches send no LINE auth headers.
+	// Run outside Manager.DoContext so untrusted external URLs or transport
+	// errors can never trigger LINE auth classification, token refresh, or
+	// session invalidation.
+	api := c.Session.NewClient("")
+	data, err := api.DownloadOBSPublicResourceWithOptions(ctx, downloadURL, line.OBSDownloadOptions{MaxBytes: MaxAttachmentBytes})
+	if err != nil {
 		switch {
 		case errors.Is(err, context.Canceled):
 			return nil, context.Canceled
@@ -320,7 +322,7 @@ func (c *Client) downloadPublicMedia(ctx context.Context, msg *line.Message, dow
 		if errors.As(err, &statusErr) {
 			return nil, fmt.Errorf("external media download failed (status %d)", statusErr.Status)
 		}
-		return nil, err
+		return nil, errors.New("external media download failed")
 	}
 	if len(data) > MaxAttachmentBytes {
 		return nil, errors.New("attachment exceeds the CLI limit of 20 MiB")

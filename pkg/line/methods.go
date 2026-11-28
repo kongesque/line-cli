@@ -8,14 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-)
-
-var (
-	obsTokenMu     sync.Mutex
-	obsTokenCache  string
-	obsTokenExpiry time.Time
 )
 
 const obsTokenBuffer = 30 * time.Second
@@ -158,14 +151,17 @@ func (c *Client) GetE2EEGroupSharedKeyContext(ctx context.Context, chatMid strin
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int             `json:"code"`
+		Code    *int            `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
 	}
-	if wrapper.Code != 0 {
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getE2EEGroupSharedKey response code")
+	}
+	if *wrapper.Code != 0 {
 		return nil, parseE2EEGroupKeyError("getE2EEGroupSharedKey", wrapper.Message, wrapper.Data)
 	}
 	var data E2EEGroupSharedKey
@@ -185,14 +181,17 @@ func (c *Client) GetLastE2EEGroupSharedKeyContext(ctx context.Context, chatMid s
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int             `json:"code"`
+		Code    *int            `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
 	}
-	if wrapper.Code != 0 {
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getLastE2EEGroupSharedKey response code")
+	}
+	if *wrapper.Code != 0 {
 		return nil, parseE2EEGroupKeyError("getLastE2EEGroupSharedKey", wrapper.Message, wrapper.Data)
 	}
 	var data E2EEGroupSharedKey
@@ -213,15 +212,18 @@ func (c *Client) NegotiateE2EEPublicKeyContext(ctx context.Context, mid string) 
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int             `json:"code"`
+		Code    *int            `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("negotiateE2EEPublicKey failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing negotiateE2EEPublicKey response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
 	}
 	return parseE2EEPublicKey(wrapper.Data)
 }
@@ -390,15 +392,18 @@ func (c *Client) GetE2EEPublicKeyContext(ctx context.Context, mid string, keyVer
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int             `json:"code"`
+		Code    *int            `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getE2EEPublicKey failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getE2EEPublicKey response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
 	}
 
 	return parseE2EEPublicKey(wrapper.Data)
@@ -798,13 +803,13 @@ func (c *Client) AcquireEncryptedAccessToken() (string, error) {
 }
 
 func (c *Client) AcquireEncryptedAccessTokenContext(ctx context.Context) (string, error) {
-	obsTokenMu.Lock()
-	if obsTokenCache != "" && time.Now().Before(obsTokenExpiry) {
-		cached := obsTokenCache
-		obsTokenMu.Unlock()
+	c.obsTokenMu.Lock()
+	if c.obsTokenCache != "" && time.Now().Before(c.obsTokenExpiry) {
+		cached := c.obsTokenCache
+		c.obsTokenMu.Unlock()
 		return cached, nil
 	}
-	obsTokenMu.Unlock()
+	c.obsTokenMu.Unlock()
 
 	// 2 = FeatureType::OBS_Authorization.
 	resp, err := c.callRPCContext(ctx, "TalkService", "acquireEncryptedAccessToken", 2)
@@ -833,10 +838,10 @@ func (c *Client) AcquireEncryptedAccessTokenContext(ctx context.Context) (string
 
 	token := parts[1]
 	if expirySec, err := strconv.Atoi(parts[0]); err == nil && expirySec > 0 {
-		obsTokenMu.Lock()
-		obsTokenCache = token
-		obsTokenExpiry = time.Now().Add(time.Duration(expirySec)*time.Second - obsTokenBuffer)
-		obsTokenMu.Unlock()
+		c.obsTokenMu.Lock()
+		c.obsTokenCache = token
+		c.obsTokenExpiry = time.Now().Add(time.Duration(expirySec)*time.Second - obsTokenBuffer)
+		c.obsTokenMu.Unlock()
 	}
 
 	return token, nil

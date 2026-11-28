@@ -294,3 +294,84 @@ func TestMutateContextCancellationNeverReplays(t *testing.T) {
 		}
 	}
 }
+
+func TestLogoutContextConfirmedVsUnauthorizedAndErrors(t *testing.T) {
+	t.Run("confirmed logoutV2 success returns nil", func(t *testing.T) {
+		s := &memoryStore{state: &State{AccessToken: "tok", RefreshToken: "ref"}}
+		f := &fakeAPI{}
+		m := testManager(s, f)
+		if err := m.LogoutContext(context.Background()); err != nil || f.logoutCalls != 1 {
+			t.Fatalf("LogoutContext() = %v, calls=%d", err, f.logoutCalls)
+		}
+	})
+
+	t.Run("confirmed IsLoggedOut error returns nil", func(t *testing.T) {
+		s := &memoryStore{state: &State{AccessToken: "tok", RefreshToken: "ref"}}
+		f := &fakeAPI{logoutErr: errors.New(`API error 400: {"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":7,"reason":"NOT_AVAILABLE_USER"}}`)}
+		m := testManager(s, f)
+		if err := m.LogoutContext(context.Background()); err != nil || f.logoutCalls != 1 {
+			t.Fatalf("confirmed logout error returned %v, calls=%d", err, f.logoutCalls)
+		}
+	})
+
+	t.Run("bare HTTP 401/403 returns error and preserves state", func(t *testing.T) {
+		for _, raw := range []string{"HTTP 401 unauthorized", "HTTP 403 forbidden"} {
+			s := &memoryStore{state: &State{AccessToken: "tok", RefreshToken: "ref"}}
+			f := &fakeAPI{logoutErr: errors.New(raw)}
+			m := testManager(s, f)
+			err := m.LogoutContext(context.Background())
+			if err == nil || s.state == nil || s.state.Invalidated || f.logoutCalls != 1 {
+				t.Fatalf("bare %q did not fail safely: err=%v state=%+v calls=%d", raw, err, s.state, f.logoutCalls)
+			}
+		}
+	})
+}
+
+func TestInvalidationSurfacesSafeLogoutReason(t *testing.T) {
+	s := &memoryStore{state: &State{AccessToken: "old", RefreshToken: "refresh"}}
+	f := &fakeAPI{}
+	m := testManager(s, f)
+	err := m.Do(func(API) error {
+		return errors.New(`API error 400: {"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":7,"reason":"secret freeform body"}}`)
+	})
+	if !errors.Is(err, ErrSessionInvalidated) {
+		t.Fatalf("expected ErrSessionInvalidated, got %v", err)
+	}
+	if got := InvalidationReason(err); got != "NOT_AVAILABLE_USER" {
+		t.Fatalf("InvalidationReason() = %q, want NOT_AVAILABLE_USER", got)
+	}
+	if !strings.Contains(err.Error(), "NOT_AVAILABLE_USER") || strings.Contains(err.Error(), "secret freeform body") {
+		t.Fatalf("unsafe or missing reason in error: %v", err)
+	}
+}
+
+func TestLoginErrorSurfacesSafeQRReasonOnly(t *testing.T) {
+	code := 100
+	safeErr := &LoginError{
+		Stage: LoginPhoneApproval,
+		cause: &line.QRServiceError{
+			HTTPStatus:  400,
+			Code:        10051,
+			StatusCode:  0,
+			ServiceCode: &code,
+			Detail:      &line.QRError{Reason: "EXPIRED_PIN_CODE", AlertMessage: "raw alert secret"},
+		},
+	}
+	if msg := safeErr.Error(); !strings.Contains(msg, "reason EXPIRED_PIN_CODE") || strings.Contains(msg, "raw alert secret") {
+		t.Fatalf("safe QR reason missing or alert leaked: %s", msg)
+	}
+
+	unsafeErr := &LoginError{
+		Stage: LoginCertificate,
+		cause: &line.QRServiceError{
+			HTTPStatus:  400,
+			Code:        10051,
+			StatusCode:  0,
+			ServiceCode: &code,
+			Detail:      &line.QRError{Reason: "arbitrary raw server string", AlertMessage: "raw alert secret"},
+		},
+	}
+	if msg := unsafeErr.Error(); strings.Contains(msg, "arbitrary raw") || strings.Contains(msg, "raw alert") || strings.Contains(msg, "reason ") {
+		t.Fatalf("unsafe QR reason leaked: %s", msg)
+	}
+}

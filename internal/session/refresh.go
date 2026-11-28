@@ -81,7 +81,7 @@ func (m *Manager) refresh(ctx context.Context, s *State, api API) (API, error) {
 			return nil, ctx.Err()
 		}
 		if line.IsLoggedOut(err) {
-			return nil, m.invalidate(s)
+			return nil, m.invalidate(s, err)
 		}
 		if attempt == 3 || !line.IsTransientError(err) {
 			return nil, remoteError("token refresh", err)

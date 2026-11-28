@@ -118,8 +118,13 @@ func (c *Client) peerByID(ctx context.Context, mid string, id int) error {
 // fresh key explicitly as part of preparation for a requested send.
 func (c *Client) groupKey(ctx context.Context, chat string, id int) error {
 	cacheKey := fmt.Sprintf("%s:%d", chat, id)
-	if _, cached := c.groupKeys[cacheKey]; id > 0 && cached {
-		return nil
+	if id > 0 {
+		if _, cached := c.groupKeys[cacheKey]; cached {
+			if c.crypto.HasGroupKey(chat, id) {
+				return nil
+			}
+			delete(c.groupKeys, cacheKey)
+		}
 	}
 	var key *line.E2EEGroupSharedKey
 	err := c.doKeyFetchWithRetry(ctx, func(api session.API) (err error) {

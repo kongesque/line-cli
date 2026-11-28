@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -119,6 +120,7 @@ type fakeCrypto struct {
 	loaded       map[string]string
 	registered   []int
 	unwrapped    []int
+	groupKeys    map[string]bool
 	releasedKeys []int
 	decryptCalls int
 	groupVersion int
@@ -137,13 +139,24 @@ func (f *fakeCrypto) IsMyKey(id int) bool { return id == 11 || id == 10 }
 
 func (f *fakeCrypto) HasPeerPublicKey(int) bool { return false }
 
+func (f *fakeCrypto) HasGroupKey(chat string, id int) bool {
+	if f.groupKeys == nil {
+		return false
+	}
+	return f.groupKeys[fmt.Sprintf("%s:%d", chat, id)]
+}
+
 func (f *fakeCrypto) RegisterPeerPublicKey(id int, _ string) { f.registered = append(f.registered, id) }
 
-func (f *fakeCrypto) UnwrapGroupSharedKey(_ string, key *line.E2EEGroupSharedKey) (int, error) {
+func (f *fakeCrypto) UnwrapGroupSharedKey(chat string, key *line.E2EEGroupSharedKey) (int, error) {
 	if f.unwrapErr != nil {
 		return 0, f.unwrapErr
 	}
 	f.unwrapped = append(f.unwrapped, key.GroupKeyID)
+	if f.groupKeys == nil {
+		f.groupKeys = make(map[string]bool)
+	}
+	f.groupKeys[fmt.Sprintf("%s:%d", chat, key.GroupKeyID)] = true
 	return 333, nil
 }
 

@@ -67,11 +67,14 @@ func (e *LoginError) Error() string {
 		message := "QR certificate verification failed. PIN fallback is not available for this response. Your saved session was not changed. Close the phone prompt and use line login --email you@example.com."
 		var response *line.QRServiceError
 		if errors.As(e.cause, &response) {
-			// Only numeric fields are safe to display. Do not format the wrapped
-			// error or its method/name, which need not be trusted caller input.
+			// Only numeric fields and safe uppercase enum tokens are displayed.
+			// Never format arbitrary server text or method/name strings.
 			message += fmt.Sprintf(" Diagnostic: verifyCertificate (HTTP %d, gateway %d, status %d", response.HTTPStatus, response.Code, response.StatusCode)
 			if response.ServiceCode != nil {
 				message += fmt.Sprintf(", service %d", *response.ServiceCode)
+			}
+			if reason := response.Detail.SafeReason(); reason != "" {
+				message += ", reason " + reason
 			}
 			message += ")."
 		}
@@ -84,6 +87,9 @@ func (e *LoginError) Error() string {
 			message += fmt.Sprintf(" Diagnostic: checkPinCodeVerified (HTTP %d, gateway %d, status %d", response.HTTPStatus, response.Code, response.StatusCode)
 			if response.ServiceCode != nil {
 				message += fmt.Sprintf(", service %d", *response.ServiceCode)
+			}
+			if reason := response.Detail.SafeReason(); reason != "" {
+				message += ", reason " + reason
 			}
 			message += ")."
 		}

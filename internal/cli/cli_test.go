@@ -155,6 +155,18 @@ func TestLogoutRevokesRemotelyAndSupportsLocalOnly(t *testing.T) {
 		}
 	})
 
+	t.Run("bare HTTP 401/403 preserves local session and does not claim revocation", func(t *testing.T) {
+		for _, status := range []int{401, 403} {
+			f := &readAPI{logoutErr: fmt.Errorf("HTTP %d unauthorized", status)}
+			a, out, _ := testApp(f)
+			store := a.Manager.Store.(*testStore)
+			err := a.Run([]string{"logout"})
+			if err == nil || !strings.Contains(err.Error(), "--local-only") || store.state == nil || f.logoutCalls != 1 || strings.Contains(out.String(), "revoked") {
+				t.Fatalf("HTTP %d logout wiped state or claimed revocation: err=%v state=%v calls=%d out=%q", status, err, store.state, f.logoutCalls, out.String())
+			}
+		}
+	})
+
 	t.Run("network failure preserves local session and instructs --local-only", func(t *testing.T) {
 		f := &readAPI{logoutErr: fmt.Errorf("connection refused")}
 		a, _, _ := testApp(f)

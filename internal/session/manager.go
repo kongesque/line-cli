@@ -475,7 +475,7 @@ func (m *Manager) do(ctx context.Context, call func(API) error, retry bool) erro
 		}
 		stale := current.AccessToken != s.AccessToken || current.RefreshToken != s.RefreshToken
 		if !stale && line.IsLoggedOut(err) {
-			return m.invalidate(s)
+			return m.invalidate(s, err)
 		}
 		if stale {
 			s = current
@@ -499,13 +499,37 @@ func (m *Manager) do(ctx context.Context, call func(API) error, retry bool) erro
 		}
 		err = call(api)
 		if line.IsLoggedOut(err) {
-			return m.invalidate(s)
+			return m.invalidate(s, err)
 		}
 	}
 	return remoteError("request", err)
 }
 
-func (m *Manager) invalidate(failed *State) error {
+// SessionInvalidatedError wraps ErrSessionInvalidated with a bounded, safe
+// LINE logout classification label (never raw server text).
+type SessionInvalidatedError struct {
+	Reason string
+}
+
+func (e *SessionInvalidatedError) Error() string {
+	if e != nil && e.Reason != "" {
+		return fmt.Sprintf("LINE session was invalidated or replaced by another client (%s); run line login", e.Reason)
+	}
+	return ErrSessionInvalidated.Error()
+}
+
+func (e *SessionInvalidatedError) Unwrap() error { return ErrSessionInvalidated }
+
+// InvalidationReason extracts the safe, bounded LINE logout reason from err, if any.
+func InvalidationReason(err error) string {
+	var inv *SessionInvalidatedError
+	if errors.As(err, &inv) {
+		return inv.Reason
+	}
+	return ""
+}
+
+func (m *Manager) invalidate(failed *State, cause error) error {
 	s, err := m.Store.Load()
 	if err != nil {
 		return err
@@ -520,6 +544,9 @@ func (m *Manager) invalidate(failed *State) error {
 	s.Invalidated = true
 	if err := m.Store.Save(s); err != nil {
 		return err
+	}
+	if reason := line.LogoutReason(cause); reason != "" {
+		return &SessionInvalidatedError{Reason: reason}
 	}
 	return ErrSessionInvalidated
 }
@@ -546,7 +573,7 @@ func (m *Manager) RecoverStream(ctx context.Context, generation, accessToken str
 		return nil
 	}
 	if line.IsLoggedOut(cause) {
-		return m.invalidate(s)
+		return m.invalidate(s, cause)
 	}
 	if !line.IsAuthError(cause) {
 		return remoteError("stream", cause)
@@ -640,9 +667,11 @@ func (m *Manager) ReserveSequence() (int64, error) {
 }
 
 // LogoutContext revokes the saved session remotely via AuthService/logoutV2 once.
-// If LINE confirms the session is already logged out or unauthorized, or if no
-// local session exists, it returns nil so the caller can remove local credentials.
-// Network and transient failures are returned so the caller can instruct --local-only.
+// Only explicit logoutV2 success or a confirmed forced-logout response
+// (line.IsLoggedOut) returns nil so the caller can remove local credentials.
+// Bare HTTP 401/403 (e.g. an expired access token), network, and transient
+// failures retain local credentials and return an error so the caller can retry
+// or instruct --local-only.
 func (m *Manager) LogoutContext(ctx context.Context) error {
 	if err := m.readOnly("logout"); err != nil {
 		return err
@@ -670,7 +699,7 @@ func (m *Manager) LogoutContext(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if line.IsLoggedOut(err) || line.IsUnauthorizedStatus(err) {
+	if line.IsLoggedOut(err) {
 		return nil
 	}
 	return remoteError("logout", err)

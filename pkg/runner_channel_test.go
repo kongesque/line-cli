@@ -61,6 +61,49 @@ func TestChannelCreateWithWASMOnlyKeyDoesNotWriteStdout(t *testing.T) {
 	}
 }
 
+func TestSigningRuntimeIsolatedFromMessagingHandles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping runner integration test in short mode")
+	}
+
+	r, err := GetRunner()
+	if err != nil {
+		t.Fatalf("GetRunner failed: %v", err)
+	}
+
+	keyID, err := r.KeyGenerate()
+	if err != nil {
+		t.Fatalf("KeyGenerate failed: %v", err)
+	}
+	defer func() { _ = r.ReleaseGroupKey(keyID) }()
+
+	epochBefore := r.ResetEpoch()
+	sig1, err := r.GetSignature("/api/talk/thrift/Talk/TalkService/getProfile", "[]", "synthetic-access-token")
+	if err != nil || sig1 == "" {
+		t.Fatalf("GetSignature failed: sig=%q err=%v", sig1, err)
+	}
+
+	// Resetting the dedicated signing runtime must not bump the messaging epoch
+	// or invalidate E2EE handles.
+	r.signingMu.Lock()
+	resetErr := r.resetSigningRuntimeLocked()
+	r.signingMu.Unlock()
+	if resetErr != nil {
+		t.Fatalf("resetSigningRuntimeLocked failed: %v", resetErr)
+	}
+	if r.ResetEpoch() != epochBefore {
+		t.Fatalf("signing reset bumped messaging ResetEpoch: %d -> %d", epochBefore, r.ResetEpoch())
+	}
+	if pub, err := r.KeyGetPublic(keyID); err != nil || pub == "" {
+		t.Fatalf("messaging key handle broken by signing reset: pub=%q err=%v", pub, err)
+	}
+
+	sig2, err := r.GetSignature("/api/talk/thrift/Talk/TalkService/getProfile", "[]", "synthetic-access-token")
+	if err != nil || sig2 != sig1 {
+		t.Fatalf("GetSignature after signing reset mismatch: got=%q want=%q err=%v", sig2, sig1, err)
+	}
+}
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 

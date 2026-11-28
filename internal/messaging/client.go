@@ -60,6 +60,7 @@ type Crypto interface {
 	MyPublicKey() (int, string, error)
 	IsMyKey(int) bool
 	HasPeerPublicKey(int) bool
+	HasGroupKey(string, int) bool
 	RegisterPeerPublicKey(int, string)
 	UnwrapGroupSharedKey(string, *line.E2EEGroupSharedKey) (int, error)
 	DecryptMessageV2(*line.Message) (string, error)

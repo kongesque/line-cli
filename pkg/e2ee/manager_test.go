@@ -185,6 +185,33 @@ func TestManagerLRUBoundsPeerAndGroupCaches(t *testing.T) {
 	}
 }
 
+func TestPutGroupKeyEvictingSameChatDoesNotPanic(t *testing.T) {
+	m := &Manager{
+		groupKeys:            make(map[string]map[int]int),
+		groupSessionChannels: make(map[string]map[int]map[int]int),
+		latestGroupKey:       make(map[string]int),
+	}
+	// Fill cache to capacity with c-0 as the oldest entry (only 1 key for c-0).
+	for i := 0; i < maxCachedGroupKeys; i++ {
+		m.putGroupKeyLocked(fmt.Sprintf("c-%d", i), 1, i+100)
+	}
+	if !m.HasGroupKey("c-0", 1) {
+		t.Fatal("expected c-0:1 to be resident before eviction")
+	}
+	// Inserting a new key for c-0 evicts c-0:1 (deleting m.groupKeys["c-0"]) and
+	// must re-create the inner map rather than panicking on a nil map write.
+	m.putGroupKeyLocked("c-0", 2, 999)
+	if m.HasGroupKey("c-0", 1) {
+		t.Fatal("expected c-0:1 to be evicted")
+	}
+	if !m.HasGroupKey("c-0", 2) || m.groupKeys["c-0"][2] != 999 {
+		t.Fatalf("expected c-0:2=999 after same-chat eviction, got map=%v", m.groupKeys["c-0"])
+	}
+	if len(m.groupKeyLRU) != maxCachedGroupKeys {
+		t.Fatalf("lru length = %d, want %d", len(m.groupKeyLRU), maxCachedGroupKeys)
+	}
+}
+
 func TestEncryptGroupMessageRawReturnsGroupKeyNotLoaded(t *testing.T) {
 	manager := &Manager{
 		sequence:       map[string]int{},
@@ -195,5 +222,41 @@ func TestEncryptGroupMessageRawReturnsGroupKeyNotLoaded(t *testing.T) {
 	_, err := manager.EncryptGroupMessageRaw("c-group", "u-sender", 0, []byte(`{"text":"hello"}`))
 	if !errors.Is(err, ErrGroupKeyNotLoaded) {
 		t.Fatalf("err = %v, want ErrGroupKeyNotLoaded", err)
+	}
+}
+
+func TestManagerInvalidatesCachedHandlesAfterRunnerReset(t *testing.T) {
+	m, err := NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.putGroupKeyLocked("c-group", 33, 500)
+	m.latestGroupKey["c-group"] = 33
+	m.putPeerChannelLocked("11|22", 600)
+	m.putGroupChannelLocked(groupChannelCacheID{chatMid: "c-group", groupKeyID: 33, senderKeyID: 11}, 700)
+
+	if !m.HasGroupKey("c-group", 33) {
+		t.Fatal("expected group key resident before runtime reset")
+	}
+
+	// Simulate an LTSM abort resetting the messaging runtime.
+	if err := m.runner.ResetRuntime(); err != nil {
+		t.Fatalf("ResetRuntime failed: %v", err)
+	}
+
+	// Manager must detect the epoch change and drop all stale native handles
+	// rather than reusing dead handle IDs.
+	if m.HasGroupKey("c-group", 33) {
+		t.Fatal("stale group key remained resident after runtime reset")
+	}
+	if _, err := m.EncryptGroupMessageRaw("c-group", "u-sender", 0, []byte(`{"text":"hello"}`)); !errors.Is(err, ErrGroupKeyNotLoaded) {
+		t.Fatalf("expected ErrGroupKeyNotLoaded after runtime reset, got %v", err)
+	}
+	m.mu.Lock()
+	stalePeers := len(m.channelByPair)
+	staleGroupChans := len(m.groupSessionChannels)
+	m.mu.Unlock()
+	if stalePeers != 0 || staleGroupChans != 0 {
+		t.Fatalf("stale channels survived reset: peer=%d group=%d", stalePeers, staleGroupChans)
 	}
 }

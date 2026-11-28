@@ -53,6 +53,10 @@ type Client struct {
 	channelTokenMu    sync.Mutex
 	channelTokenCache map[string]cachedChannelAccessToken
 
+	obsTokenMu     sync.Mutex
+	obsTokenCache  string
+	obsTokenExpiry time.Time
+
 	clockMu     sync.Mutex
 	serverClock time.Time
 	localClock  time.Time
@@ -234,7 +238,10 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	}
 	req.Header.Set("x-hmac", signature)
 
-	pollClient := &http.Client{Timeout: 200 * time.Second}
+	pollClient := c.HTTPClient
+	if pollClient == nil {
+		pollClient = &http.Client{Timeout: 200 * time.Second}
+	}
 	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
@@ -244,10 +251,13 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkLoginPollingStatus(resp.StatusCode, body); err != nil {
+		return nil, err
+	}
 
 	// JQ response: {"data":{"result":{"verifier":"...","authPhase":"QRCODE_VERIFIED",...}}}
 	var wrapper struct {
-		Code    int    `json:"code"`
+		Code    *int   `json:"code"`
 		Message string `json:"message"`
 		Data    struct {
 			Result struct {
@@ -259,18 +269,51 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse JQ polling response: %w", err)
 	}
+	if wrapper.Code != nil && *wrapper.Code != 0 {
+		return nil, loginPollingError(resp.StatusCode, body)
+	}
 
 	if wrapper.Data.Result.AuthPhase != "QRCODE_VERIFIED" {
 		return nil, fmt.Errorf("JQ polling: unexpected authPhase %q", wrapper.Data.Result.AuthPhase)
 	}
 
+	finalVerifier := strings.TrimSpace(wrapper.Data.Result.Verifier)
+	if finalVerifier == "" {
+		finalVerifier = verifier
+	}
 	log.Printf("[LINE] JQ poll verified, finalizing non-E2EE login")
-	res, err := c.LoginV2WithVerifier(verifier)
+	res, err := c.LoginV2WithVerifier(finalVerifier)
 	if err != nil {
 		return nil, fmt.Errorf("non-E2EE login finalization failed: %w", err)
 	}
 	res.NoE2EE = true
 	return res, nil
+}
+
+// checkLoginPollingStatus detects gateway 10052 + nested statusCode 410
+// (verification expired) or non-200 HTTP failures on LF1/JQ polling without
+// leaking raw server bodies.
+func checkLoginPollingStatus(httpStatus int, body []byte) error {
+	var envelope struct {
+		Code *int `json:"code"`
+		Data struct {
+			StatusCode int `json:"statusCode"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &envelope) == nil && envelope.Code != nil && *envelope.Code == 10052 && envelope.Data.StatusCode == http.StatusGone {
+		return ErrLoginVerificationExpired
+	}
+	if httpStatus != http.StatusOK {
+		return loginPollingError(httpStatus, body)
+	}
+	return nil
+}
+
+func loginPollingError(httpStatus int, body []byte) error {
+	if err := responseError(httpStatus, body); err != nil {
+		return err
+	}
+	return &ResponseError{Status: httpStatus}
 }
 
 // waitForLoginLF1 polls the LF1 endpoint for LSON accounts (E2EE).
@@ -300,7 +343,10 @@ func (c *Client) waitForLoginLF1(verifier string) (*LoginResult, error) {
 	}
 	req.Header.Set("x-hmac", signature)
 
-	pollClient := &http.Client{Timeout: 120 * time.Second}
+	pollClient := c.HTTPClient
+	if pollClient == nil {
+		pollClient = &http.Client{Timeout: 120 * time.Second}
+	}
 	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
@@ -310,14 +356,20 @@ func (c *Client) waitForLoginLF1(verifier string) (*LoginResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkLoginPollingStatus(resp.StatusCode, body); err != nil {
+		return nil, err
+	}
 
 	var wrapper struct {
-		Code    int                `json:"code"`
+		Code    *int               `json:"code"`
 		Message string             `json:"message"`
 		Data    LoginPollingResult `json:"data"`
 	}
 	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse LF1 polling response: %w", err)
+	}
+	if wrapper.Code != nil && *wrapper.Code != 0 {
+		return nil, loginPollingError(resp.StatusCode, body)
 	}
 
 	meta := wrapper.Data.Result.Metadata

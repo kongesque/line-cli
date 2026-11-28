@@ -111,11 +111,24 @@ func (e *QRError) Error() string {
 	if e.Code != nil {
 		fmt.Fprintf(&b, ", code %d", *e.Code)
 	}
-	if isSafeEnumToken(e.Reason) {
-		fmt.Fprintf(&b, ", reason %s", e.Reason)
+	if reason := e.SafeReason(); reason != "" {
+		fmt.Fprintf(&b, ", reason %s", reason)
 	}
 	b.WriteByte(')')
 	return b.String()
+}
+
+// SafeReason returns e.Reason only when it is a safe, bounded uppercase enum
+// token, never arbitrary server text.
+func (e *QRError) SafeReason() string {
+	if e == nil {
+		return ""
+	}
+	reason := strings.TrimSpace(e.Reason)
+	if !isSafeEnumToken(reason) {
+		return ""
+	}
+	return reason
 }
 
 // QRServiceError retains numeric classification without retaining server

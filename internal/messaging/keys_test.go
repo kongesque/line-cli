@@ -150,24 +150,58 @@ func (a *groupKeysWireAPI) GetLastE2EEPublicKeysContext(ctx context.Context, cha
 }
 
 func TestSend1to1ReceiverKeyRejectedActionableWithoutRetry(t *testing.T) {
-	c, f, _, store := setup(t, false)
-	wire := line.NewClient("synthetic-token")
-	sendCalls := 0
-	wire.HTTPClient.Transport = claimTransport(func(r *http.Request) (*http.Response, error) {
-		sendCalls++
-		return claimResponse(r, http.StatusBadRequest, `{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":83,"reason":"invalid receiver key"}}`), nil
-	})
-	c.Session.NewClient = func(string) session.API { return &sendWireAPI{fakeAPI: f, wire: wire} }
+	for _, tc := range []struct {
+		name string
+		body string
+		file bool
+	}{
+		{"code83-text", `{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":83,"reason":"invalid receiver key"}}`, false},
+		{"code84-text", `{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":84,"reason":"E2EE_UPDATE_RECEIVER_KEY"}}`, false},
+		{"code88-file", `{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":88,"reason":"E2EE_RECEIVER_DISABLED"}}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, f, crypt, store := setup(t, false)
+			wire := line.NewClient("synthetic-token")
+			sendCalls := 0
+			wire.HTTPClient.Transport = claimTransport(func(r *http.Request) (*http.Response, error) {
+				sendCalls++
+				return claimResponse(r, http.StatusBadRequest, tc.body), nil
+			})
+			if tc.file {
+				c.crypto = &fileCrypto{fakeCrypto: crypt}
+				c.Session.NewClient = func(string) session.API { return &sendFileWireAPI{fileAPI: &fileAPI{fakeAPI: f}, wire: wire} }
+				_, err := c.SendFile("u-peer", Attachment{Name: "doc.txt", Data: []byte("hello")}, "")
+				var safe *fault.Error
+				if !errors.As(err, &safe) || safe.Code != "e2ee_receiver_key_rejected" {
+					t.Fatalf("expected e2ee_receiver_key_rejected fault, got %v", err)
+				}
+				detail := mutationDetails(t, err)
+				if sendCalls != 1 || detail.Mutation.Outcome != fault.Rejected || store.state.LastReqSeq == 0 {
+					t.Fatalf("receiver-key rejection retried or misclassified: calls=%d outcome=%s", sendCalls, detail.Mutation.Outcome)
+				}
+				return
+			}
+			c.Session.NewClient = func(string) session.API { return &sendWireAPI{fakeAPI: f, wire: wire} }
+			_, err := c.Send("u-peer", "hello")
+			var safe *fault.Error
+			if !errors.As(err, &safe) || safe.Code != "e2ee_receiver_key_rejected" {
+				t.Fatalf("expected e2ee_receiver_key_rejected fault, got %v", err)
+			}
+			detail := mutationDetails(t, err)
+			if sendCalls != 1 || detail.Mutation.Outcome != fault.Rejected || store.state.LastReqSeq == 0 {
+				t.Fatalf("receiver-key rejection retried or misclassified: calls=%d outcome=%s", sendCalls, detail.Mutation.Outcome)
+			}
+		})
+	}
+}
 
-	_, err := c.Send("u-peer", "hello")
-	var safe *fault.Error
-	if !errors.As(err, &safe) || safe.Code != "e2ee_receiver_key_rejected" {
-		t.Fatalf("expected e2ee_receiver_key_rejected fault, got %v", err)
-	}
-	detail := mutationDetails(t, err)
-	if sendCalls != 1 || detail.Mutation.Outcome != fault.Rejected || store.state.LastReqSeq == 0 {
-		t.Fatalf("receiver-key rejection retried or misclassified: calls=%d outcome=%s", sendCalls, detail.Mutation.Outcome)
-	}
+type sendFileWireAPI struct {
+	*fileAPI
+	wire *line.Client
+}
+
+func (a *sendFileWireAPI) SendMessageContext(ctx context.Context, seq int64, msg *line.Message) (*line.Message, error) {
+	return a.wire.SendMessageContext(ctx, seq, msg)
 }
 
 type sendWireAPI struct {
@@ -290,4 +324,33 @@ func TestReadKeyFetchTransientRetryCooldownAndCancellation(t *testing.T) {
 			t.Fatalf("cancellation ignored: calls=%d err=%v", flaky.peerCalls, err)
 		}
 	})
+}
+
+func TestGroupKeyRefetchesAfterCryptoLRUEviction(t *testing.T) {
+	c, f, crypto, _ := setup(t, false)
+	f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-peer", CreatorKeyID: 22, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
+
+	if err := c.groupKey(context.Background(), "c-group", 33); err != nil {
+		t.Fatalf("initial groupKey failed: %v", err)
+	}
+	if len(f.groupIDs) != 1 || len(crypto.unwrapped) != 1 {
+		t.Fatalf("expected 1 fetch/unwrap, got fetches=%d unwraps=%d", len(f.groupIDs), len(crypto.unwrapped))
+	}
+
+	// While still resident in crypto, messaging cache short-circuits.
+	if err := c.groupKey(context.Background(), "c-group", 33); err != nil {
+		t.Fatalf("cached groupKey failed: %v", err)
+	}
+	if len(f.groupIDs) != 1 {
+		t.Fatalf("expected cache hit while resident, got %d fetches", len(f.groupIDs))
+	}
+
+	// Simulate e2ee.Manager LRU eviction of c-group:33.
+	delete(crypto.groupKeys, "c-group:33")
+	if err := c.groupKey(context.Background(), "c-group", 33); err != nil {
+		t.Fatalf("post-eviction groupKey failed: %v", err)
+	}
+	if len(f.groupIDs) != 2 || len(crypto.unwrapped) != 2 {
+		t.Fatalf("expected refetch and re-unwrap after eviction, got fetches=%d unwraps=%d", len(f.groupIDs), len(crypto.unwrapped))
+	}
 }
