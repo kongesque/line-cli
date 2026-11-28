@@ -36,6 +36,10 @@ func (a *claimFileAPI) SendMessageContext(ctx context.Context, seq int64, m *lin
 	return a.wire.SendMessageContext(ctx, seq, m)
 }
 
+func (a *claimFileAPI) DownloadOBSPublicResourceWithOptions(ctx context.Context, resourceURL string, opts line.OBSDownloadOptions) ([]byte, error) {
+	return a.wire.DownloadOBSPublicResourceWithOptions(ctx, resourceURL, opts)
+}
+
 func TestFileWireEnvelopeProtectsKeyAndName(t *testing.T) {
 	for _, chat := range []string{"u-peer", "c-group", "r-room"} {
 		t.Run(chat, func(t *testing.T) {
@@ -187,5 +191,72 @@ func TestEncryptedFileRealRecipientRoundTrip(t *testing.T) {
 	cipher[len(cipher)-1] ^= 1
 	if _, err := decrypt(cipher); err == nil {
 		t.Fatal("tampered sealed payload accepted")
+	}
+}
+
+func TestDownloadExternalURLSafetyAndNoTokenLeak(t *testing.T) {
+	c, f, _, _ := setup(t, false)
+	wire := line.NewClient("super-secret-line-token")
+	var seenReq *http.Request
+	wire.PublicMediaClient = &http.Client{
+		Transport: claimTransport(func(r *http.Request) (*http.Response, error) {
+			seenReq = r
+			if r.URL.Path == "/oversized" {
+				return claimResponse(r, http.StatusOK, strings.Repeat("a", MaxAttachmentBytes+1)), nil
+			}
+			return claimResponse(r, http.StatusOK, "official-account-image"), nil
+		}),
+	}
+	api := &claimFileAPI{fileAPI: &fileAPI{fakeAPI: f}, wire: wire}
+	c.Session.NewClient = func(string) session.API { return api }
+
+	// 1. Plain external DOWNLOAD_URL succeeds without sending LINE auth headers.
+	f.history = []*line.Message{{
+		ID:          "901",
+		From:        "u-official",
+		To:          "u-self",
+		ContentType: 1,
+		ContentMetadata: map[string]string{
+			"DOWNLOAD_URL": "https://cdn.example.com/official/photo.jpg",
+		},
+	}}
+	data, err := c.DownloadFile(context.Background(), "u-official", "901")
+	if err != nil || string(data) != "official-account-image" {
+		t.Fatalf("external DOWNLOAD_URL failed: data=%q err=%v", data, err)
+	}
+	if seenReq == nil {
+		t.Fatal("external DOWNLOAD_URL did not hit PublicMediaClient")
+	}
+	for _, forbidden := range []string{"X-Line-Access", "Cookie", "X-Line-Application", "X-Talk-Meta"} {
+		if seenReq.Header.Get(forbidden) != "" {
+			t.Fatalf("external host received forbidden header %s", forbidden)
+		}
+	}
+
+	// 2. Oversized external response fails with the 20 MiB limit.
+	f.history[0].ContentMetadata["DOWNLOAD_URL"] = "https://cdn.example.com/oversized"
+	if data, err := c.DownloadFile(context.Background(), "u-official", "901"); err == nil || data != nil || !strings.Contains(err.Error(), "20 MiB") {
+		t.Fatalf("oversized external DOWNLOAD_URL not bounded: err=%v len=%d", err, len(data))
+	}
+
+	// 3. Private IP external URL is blocked without leaking the URL.
+	seenReq = nil
+	f.history[0].ContentMetadata["DOWNLOAD_URL"] = "http://127.0.0.1/private-secret-path"
+	if data, err := c.DownloadFile(context.Background(), "u-official", "901"); err == nil || data != nil || seenReq != nil || strings.Contains(err.Error(), "private-secret-path") {
+		t.Fatalf("private IP DOWNLOAD_URL not blocked safely: err=%v req=%v", err, seenReq)
+	}
+
+	// 4. Relative OBS path DOWNLOAD_URL uses OBS client without auth headers.
+	var obsReq *http.Request
+	wire.OBSClient = &http.Client{
+		Transport: claimTransport(func(r *http.Request) (*http.Response, error) {
+			obsReq = r
+			return claimResponse(r, http.StatusOK, "obs-public-bytes"), nil
+		}),
+	}
+	f.history[0].ContentMetadata["DOWNLOAD_URL"] = "/r/official/item-1"
+	data, err = c.DownloadFile(context.Background(), "u-official", "901")
+	if err != nil || string(data) != "obs-public-bytes" || obsReq == nil || obsReq.Header.Get("X-Line-Access") != "" {
+		t.Fatalf("relative OBS DOWNLOAD_URL failed: data=%q err=%v req=%v", data, err, obsReq)
 	}
 }

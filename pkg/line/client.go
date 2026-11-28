@@ -45,9 +45,10 @@ var (
 )
 
 type Client struct {
-	HTTPClient  *http.Client
-	OBSClient   *http.Client
-	AccessToken string
+	HTTPClient        *http.Client
+	OBSClient         *http.Client
+	PublicMediaClient *http.Client
+	AccessToken       string
 
 	channelTokenMu    sync.Mutex
 	channelTokenCache map[string]cachedChannelAccessToken
@@ -826,43 +827,77 @@ func (c *Client) DownloadOBSWithSIDOptions(ctx context.Context, oid string, mess
 }
 
 // DownloadOBSPublicResource downloads a public OBS resource referenced by
-// message content metadata. LINE Chrome uses DOWNLOAD_URL directly and skips
-// object_info.obs and the private OBS authorization header mapper.
-func (c *Client) DownloadOBSPublicResource(ctx context.Context, resourcePath string) ([]byte, error) {
-	parsedPath, err := url.Parse(resourcePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse public OBS resource path: %w", err)
-	}
-	if parsedPath.IsAbs() || parsedPath.Host != "" || !strings.HasPrefix(parsedPath.Path, "/") {
-		return nil, errors.New("public OBS resource must be an absolute path")
-	}
+// message content metadata. Relative paths starting with "/" are fetched from
+// OBSBaseURL; absolute http(s) URLs are fetched via the SSRF-hardened public
+// media client without LINE authentication headers.
+func (c *Client) DownloadOBSPublicResource(ctx context.Context, resourceURL string) ([]byte, error) {
+	return c.DownloadOBSPublicResourceWithOptions(ctx, resourceURL, OBSDownloadOptions{})
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, OBSBaseURL+resourcePath, nil)
+// DownloadOBSPublicResourceWithOptions downloads a public OBS resource path or
+// external http(s) DOWNLOAD_URL while enforcing opts.MaxBytes and network
+// safety policies. LINE auth headers are never sent.
+func (c *Client) DownloadOBSPublicResourceWithOptions(ctx context.Context, resourceURL string, opts OBSDownloadOptions) ([]byte, error) {
+	parsed, err := url.Parse(resourceURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create public OBS resource request: %w", err)
+		return nil, fmt.Errorf("%w: invalid resource URL", ErrPublicMediaBlocked)
 	}
-	req.Header.Set("User-Agent", UserAgent)
-
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	var (
+		resp *http.Response
+	)
+	if parsed.IsAbs() {
+		if _, _, err := validatePublicMediaURL(parsed); err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create public media request: %w", err)
+		}
+		req.Header.Set("User-Agent", UserAgent)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		resp, err = c.publicMediaHTTPClient().Do(req)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(resourceURL, "//") {
+			return nil, fmt.Errorf("%w: public resource must be an absolute path or http(s) URL", ErrPublicMediaBlocked)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, OBSBaseURL+resourceURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create public OBS resource request: %w", err)
+		}
+		req.Header.Set("User-Agent", UserAgent)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		resp, err = doLINERequest(c.obsHTTPClient(), req)
+		if err != nil {
+			return nil, fmt.Errorf("public OBS resource request failed: %w", err)
+		}
 	}
-	resp, err := doLINERequest(c.obsHTTPClient(), req)
-	if err != nil {
-		return nil, fmt.Errorf("public OBS resource request failed: %w", err)
+	maxBytes := opts.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = maxMediaResponseBytes
 	}
-	body, readErr := readResponseBody(resp, maxMediaResponseBytes)
-	if readErr != nil {
-		return nil, fmt.Errorf("failed to read public OBS resource response: %w", readErr)
-	}
+	body, readErr := readResponseBody(resp, maxBytes)
 	switch resp.StatusCode {
 	case http.StatusOK:
+		if errors.Is(readErr, ErrResponseTooLarge) {
+			return nil, ErrOBSSizeLimit
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read public resource response: %w", readErr)
+		}
 		return body, nil
 	case http.StatusAccepted:
 		return nil, ErrOBSEncodingIncomplete
 	case http.StatusNotFound:
 		return nil, ErrOBSObjectNotFound
 	default:
-		return nil, fmt.Errorf("public OBS resource download failed (%d): %s", resp.StatusCode, string(body))
+		return nil, &ResponseError{Status: resp.StatusCode}
 	}
 }
 

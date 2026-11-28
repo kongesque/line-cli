@@ -75,6 +75,7 @@ type API interface {
 	UploadOBSPlain([]byte, string, string) error
 	UploadOBSPlainContext(context.Context, []byte, string, string) error
 	DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error)
+	DownloadOBSPublicResourceWithOptions(context.Context, string, line.OBSDownloadOptions) ([]byte, error)
 	DownloadAlbumPreview(context.Context, string, string, string) ([]byte, error)
 }
 

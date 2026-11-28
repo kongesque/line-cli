@@ -265,6 +265,11 @@ type fileAPI struct {
 	albumOID, albumChatID, albumID   string
 	albumData                        []byte
 	albumErr                         error
+	publicCalls                      int
+	publicURL                        string
+	publicOptions                    line.OBSDownloadOptions
+	publicData                       []byte
+	publicErr                        error
 }
 
 func (f *fileAPI) UploadOBSWithSID(data []byte, sid string) (string, error) {
@@ -302,6 +307,16 @@ func (f *fileAPI) DownloadAlbumPreview(_ context.Context, oid, chatID, albumID s
 	f.albumOID, f.albumChatID, f.albumID = oid, chatID, albumID
 	if f.albumData != nil || f.albumErr != nil {
 		return f.albumData, f.albumErr
+	}
+	return f.data, f.downloadErr
+}
+
+func (f *fileAPI) DownloadOBSPublicResourceWithOptions(_ context.Context, resourceURL string, opts line.OBSDownloadOptions) ([]byte, error) {
+	f.publicCalls++
+	f.publicURL = resourceURL
+	f.publicOptions = opts
+	if f.publicData != nil || f.publicErr != nil {
+		return f.publicData, f.publicErr
 	}
 	return f.data, f.downloadErr
 }

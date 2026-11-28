@@ -150,12 +150,16 @@ func TestDownloadOBSPublicResourceMatchesChromeRequestFlow(t *testing.T) {
 	}
 }
 
-func TestDownloadOBSPublicResourceRejectsExternalURL(t *testing.T) {
+func TestDownloadOBSPublicResourceRejectsUnsafeURLs(t *testing.T) {
 	client := NewClient("line-token")
 	for _, resourcePath := range []string{
-		"https://example.com/image",
 		"//example.com/image",
 		"relative/image",
+		"ftp://example.com/image",
+		"https://127.0.0.1/image",
+		"https://user:pass@example.com/image",
+		"https://example.com:8443/image",
+		"https://example.com/image#frag",
 	} {
 		if _, err := client.DownloadOBSPublicResource(context.Background(), resourcePath); err == nil {
 			t.Fatalf("resource path %q was accepted", resourcePath)
