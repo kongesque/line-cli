@@ -16,6 +16,8 @@ import (
 type lookupAPI struct {
 	session.API
 	contacts  map[string]line.Contact
+	buddies   map[string]line.BuddyProfile
+	buddyErr  error
 	batches   [][]string
 	listCalls int
 	response  func([]string) (*line.ContactsResponse, error)
@@ -305,4 +307,43 @@ func (f *lookupAPI) GetAllContactIdsContext(_ context.Context) ([]string, error)
 
 func (f *lookupAPI) GetContactsV2Context(_ context.Context, ids []string) (*line.ContactsResponse, error) {
 	return f.GetContactsV2(ids)
+}
+
+func (f *lookupAPI) GetBuddyProfileContext(_ context.Context, mid string) (*line.BuddyProfile, error) {
+	if f.buddyErr != nil {
+		return nil, f.buddyErr
+	}
+	if b, ok := f.buddies[mid]; ok {
+		return &b, nil
+	}
+	return nil, line.ErrBuddyNotFound
+}
+
+func TestContactLookupFallsBackToBuddyProfile(t *testing.T) {
+	official, unknown := lookupMID(10), lookupMID(11)
+	f := &lookupAPI{
+		contacts: map[string]line.Contact{},
+		buddies: map[string]line.BuddyProfile{
+			official: {Mid: official, DisplayName: "LINE Official", PicturePath: "/buddy"},
+		},
+	}
+	a, out, _ := testApp(nil)
+	a.Manager.NewClient = func(string) session.API { return f }
+	if err := a.Run([]string{"contacts", "--mid", official, "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	var rows []contactLookupResult
+	if err := json.Unmarshal(out.Bytes(), &rows); err != nil || len(rows) != 1 {
+		t.Fatalf("unexpected buddy JSON: %s %v", out.String(), err)
+	}
+	if rows[0].Status != "resolved" || rows[0].EffectiveName != "LINE Official" || rows[0].PicturePath != "/buddy" {
+		t.Fatalf("unexpected buddy row: %+v", rows[0])
+	}
+
+	// Transient BuddyService errors propagate without partial output.
+	out.Reset()
+	f.buddyErr = errors.New("network unavailable")
+	if err := a.Run([]string{"contacts", "--mid", unknown, "--json"}); err == nil || out.Len() != 0 {
+		t.Fatalf("transient buddy error swallowed or leaked partial output: err=%v out=%q", err, out.String())
+	}
 }

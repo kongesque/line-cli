@@ -43,11 +43,17 @@ func (s *fakeLoginStorage) Close() { s.closed = true }
 
 type chatAPI struct {
 	messageAPI
-	boxes     []line.MessageBox
-	names     map[string]string
-	options   []line.MessageBoxesOptions
-	batches   []int
-	nameError error
+	boxes       []line.MessageBox
+	names       map[string]string
+	buddies     map[string]line.BuddyProfile
+	buddyErr    error
+	rooms       map[string]line.Room
+	roomErr     error
+	options     []line.MessageBoxesOptions
+	batches     []int
+	nameError   error
+	logoutCalls int
+	logoutErr   error
 }
 
 func (f *chatAPI) GetAllContactIds() ([]string, error) { return nil, nil }
@@ -64,9 +70,44 @@ func (f *chatAPI) GetContactsV2(ids []string) (*line.ContactsResponse, error) {
 	f.batches = append(f.batches, len(ids))
 	result := &line.ContactsResponse{Contacts: make(map[string]line.ContactWrapper)}
 	for _, id := range ids {
+		if _, isBuddy := f.buddies[id]; isBuddy && f.names[id] == "" {
+			continue
+		}
 		result.Contacts[id] = line.ContactWrapper{Contact: line.Contact{DisplayName: "Original", DisplayNameOverridden: f.names[id]}}
 	}
 	return result, nil
+}
+
+func (f *chatAPI) GetBuddyProfileContext(_ context.Context, mid string) (*line.BuddyProfile, error) {
+	if f.buddyErr != nil {
+		return nil, f.buddyErr
+	}
+	if b, ok := f.buddies[mid]; ok {
+		return &b, nil
+	}
+	return nil, line.ErrBuddyNotFound
+}
+
+func (f *chatAPI) GetRoomsV2Context(_ context.Context, mids []string) ([]line.Room, error) {
+	if f.roomErr != nil {
+		return nil, f.roomErr
+	}
+	if f.nameError != nil {
+		return nil, f.nameError
+	}
+	f.batches = append(f.batches, len(mids))
+	out := make([]line.Room, 0, len(mids))
+	for _, mid := range mids {
+		if r, ok := f.rooms[mid]; ok {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *chatAPI) LogoutContext(context.Context) error {
+	f.logoutCalls++
+	return f.logoutErr
 }
 
 func (f *chatAPI) GetChats(ids []string, members, invitees bool) (*line.GetChatsResponse, error) {
@@ -113,10 +154,12 @@ func (s *testStore) Delete() error { s.state = nil; return nil }
 
 type readAPI struct {
 	session.API
-	pages      []*line.MessageBoxesResponse
-	cursors    []string
-	ids        []string
-	batchSizes []int
+	pages       []*line.MessageBoxesResponse
+	cursors     []string
+	ids         []string
+	batchSizes  []int
+	logoutCalls int
+	logoutErr   error
 }
 
 func (f *readAPI) GetProfile() (*line.Profile, error) {
@@ -159,6 +202,19 @@ func (f *readAPI) GetAllContactIdsContext(_ context.Context) ([]string, error) {
 
 func (f *readAPI) GetContactsV2Context(_ context.Context, ids []string) (*line.ContactsResponse, error) {
 	return f.GetContactsV2(ids)
+}
+
+func (f *readAPI) GetBuddyProfileContext(_ context.Context, _ string) (*line.BuddyProfile, error) {
+	return nil, line.ErrBuddyNotFound
+}
+
+func (f *readAPI) GetRoomsV2Context(_ context.Context, _ []string) ([]line.Room, error) {
+	return []line.Room{}, nil
+}
+
+func (f *readAPI) LogoutContext(context.Context) error {
+	f.logoutCalls++
+	return f.logoutErr
 }
 
 const syntheticQRURL = "line://au/q/synthetic-session?secret=synthetic-public-key&e2eeVersion=1"

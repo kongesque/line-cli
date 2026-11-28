@@ -52,6 +52,8 @@ type fakeAPI struct {
 	groupPublicKeys   map[string]line.E2EEPeerPublicKey
 	groupPublicKeyErr error
 	chats             *line.GetChatsResponse
+	rooms             []line.Room
+	roomErr           error
 	registrations     int
 	registeredMembers []string
 	registeredKeys    []int
@@ -235,6 +237,10 @@ func (f *fakeAPI) GetLastE2EEGroupSharedKeyContext(_ context.Context, arg0 strin
 
 func (f *fakeAPI) GetChatsContext(_ context.Context, arg0 []string, arg1 bool, arg2 bool) (*line.GetChatsResponse, error) {
 	return f.GetChats(arg0, arg1, arg2)
+}
+
+func (f *fakeAPI) GetRoomsV2Context(_ context.Context, _ []string) ([]line.Room, error) {
+	return f.rooms, f.roomErr
 }
 
 func (f *fakeAPI) RegisterE2EEGroupKeyContext(_ context.Context, arg0 int, arg1 string, members []string, keys []int, wrapped []string) error {

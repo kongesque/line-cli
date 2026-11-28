@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"strings"
 
 	"github.com/kongesque/line-cli/internal/session"
 	"github.com/kongesque/line-cli/pkg/line"
@@ -22,17 +21,20 @@ type Membership struct {
 }
 
 func ValidateMembershipChat(chat string) error {
-	if ValidateChatID(chat) != nil || !strings.HasPrefix(strings.ToLower(chat), "c") {
-		return errors.New("members requires a group chat; direct chats and legacy rooms are unsupported")
+	if ValidateChatID(chat) != nil || (toType(chat) != 2 && toType(chat) != 1) {
+		return errors.New("members requires a group or room chat; direct chats are unsupported")
 	}
 	return nil
 }
 
 // MembershipContext does not initialize crypto or negotiate/register keys.
-// Legacy rooms use a separate Chrome API whose contract is not implemented here.
+// Groups (c...) use GetChats; legacy multi-person rooms (r...) use GetRoomsV2.
 func MembershipContext(ctx context.Context, manager *session.Manager, chat string) (*Membership, error) {
 	if err := ValidateMembershipChat(chat); err != nil {
 		return nil, err
+	}
+	if toType(chat) == 1 {
+		return roomMembershipContext(ctx, manager, chat)
 	}
 	var response *line.GetChatsResponse
 	if err := manager.DoContext(ctx, func(api session.API) (err error) {
@@ -61,6 +63,44 @@ func MembershipContext(ctx context.Context, manager *session.Manager, chat strin
 	}
 	result.MembersComplete = group.MemberMids != nil
 	result.InviteesComplete = group.InviteeMids != nil
+	return result, nil
+}
+
+func roomMembershipContext(ctx context.Context, manager *session.Manager, chat string) (*Membership, error) {
+	var rooms []line.Room
+	if err := manager.DoContext(ctx, func(api session.API) (err error) {
+		rooms, err = api.GetRoomsV2Context(ctx, []string{chat})
+		return
+	}); err != nil {
+		return nil, err
+	}
+	if len(rooms) != 1 || (rooms[0].Mid != "" && rooms[0].Mid != chat) {
+		return nil, errors.New("LINE returned missing or inconsistent room membership")
+	}
+	room := rooms[0]
+	result := &Membership{
+		ChatID:           chat,
+		Members:          []string{},
+		Invitees:         []string{},
+		InviteesComplete: true,
+	}
+	mids := room.MemberMids
+	if mids == nil && len(room.Contacts) > 0 {
+		mids = make(line.FlexibleMidMap, len(room.Contacts))
+		for _, c := range room.Contacts {
+			if c.Mid != "" {
+				mids[c.Mid] = true
+			}
+		}
+	}
+	if mids != nil {
+		members, err := membershipIDs(mids)
+		if err != nil {
+			return nil, err
+		}
+		result.Members = members
+		result.MembersComplete = true
+	}
 	return result, nil
 }
 

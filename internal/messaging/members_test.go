@@ -53,9 +53,32 @@ func TestMembershipRejectsInconsistentResponse(t *testing.T) {
 			t.Fatal("accepted inconsistent membership")
 		}
 	}
-	for _, chat := range []string{"", "u-peer", "r-room", "bad"} {
+	for _, chat := range []string{"", "u-peer", "bad"} {
 		if _, err := MembershipContext(context.Background(), nil, chat); err == nil {
 			t.Fatal("accepted unsupported chat")
+		}
+	}
+}
+
+func TestRoomMembershipContextViaGetRoomsV2(t *testing.T) {
+	c, f, _, store := setup(t, false)
+	f.rooms = []line.Room{{Mid: "r-room", MemberMids: line.FlexibleMidMap{"u-self": true, "u-peer": true}}}
+	got, err := MembershipContext(context.Background(), c.Session, "r-room")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.MembersComplete || !got.InviteesComplete || len(got.Members) != 2 || len(got.Invitees) != 0 || got.Members[0] != "u-peer" || got.Members[1] != "u-self" {
+		t.Fatalf("unexpected room membership: %#v", got)
+	}
+	if f.sends != 0 || f.registrations != 0 || store.state.LastReqSeq != 0 {
+		t.Fatal("room membership read had side effects")
+	}
+
+	// Missing or mismatched room response is rejected.
+	for _, rooms := range [][]line.Room{nil, {}, {{Mid: "r-other"}}, {{Mid: "r-room", MemberMids: line.FlexibleMidMap{"c-invalid": true}}}} {
+		f.rooms = rooms
+		if _, err := MembershipContext(context.Background(), c.Session, "r-room"); err == nil {
+			t.Fatalf("accepted invalid room response: %#v", rooms)
 		}
 	}
 }

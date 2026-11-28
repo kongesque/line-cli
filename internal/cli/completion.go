@@ -47,7 +47,7 @@ func completionSpec() []completionCommand {
 		{name: "whoami", about: "Show your signed-in account", flags: []string{"timeout", "show-ids", "json"}},
 		{name: "contacts", about: "Find friends or look up people", flags: []string{"timeout", "search", "limit", "mid", "show-ids", "json"}},
 		{name: "chats", about: "Browse recent conversations", flags: []string{"timeout", "all", "search", "limit", "show-ids", "unread", "details", "json"}},
-		{name: "members", about: "List group members and invitees", flags: []string{"json", "timeout"}},
+		{name: "members", about: "List group or room members and invitees", flags: []string{"json", "timeout"}},
 		{name: "invites", about: "List, accept, or reject group invitations", flags: invite, subs: []completionCommand{
 			{name: "accept", about: "Accept a group invitation", flags: invite},
 			{name: "reject", about: "Reject a group invitation", flags: invite},
@@ -55,7 +55,7 @@ func completionSpec() []completionCommand {
 		{name: "messages", about: "Choose a chat and read messages", flags: []string{"timeout", "json", "show-ids", "diagnostics", "details", "resolve-names", "limit", "page", "cursor"}},
 		{name: "send", about: "Choose a recipient and write a message", flags: []string{"timeout", "json", "show-ids", "require-e2ee", "mentions", "text", "stdin", "file", "image", "reply-to"}},
 		{name: "read", about: "Mark a chat as read (others see Read)", flags: []string{"timeout", "message", "json", "show-ids"}},
-		{name: "logout", about: "Sign out on this device"},
+		{name: "logout", about: "Sign out and revoke this device's session", flags: []string{"local-only", "timeout"}},
 		{name: "auth", about: "Inspect or migrate local session storage", subs: []completionCommand{
 			{name: "status", about: "Inspect local session storage", flags: []string{"check", "json"}},
 			{name: "migrate", about: "Move a Linux session to headless storage", flags: []string{"storage"}},

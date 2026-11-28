@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -185,10 +186,65 @@ type contactLookupResult struct {
 	Status        string `json:"status"`
 }
 
+// fetchBuddyProfiles resolves official/business account profiles for user MIDs
+// omitted by GetContactsV2. Explicit not-found responses stay unavailable;
+// transient, auth, storage, and cancellation errors propagate.
+func (a *App) fetchBuddyProfiles(ctx context.Context, mids []string) (map[string]line.Contact, error) {
+	result := make(map[string]line.Contact)
+	seen := make(map[string]bool, len(mids))
+	for _, mid := range mids {
+		if mid == "" || seen[mid] || chatKind(mid) != "Direct" {
+			continue
+		}
+		seen[mid] = true
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var profile *line.BuddyProfile
+		err := a.Manager.DoContext(ctx, func(api session.API) (err error) {
+			profile, err = api.GetBuddyProfileContext(ctx, mid)
+			return
+		})
+		if err != nil {
+			if line.IsBuddyNotFound(session.ProtocolError(err)) {
+				continue
+			}
+			return nil, err
+		}
+		if profile == nil || (profile.Mid != "" && profile.Mid != mid) {
+			continue
+		}
+		if strings.TrimSpace(profile.DisplayName) == "" {
+			continue
+		}
+		result[mid] = line.Contact{
+			Mid:         mid,
+			DisplayName: profile.DisplayName,
+			PicturePath: profile.PicturePath,
+		}
+	}
+	return result, nil
+}
+
 func (a *App) lookupContacts(mids []string, jsonOutput bool) error {
 	contacts, err := a.fetchContacts(mids)
 	if err != nil {
 		return err
+	}
+	var missing []string
+	for _, mid := range mids {
+		if _, found := contacts[mid]; !found {
+			missing = append(missing, mid)
+		}
+	}
+	if len(missing) > 0 {
+		buddies, err := a.fetchBuddyProfiles(a.loginContext(), missing)
+		if err != nil {
+			return err
+		}
+		for mid, contact := range buddies {
+			contacts[mid] = contact
+		}
 	}
 	results := make([]contactLookupResult, 0, len(mids))
 	unavailable := 0

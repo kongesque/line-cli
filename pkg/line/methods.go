@@ -90,6 +90,15 @@ func (c *Client) LoginV2WithVerifier(verifier string) (*LoginResult, error) {
 	return &wrapper.Data, nil
 }
 
+// LogoutContext revokes the current session on LINE's servers via AuthService/logoutV2.
+func (c *Client) LogoutContext(ctx context.Context) error {
+	resp, err := c.callRPCContext(ctx, "AuthService", "logoutV2")
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
+}
+
 // GetProfile fetches the user's profile information
 func (c *Client) GetProfile() (*Profile, error) {
 	return c.GetProfileContext(context.Background())
@@ -545,22 +554,36 @@ func (c *Client) GetContactsV2Context(ctx context.Context, mids []string) (*Cont
 
 // GetBuddyProfile fetches the profile of a LINE official/business account (buddy).
 func (c *Client) GetBuddyProfile(mid string) (*BuddyProfile, error) {
-	resp, err := c.callRPC("BuddyService", "getBuddyProfile", mid)
+	return c.GetBuddyProfileContext(context.Background(), mid)
+}
+
+func (c *Client) GetBuddyProfileContext(ctx context.Context, mid string) (*BuddyProfile, error) {
+	resp, err := c.callRPCContext(ctx, "BuddyService", "getBuddyProfile", mid)
 	if err != nil {
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int          `json:"code"`
-		Message string       `json:"message"`
-		Data    BuddyProfile `json:"data"`
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, err
+		return nil, errors.New("invalid getBuddyProfile response")
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getBuddyProfile failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getBuddyProfile response code")
 	}
-	return &wrapper.Data, nil
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	trimmed := strings.TrimSpace(string(wrapper.Data))
+	if trimmed == "" || trimmed == "null" {
+		return nil, ErrBuddyNotFound
+	}
+	var profile BuddyProfile
+	if err := json.Unmarshal(wrapper.Data, &profile); err != nil {
+		return nil, errors.New("invalid getBuddyProfile profile data")
+	}
+	return &profile, nil
 }
 
 // GetSticonOwnershipByMid fetches sticon ownership entries for a user.
@@ -704,6 +727,39 @@ func (c *Client) GetChatsContext(ctx context.Context, mids []string, withMembers
 		return nil, errors.New("missing getChats response")
 	}
 	return wrapper.Data, nil
+}
+
+// GetRoomsV2 fetches metadata and member lists for legacy multi-person rooms (r...).
+func (c *Client) GetRoomsV2(mids []string) ([]Room, error) {
+	return c.GetRoomsV2Context(context.Background(), mids)
+}
+
+func (c *Client) GetRoomsV2Context(ctx context.Context, mids []string) ([]Room, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getRoomsV2", mids)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(resp, &wrapper); err != nil {
+		return nil, errors.New("invalid getRoomsV2 response")
+	}
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getRoomsV2 response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	var rooms []Room
+	if err := json.Unmarshal(wrapper.Data, &rooms); err != nil {
+		return nil, errors.New("invalid getRoomsV2 response")
+	}
+	if rooms == nil {
+		return nil, errors.New("missing getRoomsV2 response")
+	}
+	return rooms, nil
 }
 
 func (c *Client) GetLastOpRevision() (int64, error) {

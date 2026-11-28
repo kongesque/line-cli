@@ -155,6 +155,7 @@ func mutatingInvocations() []struct {
 		{[]string{"login", "--email", "you@example.com"}, false, false},
 		{[]string{"login", "--qr-url", "--force"}, false, false},
 		{[]string{"logout"}, false, false},
+		{[]string{"logout", "--local-only"}, false, false},
 		{[]string{"auth", "migrate", "--storage=headless"}, false, false},
 		{[]string{"update"}, false, false},
 		{[]string{"update", "--json"}, false, false},

@@ -19,6 +19,7 @@ var (
 	ErrNoUsableE2EEPublicKey = errors.New("no usable E2EE public key")
 	ErrNoUsableE2EEGroupKey  = errors.New("no usable E2EE group key")
 	ErrGroupKeyNotFound      = errors.New("group key not found")
+	ErrBuddyNotFound         = errors.New("buddy profile not found")
 )
 
 // IsE2EEDisabled accepts explicit capability responses only. Unlike the legacy
@@ -324,6 +325,25 @@ func IsTalkExceptionNotFound(err error) bool {
 			strings.Contains(msg, "\"code\": 5,")) &&
 		(strings.Contains(msg, "\"reason\":\"not found\"") ||
 			strings.Contains(msg, "\"reason\": \"not found\""))
+}
+
+// IsBuddyNotFound returns true when BuddyService/getBuddyProfile indicates that
+// the target MID is not an official/business account. Transient and auth errors
+// never match.
+func IsBuddyNotFound(err error) bool {
+	if err == nil || IsAuthError(err) || IsTransientError(err) {
+		return false
+	}
+	if errors.Is(err, ErrBuddyNotFound) || IsTalkExceptionNotFound(err) {
+		return true
+	}
+	msg := protocolMessage(err)
+	if !hasResponseErrorCode(msg) {
+		return false
+	}
+	return isExceptionCode(err, "TalkException", 5) ||
+		isExceptionCode(err, "TalkException", 35) ||
+		isExceptionCode(err, "BuddyException", 5)
 }
 
 // IsNotAMemberError returns true when the API reports the user is not a member of a chat.

@@ -164,22 +164,25 @@ func (a *App) run(args []string) error {
 	}
 	fs := newFlagSet(command)
 	var timeout time.Duration
-	if command == "whoami" {
-		fs.DurationVar(&timeout, "timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
-	}
 	var jsonOutput bool
 	var showIDs bool
+	var localOnly bool
 	if command == "whoami" {
+		fs.DurationVar(&timeout, "timeout", 0, "command deadline including preparation, e.g. 30s; 0 disables it")
 		fs.BoolVar(&showIDs, "show-ids", false, "show your account ID")
 		fs.BoolVar(&jsonOutput, "json", false, "write JSON to stdout")
+	} else if command == "logout" {
+		fs.BoolVar(&localOnly, "local-only", false, "remove saved credentials on this device without contacting LINE")
+		fs.DurationVar(&timeout, "timeout", 15*time.Second, "command deadline for remote revocation, e.g. 15s; 0 disables it")
 	}
 	h := commandHelp{Command: "whoami", Usage: []string{"line whoami [options]"}, About: "Show the account this device is signed in to.",
 		Groups:   []flagGroup{{"Output", []string{"json", "show-ids"}}, {"Request", []string{"timeout"}}},
 		Examples: []string{"line whoami", "line whoami --json"}}
 	if command == "logout" {
-		h = commandHelp{Command: "logout", Usage: []string{"line logout"},
-			About:    "Remove the saved LINE session from this device. This does not sign out\nyour phone or other devices, and your LINE account stays active. LINE's\nservers are not contacted, so the session is not revoked there; run\nline login to sign in here again.",
-			Examples: []string{"line logout"}}
+		h = commandHelp{Command: "logout", Usage: []string{"line logout [options]"},
+			About:    "Revoke this device's LINE session on LINE's servers and delete saved\ncredentials from this device. Signing out here does not sign out\nyour phone or other devices, and your LINE account stays active.\nUse --local-only to delete local credentials offline.",
+			Groups:   []flagGroup{{"Options", []string{"local-only", "timeout"}}},
+			Examples: []string{"line logout", "line logout --local-only"}}
 	}
 	if shown, err := a.parseFlags(fs, h, args[1:]); shown || err != nil {
 		return err
@@ -203,10 +206,19 @@ func (a *App) run(args []string) error {
 	}
 	defer unlock()
 	if command == "logout" {
+		if !localOnly {
+			if err := a.Manager.LogoutContext(a.loginContext()); err != nil {
+				return fmt.Errorf("could not revoke LINE session remotely: %w; retry or run line logout --local-only to remove local credentials offline", err)
+			}
+		}
 		if err := a.Manager.Store.Delete(); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintln(a.Out, "Signed out on this device. Your LINE account remains active on your phone.")
+		if localOnly {
+			_, err := fmt.Fprintln(a.Out, "Signed out on this device (local credentials removed without contacting LINE). Your LINE account remains active on your phone.")
+			return err
+		}
+		_, err := fmt.Fprintln(a.Out, "Signed out and revoked this device's LINE session. Your LINE account remains active on your phone.")
 		return err
 	}
 

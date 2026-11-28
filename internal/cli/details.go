@@ -102,6 +102,24 @@ func (a *App) profileNames(mids []string) (map[string]string, error) {
 			}
 		}
 	}
+	var missing []string
+	for _, id := range ids {
+		if strings.TrimSpace(names[id]) == "" && chatKind(id) == "Direct" {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) > 0 {
+		buddies, err := a.fetchBuddyProfiles(a.loginContext(), missing)
+		if a.loginContext().Err() != nil {
+			return nil, a.loginContext().Err()
+		}
+		if fatal := enrichmentError(err); fatal != nil {
+			return nil, fatal
+		}
+		for id, contact := range buddies {
+			names[id] = contact.EffectiveDisplayName()
+		}
+	}
 	return names, nil
 }
 

@@ -129,3 +129,51 @@ func TestWhoamiRejectedSessionHasSafeReloginGuidance(t *testing.T) {
 func (f *rejectedSessionAPI) GetProfileContext(_ context.Context) (*line.Profile, error) {
 	return f.GetProfile()
 }
+
+func TestLogoutRevokesRemotelyAndSupportsLocalOnly(t *testing.T) {
+	t.Run("revokes remotely and deletes local session", func(t *testing.T) {
+		f := &readAPI{}
+		a, out, _ := testApp(f)
+		store := a.Manager.Store.(*testStore)
+		if err := a.Run([]string{"logout"}); err != nil {
+			t.Fatal(err)
+		}
+		if f.logoutCalls != 1 || store.state != nil || !strings.Contains(out.String(), "revoked") {
+			t.Fatalf("logout did not revoke/delete: calls=%d state=%v out=%q", f.logoutCalls, store.state, out.String())
+		}
+	})
+
+	t.Run("already logged out remotely still deletes local session", func(t *testing.T) {
+		f := &readAPI{logoutErr: fmt.Errorf(`API error 401: {"code":10004,"message":"REQUEST_NEED_LOGIN"}`)}
+		a, _, _ := testApp(f)
+		store := a.Manager.Store.(*testStore)
+		if err := a.Run([]string{"logout"}); err != nil {
+			t.Fatal(err)
+		}
+		if f.logoutCalls != 1 || store.state != nil {
+			t.Fatalf("already-logged-out session was not cleaned up: calls=%d state=%v", f.logoutCalls, store.state)
+		}
+	})
+
+	t.Run("network failure preserves local session and instructs --local-only", func(t *testing.T) {
+		f := &readAPI{logoutErr: fmt.Errorf("connection refused")}
+		a, _, _ := testApp(f)
+		store := a.Manager.Store.(*testStore)
+		err := a.Run([]string{"logout"})
+		if err == nil || !strings.Contains(err.Error(), "--local-only") || store.state == nil || f.logoutCalls != 1 {
+			t.Fatalf("logout failure did not preserve state or instruct --local-only: err=%v state=%v calls=%d", err, store.state, f.logoutCalls)
+		}
+	})
+
+	t.Run("--local-only skips remote call and deletes local session", func(t *testing.T) {
+		f := &readAPI{logoutErr: fmt.Errorf("offline")}
+		a, out, _ := testApp(f)
+		store := a.Manager.Store.(*testStore)
+		if err := a.Run([]string{"logout", "--local-only"}); err != nil {
+			t.Fatal(err)
+		}
+		if f.logoutCalls != 0 || store.state != nil || !strings.Contains(out.String(), "without contacting LINE") {
+			t.Fatalf("--local-only contacted LINE or kept state: calls=%d state=%v out=%q", f.logoutCalls, store.state, out.String())
+		}
+	})
+}

@@ -29,6 +29,9 @@ type API interface {
 	GetAllContactIdsContext(context.Context) ([]string, error)
 	GetContactsV2([]string) (*line.ContactsResponse, error)
 	GetContactsV2Context(context.Context, []string) (*line.ContactsResponse, error)
+	GetBuddyProfileContext(context.Context, string) (*line.BuddyProfile, error)
+	GetRoomsV2Context(context.Context, []string) ([]line.Room, error)
+	LogoutContext(context.Context) error
 	GetMessageBoxes(line.MessageBoxesOptions) (*line.MessageBoxesResponse, error)
 	GetMessageBoxesContext(context.Context, line.MessageBoxesOptions) (*line.MessageBoxesResponse, error)
 	GetRecentMessagesV2(string, int) ([]*line.Message, error)
@@ -629,4 +632,41 @@ func (m *Manager) ReserveSequence() (int64, error) {
 		return 0, err
 	}
 	return next, nil
+}
+
+// LogoutContext revokes the saved session remotely via AuthService/logoutV2 once.
+// If LINE confirms the session is already logged out or unauthorized, or if no
+// local session exists, it returns nil so the caller can remove local credentials.
+// Network and transient failures are returned so the caller can instruct --local-only.
+func (m *Manager) LogoutContext(ctx context.Context) error {
+	if err := m.readOnly("logout"); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s, err := m.Store.Load()
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if s == nil || s.Invalidated || s.AccessToken == "" {
+		return nil
+	}
+	api := m.NewClient(s.AccessToken)
+	err = api.LogoutContext(ctx)
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if line.IsLoggedOut(err) || line.IsUnauthorizedStatus(err) {
+		return nil
+	}
+	return remoteError("logout", err)
 }

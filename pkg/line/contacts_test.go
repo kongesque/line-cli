@@ -1,6 +1,7 @@
 package line
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -74,4 +75,73 @@ func TestGetContactsV2UnavailableProfilesDoNotDiscardResolvedContacts(t *testing
 			t.Fatal("unavailable profile became a resolved contact")
 		}
 	}
+}
+
+func TestGetBuddyProfileRoomsV2AndLogoutContracts(t *testing.T) {
+	t.Run("GetBuddyProfileContext", func(t *testing.T) {
+		var body string
+		client := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/BuddyService/getBuddyProfile",
+			`{"code":0,"data":{"buddyMid":"u-official","displayName":"LINE Official","picturePath":"/pic"}}`,
+			&body,
+		)
+		profile, err := client.GetBuddyProfileContext(context.Background(), "u-official")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body != `["u-official"]` || profile.Mid != "u-official" || profile.DisplayName != "LINE Official" {
+			t.Fatalf("unexpected buddy profile: body=%s profile=%+v", body, profile)
+		}
+
+		notFound := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/BuddyService/getBuddyProfile",
+			`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":5,"reason":"not found","secret":"hide"}}`,
+			nil,
+		)
+		_, err = notFound.GetBuddyProfileContext(context.Background(), "u-normal")
+		if !IsBuddyNotFound(err) || strings.Contains(err.Error(), "hide") {
+			t.Fatalf("buddy not-found misclassified or leaked: %v", err)
+		}
+	})
+
+	t.Run("GetRoomsV2Context", func(t *testing.T) {
+		var body string
+		client := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/TalkService/getRoomsV2",
+			`{"code":0,"data":[{"mid":"r-room1","memberMids":{"u-a":true,"u-b":true}}]}`,
+			&body,
+		)
+		rooms, err := client.GetRoomsV2Context(context.Background(), []string{"r-room1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body != `[["r-room1"]]` || len(rooms) != 1 || rooms[0].Mid != "r-room1" || !rooms[0].MemberMids["u-a"] {
+			t.Fatalf("unexpected rooms: body=%s rooms=%+v", body, rooms)
+		}
+	})
+
+	t.Run("LogoutContext", func(t *testing.T) {
+		var body string
+		client := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/AuthService/logoutV2",
+			`{"code":0,"data":null}`,
+			&body,
+		)
+		if err := client.LogoutContext(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if body != `[]` {
+			t.Fatalf("logoutV2 body = %s, want []", body)
+		}
+
+		failClient := newReactionTestClientWithResponse(t,
+			"/api/talk/thrift/Talk/AuthService/logoutV2",
+			`{"code":10051,"message":"RESPONSE_ERROR","data":{"name":"TalkException","code":8,"reason":"V3_TOKEN_CLIENT_LOGGED_OUT","secret":"hide"}}`,
+			nil,
+		)
+		err := failClient.LogoutContext(context.Background())
+		if !IsLoggedOut(err) || strings.Contains(err.Error(), "hide") {
+			t.Fatalf("logoutV2 error misclassified or leaked: %v", err)
+		}
+	})
 }

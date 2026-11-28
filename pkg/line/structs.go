@@ -306,6 +306,12 @@ type Chat struct {
 	Type                 int         `json:"type"` // 0=GROUP, 1=ROOM
 }
 
+type Room struct {
+	Mid        string         `json:"mid"`
+	MemberMids FlexibleMidMap `json:"memberMids"`
+	Contacts   []Contact      `json:"contacts,omitempty"`
+}
+
 type ChatExtra struct {
 	GroupExtra *GroupExtra `json:"groupExtra,omitempty"`
 	PeerExtra  *PeerExtra  `json:"peerExtra,omitempty"`

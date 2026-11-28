@@ -183,11 +183,14 @@ func chatKind(id string) string {
 // Resolve titles in batches without fetching, decoding, or storing message text.
 // Request failures are fatal rather than selecting from partially fetched pages.
 func (a *App) nameChats(chats []Chat) error {
-	var direct, groups []string
+	var direct, groups, rooms []string
 	for _, chat := range chats {
-		if chatKind(chat.ID) == "Direct" {
+		switch chatKind(chat.ID) {
+		case "Direct":
 			direct = append(direct, chat.ID)
-		} else {
+		case "Room":
+			rooms = append(rooms, chat.ID)
+		default:
 			groups = append(groups, chat.ID)
 		}
 	}
@@ -207,6 +210,21 @@ func (a *App) nameChats(chats []Chat) error {
 			names[id] = wrapper.Contact.EffectiveDisplayName()
 		}
 	}
+	var missingDirect []string
+	for _, id := range direct {
+		if strings.TrimSpace(names[id]) == "" {
+			missingDirect = append(missingDirect, id)
+		}
+	}
+	if len(missingDirect) > 0 {
+		buddies, err := a.fetchBuddyProfiles(a.loginContext(), missingDirect)
+		if err != nil {
+			return err
+		}
+		for id, contact := range buddies {
+			names[id] = contact.EffectiveDisplayName()
+		}
+	}
 	// Use the validated LINE group lookup batch size.
 	for start := 0; start < len(groups); start += 20 {
 		var response *line.GetChatsResponse
@@ -223,10 +241,136 @@ func (a *App) nameChats(chats []Chat) error {
 			names[chat.ChatMid] = chat.ChatName
 		}
 	}
+	if len(rooms) > 0 {
+		roomNames, err := a.resolveRoomNames(rooms, names)
+		if err != nil {
+			return err
+		}
+		for id, name := range roomNames {
+			names[id] = name
+		}
+	}
 	for i := range chats {
 		chats[i].Name = names[chats[i].ID]
 	}
 	return nil
+}
+
+func (a *App) resolveRoomNames(roomIDs []string, knownNames map[string]string) (map[string]string, error) {
+	selfMID := ""
+	if s, err := a.Manager.Store.Load(); err == nil && s != nil {
+		selfMID = s.MID
+	}
+	roomMembers := make(map[string][]string, len(roomIDs))
+	memberNames := make(map[string]string)
+	for id, name := range knownNames {
+		if strings.TrimSpace(name) != "" {
+			memberNames[id] = name
+		}
+	}
+	needLookup := make(map[string]bool)
+	for start := 0; start < len(roomIDs); start += 20 {
+		batch := roomIDs[start:min(start+20, len(roomIDs))]
+		var rooms []line.Room
+		if err := a.Manager.DoContext(a.loginContext(), func(api session.API) (err error) {
+			rooms, err = api.GetRoomsV2Context(a.loginContext(), batch)
+			return
+		}); err != nil {
+			return nil, err
+		}
+		for i, room := range rooms {
+			roomID := room.Mid
+			if roomID == "" && len(rooms) == len(batch) {
+				roomID = batch[i]
+			}
+			if roomID == "" {
+				continue
+			}
+			seen := make(map[string]bool)
+			var members []string
+			for _, contact := range room.Contacts {
+				if contact.Mid != "" {
+					if name := contact.EffectiveDisplayName(); strings.TrimSpace(name) != "" {
+						memberNames[contact.Mid] = name
+					}
+					if !seen[contact.Mid] {
+						seen[contact.Mid] = true
+						members = append(members, contact.Mid)
+					}
+				}
+			}
+			for mid := range room.MemberMids {
+				if !seen[mid] {
+					seen[mid] = true
+					members = append(members, mid)
+				}
+			}
+			sort.Strings(members)
+			roomMembers[roomID] = members
+			for _, mid := range members {
+				if mid != selfMID && strings.TrimSpace(memberNames[mid]) == "" {
+					needLookup[mid] = true
+				}
+			}
+		}
+	}
+	if len(needLookup) > 0 {
+		mids := make([]string, 0, len(needLookup))
+		for mid := range needLookup {
+			mids = append(mids, mid)
+		}
+		sort.Strings(mids)
+		contacts, err := a.fetchContacts(mids)
+		if err != nil {
+			return nil, err
+		}
+		var missing []string
+		for _, mid := range mids {
+			if c, ok := contacts[mid]; ok && strings.TrimSpace(c.EffectiveDisplayName()) != "" {
+				memberNames[mid] = c.EffectiveDisplayName()
+			} else {
+				missing = append(missing, mid)
+			}
+		}
+		if len(missing) > 0 {
+			buddies, err := a.fetchBuddyProfiles(a.loginContext(), missing)
+			if err != nil {
+				return nil, err
+			}
+			for mid, c := range buddies {
+				memberNames[mid] = c.EffectiveDisplayName()
+			}
+		}
+	}
+	result := make(map[string]string, len(roomMembers))
+	for roomID, members := range roomMembers {
+		result[roomID] = deriveRoomName(members, selfMID, memberNames)
+	}
+	return result, nil
+}
+
+func deriveRoomName(members []string, selfMID string, names map[string]string) string {
+	var otherNames, selfNames []string
+	for _, mid := range members {
+		name := strings.TrimSpace(names[mid])
+		if name == "" {
+			continue
+		}
+		if mid == selfMID {
+			selfNames = append(selfNames, name)
+		} else {
+			otherNames = append(otherNames, name)
+		}
+	}
+	chosen := otherNames
+	if len(chosen) == 0 {
+		chosen = selfNames
+	}
+	if len(chosen) == 0 {
+		return ""
+	}
+	sort.Strings(chosen)
+	return strings.Join(chosen, ", ")
 }
 
 // Current opaque IDs are a prefix plus 43 base64url characters; legacy MIDs

@@ -31,7 +31,7 @@ func (a *App) membersCommand(args []string) error {
 	}
 	fs := newFlagSet("members")
 	h := commandHelp{Command: "members", Usage: []string{"line members CHAT [options]"},
-		About:    "List current group members and invitees separately, with completeness and\nnames. CHAT is a group ID or unique exact name. Legacy rooms are unsupported.",
+		About:    "List current group or room members (and group invitees) separately, with\ncompleteness and names. CHAT is a group/room ID or unique exact name.",
 		Groups:   []flagGroup{{"Output", []string{"json"}}, {"Request", []string{"timeout"}}},
 		Examples: []string{`line members "Family group"`, "line members GROUP_ID --json"}}
 	jsonOutput := fs.Bool("json", false, "write a versioned membership snapshot as JSON")
@@ -95,7 +95,11 @@ func (a *App) membersCommand(args []string) error {
 		}
 		return result
 	}
-	result := membershipOutput{SchemaVersion: 1, Chat: identity(chat, snapshot.Name, "unavailable"), MembersComplete: snapshot.MembersComplete, InviteesComplete: snapshot.InviteesComplete, Members: rows(snapshot.Members), Invitees: rows(snapshot.Invitees)}
+	chatName := snapshot.Name
+	if strings.TrimSpace(chatName) == "" && chatKind(chat) == "Room" {
+		chatName = deriveRoomName(snapshot.Members, state.MID, names)
+	}
+	result := membershipOutput{SchemaVersion: 1, Chat: identity(chat, chatName, "unavailable"), MembersComplete: snapshot.MembersComplete, InviteesComplete: snapshot.InviteesComplete, Members: rows(snapshot.Members), Invitees: rows(snapshot.Invitees)}
 	if *jsonOutput {
 		return a.json(result)
 	}
