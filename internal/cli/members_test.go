@@ -15,7 +15,9 @@ import (
 type membershipAPI struct {
 	session.API
 	group      *line.GroupExtra
+	rooms      []line.Room
 	contacts   map[string]line.ContactWrapper
+	buddies    map[string]line.BuddyProfile
 	profileErr error
 	batches    []int
 	reads      int
@@ -40,6 +42,19 @@ func (f *membershipAPI) GetContactsV2Context(ctx context.Context, ids []string) 
 		}
 	}
 	return &line.ContactsResponse{Contacts: contacts}, ctx.Err()
+}
+func (f *membershipAPI) GetBuddyProfileContext(_ context.Context, mid string) (*line.BuddyProfile, error) {
+	if b, ok := f.buddies[mid]; ok {
+		return &b, nil
+	}
+	return nil, line.ErrBuddyNotFound
+}
+func (f *membershipAPI) GetRoomsV2Context(ctx context.Context, ids []string) ([]line.Room, error) {
+	f.reads++
+	if len(ids) != 1 {
+		return nil, errors.New("invalid room request")
+	}
+	return f.rooms, ctx.Err()
 }
 func membersApp(f *membershipAPI) (*App, *strings.Builder) {
 	a, _, _ := testApp(nil)
@@ -112,7 +127,7 @@ func TestMembersDistinguishesEmptyFromOmitted(t *testing.T) {
 }
 
 func TestMembersValidationAndHelpBeforeStorage(t *testing.T) {
-	for _, args := range [][]string{{"members"}, {"members", "id:u-peer"}, {"members", "id:r-room"}, {"members", "bad\nname"}, {"members", "id:c-group", "--timeout", "-1s"}, {"members", "id:c-group", "extra"}, {"members", "--help"}, {"--error-format=json", "members", "--help"}} {
+	for _, args := range [][]string{{"members"}, {"members", "id:u-peer"}, {"members", "bad\nname"}, {"members", "id:c-group", "--timeout", "-1s"}, {"members", "id:c-group", "extra"}, {"members", "--help"}, {"--error-format=json", "members", "--help"}} {
 		a, _, _ := testApp(nil)
 		a.Lock = func() (func(), error) { t.Fatal("opened storage for invalid args/help"); return nil, nil }
 		err := a.Run(args)
@@ -155,5 +170,32 @@ func TestMembersDoesNotInventSelfOrAcceptMismatchedProfile(t *testing.T) {
 	var result membershipOutput
 	if json.Unmarshal([]byte(out.String()), &result) != nil || len(result.Members) != 1 || result.Members[0].Self || result.Members[0].Name != nil {
 		t.Fatal("invented self or misattributed profile")
+	}
+}
+
+func TestMembersSupportsLegacyRoomsAndBuddyNames(t *testing.T) {
+	f := &membershipAPI{
+		rooms: []line.Room{{Mid: "r-room", MemberMids: line.FlexibleMidMap{"u-self": true, "u-peer": true, "u-bot": true}}},
+		contacts: map[string]line.ContactWrapper{
+			"u-self": {Contact: line.Contact{Mid: "u-self", DisplayName: "Self"}},
+			"u-peer": {Contact: line.Contact{Mid: "u-peer", DisplayName: "Alice"}},
+		},
+		buddies: map[string]line.BuddyProfile{
+			"u-bot": {Mid: "u-bot", DisplayName: "Official Bot"},
+		},
+	}
+	a, out := membersApp(f)
+	if err := a.Run([]string{"members", "id:r-room", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	var result membershipOutput
+	if err := json.Unmarshal([]byte(out.String()), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.MembersComplete || !result.InviteesComplete || len(result.Members) != 3 || len(result.Invitees) != 0 {
+		t.Fatalf("unexpected room membership: %+v", result)
+	}
+	if result.Chat.Name == nil || *result.Chat.Name != "Alice, Official Bot" {
+		t.Fatalf("unexpected derived room chat name: %+v", result.Chat)
 	}
 }

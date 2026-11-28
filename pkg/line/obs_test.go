@@ -16,20 +16,11 @@ type observedOBSRequest struct {
 	headers http.Header
 }
 
-func installCachedOBSToken(t *testing.T) {
-	t.Helper()
-	obsTokenMu.Lock()
-	oldToken := obsTokenCache
-	oldExpiry := obsTokenExpiry
-	obsTokenCache = "obs-token"
-	obsTokenExpiry = time.Now().Add(time.Hour)
-	obsTokenMu.Unlock()
-	t.Cleanup(func() {
-		obsTokenMu.Lock()
-		obsTokenCache = oldToken
-		obsTokenExpiry = oldExpiry
-		obsTokenMu.Unlock()
-	})
+func installCachedOBSToken(client *Client) {
+	client.obsTokenMu.Lock()
+	client.obsTokenCache = "obs-token"
+	client.obsTokenExpiry = time.Now().Add(time.Hour)
+	client.obsTokenMu.Unlock()
 }
 
 func obsResponse(status int, body string) *http.Response {
@@ -41,8 +32,8 @@ func obsResponse(status int, body string) *http.Response {
 }
 
 func TestDownloadOBSHonorsOptionalSizeLimit(t *testing.T) {
-	installCachedOBSToken(t)
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if strings.HasSuffix(req.URL.Path, "object_info.obs") {
 			return obsResponse(http.StatusOK, `{"status":"exist","encodeStatus":"done"}`), nil
@@ -63,10 +54,10 @@ func TestDownloadOBSHonorsOptionalSizeLimit(t *testing.T) {
 }
 
 func TestDownloadOBSPlainMatchesChromeRequestFlow(t *testing.T) {
-	installCachedOBSToken(t)
 
 	var requests []observedOBSRequest
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests = append(requests, observedOBSRequest{
@@ -150,12 +141,16 @@ func TestDownloadOBSPublicResourceMatchesChromeRequestFlow(t *testing.T) {
 	}
 }
 
-func TestDownloadOBSPublicResourceRejectsExternalURL(t *testing.T) {
+func TestDownloadOBSPublicResourceRejectsUnsafeURLs(t *testing.T) {
 	client := NewClient("line-token")
 	for _, resourcePath := range []string{
-		"https://example.com/image",
 		"//example.com/image",
 		"relative/image",
+		"ftp://example.com/image",
+		"https://127.0.0.1/image",
+		"https://user:pass@example.com/image",
+		"https://example.com:8443/image",
+		"https://example.com/image#frag",
 	} {
 		if _, err := client.DownloadOBSPublicResource(context.Background(), resourcePath); err == nil {
 			t.Fatalf("resource path %q was accepted", resourcePath)
@@ -178,10 +173,10 @@ func TestDownloadOBSPublicResourceClassifiesMissingObject(t *testing.T) {
 }
 
 func TestDownloadOBSResourceUsesReceiveServiceAndSID(t *testing.T) {
-	installCachedOBSToken(t)
 
 	var requests []observedOBSRequest
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests = append(requests, observedOBSRequest{
@@ -222,10 +217,10 @@ func TestDownloadOBSResourceUsesReceiveServiceAndSID(t *testing.T) {
 }
 
 func TestDownloadOBSPreflightsBaseObjectBeforeTID(t *testing.T) {
-	installCachedOBSToken(t)
 
 	var requests []observedOBSRequest
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests = append(requests, observedOBSRequest{path: req.URL.Path, query: req.URL.RawQuery})
@@ -260,10 +255,10 @@ func TestDownloadOBSPreflightsBaseObjectBeforeTID(t *testing.T) {
 }
 
 func TestDownloadOBSEncryptedIncludesTalkMeta(t *testing.T) {
-	installCachedOBSToken(t)
 
 	var talkMetaHeaders []string
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			talkMetaHeaders = append(talkMetaHeaders, req.Header.Get("X-Talk-Meta"))
@@ -289,13 +284,13 @@ func TestDownloadOBSEncryptedIncludesTalkMeta(t *testing.T) {
 }
 
 func TestDownloadOBSWaitsForObjectEncoding(t *testing.T) {
-	installCachedOBSToken(t)
 	oldDelay := obsRetryDelay
 	obsRetryDelay = 0
 	t.Cleanup(func() { obsRetryDelay = oldDelay })
 
 	var paths []string
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			paths = append(paths, req.URL.Path)
@@ -328,9 +323,9 @@ func TestDownloadOBSWaitsForObjectEncoding(t *testing.T) {
 }
 
 func TestDownloadOBSClassifiesMissingObject(t *testing.T) {
-	installCachedOBSToken(t)
 
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			return obsResponse(http.StatusOK, `{"status":"notexist"}`), nil
@@ -344,9 +339,9 @@ func TestDownloadOBSClassifiesMissingObject(t *testing.T) {
 }
 
 func TestDownloadOBSDoesNotCallObjectInfoHTTP404Expired(t *testing.T) {
-	installCachedOBSToken(t)
 
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			return obsResponse(http.StatusNotFound, "not found"), nil
@@ -363,9 +358,9 @@ func TestDownloadOBSDoesNotCallObjectInfoHTTP404Expired(t *testing.T) {
 }
 
 func TestDownloadOBSClassifiesObjectInfoUnauthorized(t *testing.T) {
-	installCachedOBSToken(t)
 
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			return obsResponse(http.StatusUnauthorized, "unauthorized"), nil
@@ -379,10 +374,10 @@ func TestDownloadOBSClassifiesObjectInfoUnauthorized(t *testing.T) {
 }
 
 func TestDownloadOBSDoesNotCallPostPreflight404Expired(t *testing.T) {
-	installCachedOBSToken(t)
 
 	var requests int
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests++
@@ -403,13 +398,13 @@ func TestDownloadOBSDoesNotCallPostPreflight404Expired(t *testing.T) {
 }
 
 func TestDownloadOBSClassifiesEncodingRetryExhaustion(t *testing.T) {
-	installCachedOBSToken(t)
 	oldDelay := obsRetryDelay
 	obsRetryDelay = 0
 	t.Cleanup(func() { obsRetryDelay = oldDelay })
 
 	var requests int
 	client := NewClient("line-token")
+	installCachedOBSToken(client)
 	client.OBSClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests++
@@ -562,11 +557,11 @@ func TestDownloadAlbumPreviewClassifiesHTTPStatus(t *testing.T) {
 }
 
 func TestDownloadOBSAllEncryptedMediaUseFullObject(t *testing.T) {
-	installCachedOBSToken(t)
 	for _, sid := range []string{"emi", "emv", "ema", "emf"} {
 		t.Run(sid, func(t *testing.T) {
 			var requests []observedOBSRequest
 			client := NewClient("synthetic")
+			installCachedOBSToken(client)
 			client.OBSClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				requests = append(requests, observedOBSRequest{path: req.URL.Path, query: req.URL.RawQuery, headers: req.Header.Clone()})
 				if strings.HasSuffix(req.URL.Path, "object_info.obs") {
@@ -737,5 +732,99 @@ func TestDownloadAlbumPreviewExact20MiBLimit(t *testing.T) {
 	data, err = client.DownloadAlbumPreview(context.Background(), "oid-1", "c1234", "")
 	if !errors.Is(err, ErrOBSSizeLimit) || data != nil {
 		t.Fatalf("20 MiB + 1: data=%d err=%v, want ErrOBSSizeLimit", len(data), err)
+	}
+}
+
+func TestDownloadOBSOriginal404FallsBackToDefaultVariant(t *testing.T) {
+
+	var requests []observedOBSRequest
+	client := NewClient("line-token")
+	installCachedOBSToken(client)
+	client.OBSClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests = append(requests, observedOBSRequest{path: req.URL.Path, query: req.URL.RawQuery})
+			switch req.URL.Path {
+			case "/r/talk/m/msg-1/object_info.obs":
+				return obsResponse(http.StatusOK, `{"status":"exist","encodeStatus":"done"}`), nil
+			case "/r/talk/m/msg-1/original":
+				return obsResponse(http.StatusNotFound, "original not available"), nil
+			case "/r/talk/m/msg-1":
+				return obsResponse(http.StatusOK, "default-bytes"), nil
+			default:
+				return obsResponse(http.StatusInternalServerError, "unexpected"), nil
+			}
+		}),
+	}
+
+	data, err := client.DownloadOBSWithSIDOptions(context.Background(), "msg-1", "", "m", OBSDownloadOptions{
+		TID:      "original",
+		OBSPop:   "pop-1",
+		MaxBytes: 13,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "default-bytes" {
+		t.Fatalf("data = %q, want default-bytes", data)
+	}
+	if len(requests) != 3 {
+		t.Fatalf("requests = %d, want 3 (preflight + /original + default)", len(requests))
+	}
+	if requests[1].path != "/r/talk/m/msg-1/original" || requests[2].path != "/r/talk/m/msg-1" || requests[2].query != "p=pop-1" {
+		t.Fatalf("unexpected fallback requests: %#v", requests)
+	}
+}
+
+func TestDownloadOBSOriginalFallbackEnforcesMaxBytes(t *testing.T) {
+
+	client := NewClient("line-token")
+	installCachedOBSToken(client)
+	client.OBSClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/r/talk/m/msg-1/object_info.obs":
+				return obsResponse(http.StatusOK, `{"status":"exist","encodeStatus":"done"}`), nil
+			case "/r/talk/m/msg-1/original":
+				return obsResponse(http.StatusNotFound, "long error body exceeding maxBytes"), nil
+			case "/r/talk/m/msg-1":
+				return obsResponse(http.StatusOK, "123456"), nil
+			default:
+				return obsResponse(http.StatusInternalServerError, "unexpected"), nil
+			}
+		}),
+	}
+
+	_, err := client.DownloadOBSWithSIDOptions(context.Background(), "msg-1", "", "m", OBSDownloadOptions{
+		TID:      "original",
+		MaxBytes: 5,
+	})
+	if !errors.Is(err, ErrOBSSizeLimit) {
+		t.Fatalf("err = %v, want ErrOBSSizeLimit", err)
+	}
+}
+
+func TestDownloadOBSOriginalNon404DoesNotFallBack(t *testing.T) {
+
+	var paths []string
+	client := NewClient("line-token")
+	installCachedOBSToken(client)
+	client.OBSClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			paths = append(paths, req.URL.Path)
+			if strings.HasSuffix(req.URL.Path, "object_info.obs") {
+				return obsResponse(http.StatusOK, `{"status":"exist","encodeStatus":"done"}`), nil
+			}
+			return obsResponse(http.StatusForbidden, "forbidden"), nil
+		}),
+	}
+
+	_, err := client.DownloadOBSWithSIDOptions(context.Background(), "msg-1", "", "m", OBSDownloadOptions{
+		TID: "original",
+	})
+	if !IsUnauthorizedStatus(err) {
+		t.Fatalf("err = %v, want unauthorized status", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("paths = %v, must not fall back on 403", paths)
 	}
 }

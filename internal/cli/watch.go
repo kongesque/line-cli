@@ -140,9 +140,10 @@ func (r *readableWatch) lookup(ctx context.Context, chat, sender string) {
 			continue
 		}
 		r.names[id] = ""
-		if chatKind(id) == "Direct" {
+		switch chatKind(id) {
+		case "Direct":
 			users = append(users, id)
-		} else if chatKind(id) == "Group" {
+		case "Group":
 			var response *line.GetChatsResponse
 			if err := r.a.Manager.DoContext(ctx, func(api session.API) (err error) {
 				response, err = api.GetChatsContext(ctx, []string{id}, false, false)
@@ -152,6 +153,12 @@ func (r *readableWatch) lookup(ctx context.Context, chat, sender string) {
 					if c.ChatMid == id && strings.TrimSpace(c.ChatName) != "" {
 						r.names[id] = c.ChatName
 					}
+				}
+			}
+		case "Room":
+			if roomNames, err := r.a.resolveRoomNames([]string{id}, r.names); err == nil {
+				if name := strings.TrimSpace(roomNames[id]); name != "" {
+					r.names[id] = name
 				}
 			}
 		}
@@ -167,6 +174,19 @@ func (r *readableWatch) lookup(ctx context.Context, chat, sender string) {
 		for id, c := range response.Contacts {
 			if _, asked := r.names[id]; asked {
 				r.names[id] = c.Contact.EffectiveDisplayName()
+			}
+		}
+	}
+	var missing []string
+	for _, id := range users {
+		if strings.TrimSpace(r.names[id]) == "" {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) > 0 {
+		if buddies, err := r.a.fetchBuddyProfiles(ctx, missing); err == nil {
+			for id, c := range buddies {
+				r.names[id] = c.EffectiveDisplayName()
 			}
 		}
 	}

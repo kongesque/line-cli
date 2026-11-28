@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -98,6 +99,9 @@ func (a *App) Run(args []string) (err error) {
 	if command == "invites" && len(args) > 1 && (args[1] == "accept" || args[1] == "reject") {
 		a.errorMutation = &fault.Mutation{Action: args[1] + "_invitation", Outcome: fault.NotAttempted}
 	}
+	if command == "contacts" && len(args) > 1 && (args[1] == "block" || args[1] == "unblock") {
+		a.errorMutation = &fault.Mutation{Action: args[1] + "_contact", Outcome: fault.NotAttempted}
+	}
 	if a.readOnly && a.Manager != nil {
 		// Defense in depth: the session refuses mutations even if a command
 		// path forgets its own gate.
@@ -174,6 +178,9 @@ func DescribeError(err error, stage string, op *fault.Mutation) *fault.Error {
 		code, message = "no_session", "No saved LINE session; run line login."
 	case errors.Is(err, session.ErrSessionInvalidated):
 		code, message = "invalid_session", "The LINE session was invalidated; run line login."
+		if reason := session.InvalidationReason(err); reason != "" {
+			message = fmt.Sprintf("The LINE session was invalidated (%s); run line login.", reason)
+		}
 	case errors.Is(err, session.ErrSessionChanged):
 		code, message = "session_changed", "The saved account changed during the command."
 	case errors.Is(err, session.ErrBusy):

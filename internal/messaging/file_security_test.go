@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -29,11 +30,21 @@ func claimResponse(r *http.Request, status int, body string) *http.Response {
 
 type claimFileAPI struct {
 	*fileAPI
-	wire *line.Client
+	wire      *line.Client
+	refreshes int
 }
 
 func (a *claimFileAPI) SendMessageContext(ctx context.Context, seq int64, m *line.Message) (*line.Message, error) {
 	return a.wire.SendMessageContext(ctx, seq, m)
+}
+
+func (a *claimFileAPI) DownloadOBSPublicResourceWithOptions(ctx context.Context, resourceURL string, opts line.OBSDownloadOptions) ([]byte, error) {
+	return a.wire.DownloadOBSPublicResourceWithOptions(ctx, resourceURL, opts)
+}
+
+func (a *claimFileAPI) RefreshAccessTokenContext(context.Context, string) (*line.TokenV3IssueResult, error) {
+	a.refreshes++
+	return &line.TokenV3IssueResult{AccessToken: "refreshed-token", RefreshToken: "rotated-refresh"}, nil
 }
 
 func TestFileWireEnvelopeProtectsKeyAndName(t *testing.T) {
@@ -187,5 +198,128 @@ func TestEncryptedFileRealRecipientRoundTrip(t *testing.T) {
 	cipher[len(cipher)-1] ^= 1
 	if _, err := decrypt(cipher); err == nil {
 		t.Fatal("tampered sealed payload accepted")
+	}
+}
+
+func TestDownloadExternalURLSafetyAndNoTokenLeak(t *testing.T) {
+	c, f, _, store := setup(t, false)
+	store.state.RefreshToken = "synthetic-refresh-token"
+	wire := line.NewClient("super-secret-line-token")
+	var seenReq *http.Request
+	wire.PublicMediaClient = &http.Client{
+		Transport: claimTransport(func(r *http.Request) (*http.Response, error) {
+			seenReq = r
+			if r.URL.Path == "/oversized" {
+				return claimResponse(r, http.StatusOK, strings.Repeat("a", MaxAttachmentBytes+1)), nil
+			}
+			return claimResponse(r, http.StatusOK, "official-account-image"), nil
+		}),
+	}
+	api := &claimFileAPI{fileAPI: &fileAPI{fakeAPI: f}, wire: wire}
+	c.Session.NewClient = func(string) session.API { return api }
+
+	// 1. Plain external DOWNLOAD_URL succeeds without sending LINE auth headers.
+	f.history = []*line.Message{{
+		ID:          "901",
+		From:        "u-official",
+		To:          "u-self",
+		ContentType: 1,
+		ContentMetadata: map[string]string{
+			"DOWNLOAD_URL": "https://cdn.example.com/official/photo.jpg",
+		},
+	}}
+	data, err := c.DownloadFile(context.Background(), "u-official", "901")
+	if err != nil || string(data) != "official-account-image" {
+		t.Fatalf("external DOWNLOAD_URL failed: data=%q err=%v", data, err)
+	}
+	if seenReq == nil {
+		t.Fatal("external DOWNLOAD_URL did not hit PublicMediaClient")
+	}
+	for _, forbidden := range []string{"X-Line-Access", "Cookie", "X-Line-Application", "X-Talk-Meta"} {
+		if seenReq.Header.Get(forbidden) != "" {
+			t.Fatalf("external host received forbidden header %s", forbidden)
+		}
+	}
+
+	// 2. Oversized external response fails with the 20 MiB limit.
+	f.history[0].ContentMetadata["DOWNLOAD_URL"] = "https://cdn.example.com/oversized"
+	if data, err := c.DownloadFile(context.Background(), "u-official", "901"); err == nil || data != nil || !strings.Contains(err.Error(), "20 MiB") {
+		t.Fatalf("oversized external DOWNLOAD_URL not bounded: err=%v len=%d", err, len(data))
+	}
+
+	// 3. Private IP external URL is blocked without leaking the URL.
+	seenReq = nil
+	f.history[0].ContentMetadata["DOWNLOAD_URL"] = "http://127.0.0.1/private-secret-path"
+	if data, err := c.DownloadFile(context.Background(), "u-official", "901"); err == nil || data != nil || seenReq != nil || strings.Contains(err.Error(), "private-secret-path") {
+		t.Fatalf("private IP DOWNLOAD_URL not blocked safely: err=%v req=%v", err, seenReq)
+	}
+
+	// 4. Relative OBS path DOWNLOAD_URL uses OBS client without auth headers.
+	var obsReq *http.Request
+	wire.OBSClient = &http.Client{
+		Transport: claimTransport(func(r *http.Request) (*http.Response, error) {
+			obsReq = r
+			return claimResponse(r, http.StatusOK, "obs-public-bytes"), nil
+		}),
+	}
+	f.history[0].ContentMetadata["DOWNLOAD_URL"] = "/r/official/item-1"
+	data, err = c.DownloadFile(context.Background(), "u-official", "901")
+	if err != nil || string(data) != "obs-public-bytes" || obsReq == nil || obsReq.Header.Get("X-Line-Access") != "" {
+		t.Fatalf("relative OBS DOWNLOAD_URL failed: data=%q err=%v req=%v", data, err, obsReq)
+	}
+
+	// 5. External 401/403 must never trigger LINE token refresh or classify as LINE auth error.
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		externalHits := 0
+		wire.PublicMediaClient = &http.Client{
+			Transport: claimTransport(func(r *http.Request) (*http.Response, error) {
+				externalHits++
+				return claimResponse(r, status, "external-secret-error"), nil
+			}),
+		}
+		api.refreshes = 0
+		f.history[0].ContentMetadata["DOWNLOAD_URL"] = "https://cdn.example.com/expired-signed-url"
+		data, err = c.DownloadFile(context.Background(), "u-official", "901")
+		if err == nil || data != nil {
+			t.Fatalf("expected error for external status %d, got data=%q err=%v", status, data, err)
+		}
+		if externalHits != 1 || api.refreshes != 0 {
+			t.Fatalf("external %d triggered retry or token refresh: hits=%d refreshes=%d", status, externalHits, api.refreshes)
+		}
+		if line.IsAuthError(session.ProtocolError(err)) || strings.Contains(err.Error(), "external-secret-error") {
+			t.Fatalf("external %d misclassified as LINE auth error or leaked body: %v", status, err)
+		}
+		if !strings.Contains(err.Error(), fmt.Sprintf("status %d", status)) {
+			t.Fatalf("external %d missing status message: %v", status, err)
+		}
+	}
+
+	// 6. External transport errors containing LINE-like auth tokens/codes never
+	// trigger LINE token refresh, session invalidation, or auth-error classification.
+	for _, spoof := range []string{
+		"HTTP 401 V3_TOKEN_CLIENT_LOGGED_OUT",
+		`{"code":10004,"message":"REQUEST_NEED_LOGIN"}`,
+		`{"code":119,"message":"must_refresh_v3_token"}`,
+	} {
+		externalHits := 0
+		wire.PublicMediaClient = &http.Client{
+			Transport: claimTransport(func(r *http.Request) (*http.Response, error) {
+				externalHits++
+				return nil, fmt.Errorf("dial failed: %s", spoof)
+			}),
+		}
+		api.refreshes = 0
+		f.history[0].ContentMetadata["DOWNLOAD_URL"] = "https://cdn.example.com/spoof-auth-error"
+		data, err = c.DownloadFile(context.Background(), "u-official", "901")
+		if err == nil || data != nil {
+			t.Fatalf("expected transport error for %q, got data=%q err=%v", spoof, data, err)
+		}
+		if externalHits != 1 || api.refreshes != 0 || store.state.Invalidated {
+			t.Fatalf("spoofed external error %q triggered retry, refresh, or invalidation: hits=%d refreshes=%d invalidated=%v",
+				spoof, externalHits, api.refreshes, store.state.Invalidated)
+		}
+		if line.IsAuthError(session.ProtocolError(err)) || strings.Contains(err.Error(), "spoof-auth-error") {
+			t.Fatalf("spoofed external error %q classified as auth or leaked URL: %v", spoof, err)
+		}
 	}
 }

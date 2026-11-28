@@ -174,6 +174,17 @@ func TestWireLocationMissingCoordinatesNeverBecomesZero(t *testing.T) {
 	if got := decodeContent("u-peer", &msg, false, ""); got.Status != "ok" || got.Location == nil {
 		t.Fatal("rejected actual zero coordinates")
 	}
+
+	// Quoted string coordinates in encrypted location payloads (beeper/line#358).
+	gotQuoted := decodeContent("u-peer", &line.Message{}, true, `{"location":{"title":"Cafe","address":"Main St","latitude":"35.6762","longitude":"139.6503"}}`)
+	if gotQuoted.Status != "ok" || gotQuoted.Kind != "location" || gotQuoted.Location == nil ||
+		gotQuoted.Location.Title != "Cafe" || gotQuoted.Location.Latitude != 35.6762 || gotQuoted.Location.Longitude != 139.6503 {
+		t.Fatalf("quoted encrypted location failed: %+v", gotQuoted)
+	}
+	gotBadRange := decodeContent("u-peer", &line.Message{}, true, `{"location":{"latitude":"95","longitude":"139.6503"}}`)
+	if gotBadRange.Status != "malformed_metadata" || gotBadRange.Location != nil {
+		t.Fatalf("out-of-range quoted encrypted location accepted: %+v", gotBadRange)
+	}
 }
 
 func TestAttachmentEncryptionMarkersDoNotPermitPlaintextProjection(t *testing.T) {

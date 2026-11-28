@@ -8,14 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-)
-
-var (
-	obsTokenMu     sync.Mutex
-	obsTokenCache  string
-	obsTokenExpiry time.Time
 )
 
 const obsTokenBuffer = 30 * time.Second
@@ -90,6 +83,15 @@ func (c *Client) LoginV2WithVerifier(verifier string) (*LoginResult, error) {
 	return &wrapper.Data, nil
 }
 
+// LogoutContext revokes the current session on LINE's servers via AuthService/logoutV2.
+func (c *Client) LogoutContext(ctx context.Context) error {
+	resp, err := c.callRPCContext(ctx, "AuthService", "logoutV2")
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
+}
+
 // GetProfile fetches the user's profile information
 func (c *Client) GetProfile() (*Profile, error) {
 	return c.GetProfileContext(context.Background())
@@ -149,14 +151,17 @@ func (c *Client) GetE2EEGroupSharedKeyContext(ctx context.Context, chatMid strin
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int             `json:"code"`
+		Code    *int            `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
 	}
-	if wrapper.Code != 0 {
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getE2EEGroupSharedKey response code")
+	}
+	if *wrapper.Code != 0 {
 		return nil, parseE2EEGroupKeyError("getE2EEGroupSharedKey", wrapper.Message, wrapper.Data)
 	}
 	var data E2EEGroupSharedKey
@@ -176,14 +181,17 @@ func (c *Client) GetLastE2EEGroupSharedKeyContext(ctx context.Context, chatMid s
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int             `json:"code"`
+		Code    *int            `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
 	}
-	if wrapper.Code != 0 {
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getLastE2EEGroupSharedKey response code")
+	}
+	if *wrapper.Code != 0 {
 		return nil, parseE2EEGroupKeyError("getLastE2EEGroupSharedKey", wrapper.Message, wrapper.Data)
 	}
 	var data E2EEGroupSharedKey
@@ -204,15 +212,18 @@ func (c *Client) NegotiateE2EEPublicKeyContext(ctx context.Context, mid string) 
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int             `json:"code"`
+		Code    *int            `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("negotiateE2EEPublicKey failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing negotiateE2EEPublicKey response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
 	}
 	return parseE2EEPublicKey(wrapper.Data)
 }
@@ -381,15 +392,18 @@ func (c *Client) GetE2EEPublicKeyContext(ctx context.Context, mid string, keyVer
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int             `json:"code"`
+		Code    *int            `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
 		return nil, err
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getE2EEPublicKey failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getE2EEPublicKey response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
 	}
 
 	return parseE2EEPublicKey(wrapper.Data)
@@ -545,22 +559,36 @@ func (c *Client) GetContactsV2Context(ctx context.Context, mids []string) (*Cont
 
 // GetBuddyProfile fetches the profile of a LINE official/business account (buddy).
 func (c *Client) GetBuddyProfile(mid string) (*BuddyProfile, error) {
-	resp, err := c.callRPC("BuddyService", "getBuddyProfile", mid)
+	return c.GetBuddyProfileContext(context.Background(), mid)
+}
+
+func (c *Client) GetBuddyProfileContext(ctx context.Context, mid string) (*BuddyProfile, error) {
+	resp, err := c.callRPCContext(ctx, "BuddyService", "getBuddyProfile", mid)
 	if err != nil {
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int          `json:"code"`
-		Message string       `json:"message"`
-		Data    BuddyProfile `json:"data"`
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, err
+		return nil, errors.New("invalid getBuddyProfile response")
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getBuddyProfile failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getBuddyProfile response code")
 	}
-	return &wrapper.Data, nil
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	trimmed := strings.TrimSpace(string(wrapper.Data))
+	if trimmed == "" || trimmed == "null" {
+		return nil, ErrBuddyNotFound
+	}
+	var profile BuddyProfile
+	if err := json.Unmarshal(wrapper.Data, &profile); err != nil {
+		return nil, errors.New("invalid getBuddyProfile profile data")
+	}
+	return &profile, nil
 }
 
 // GetSticonOwnershipByMid fetches sticon ownership entries for a user.
@@ -706,6 +734,39 @@ func (c *Client) GetChatsContext(ctx context.Context, mids []string, withMembers
 	return wrapper.Data, nil
 }
 
+// GetRoomsV2 fetches metadata and member lists for legacy multi-person rooms (r...).
+func (c *Client) GetRoomsV2(mids []string) ([]Room, error) {
+	return c.GetRoomsV2Context(context.Background(), mids)
+}
+
+func (c *Client) GetRoomsV2Context(ctx context.Context, mids []string) ([]Room, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getRoomsV2", mids)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(resp, &wrapper); err != nil {
+		return nil, errors.New("invalid getRoomsV2 response")
+	}
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getRoomsV2 response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	var rooms []Room
+	if err := json.Unmarshal(wrapper.Data, &rooms); err != nil {
+		return nil, errors.New("invalid getRoomsV2 response")
+	}
+	if rooms == nil {
+		return nil, errors.New("missing getRoomsV2 response")
+	}
+	return rooms, nil
+}
+
 func (c *Client) GetLastOpRevision() (int64, error) {
 	return c.GetLastOpRevisionContext(context.Background())
 }
@@ -742,13 +803,13 @@ func (c *Client) AcquireEncryptedAccessToken() (string, error) {
 }
 
 func (c *Client) AcquireEncryptedAccessTokenContext(ctx context.Context) (string, error) {
-	obsTokenMu.Lock()
-	if obsTokenCache != "" && time.Now().Before(obsTokenExpiry) {
-		cached := obsTokenCache
-		obsTokenMu.Unlock()
+	c.obsTokenMu.Lock()
+	if c.obsTokenCache != "" && time.Now().Before(c.obsTokenExpiry) {
+		cached := c.obsTokenCache
+		c.obsTokenMu.Unlock()
 		return cached, nil
 	}
-	obsTokenMu.Unlock()
+	c.obsTokenMu.Unlock()
 
 	// 2 = FeatureType::OBS_Authorization.
 	resp, err := c.callRPCContext(ctx, "TalkService", "acquireEncryptedAccessToken", 2)
@@ -777,10 +838,10 @@ func (c *Client) AcquireEncryptedAccessTokenContext(ctx context.Context) (string
 
 	token := parts[1]
 	if expirySec, err := strconv.Atoi(parts[0]); err == nil && expirySec > 0 {
-		obsTokenMu.Lock()
-		obsTokenCache = token
-		obsTokenExpiry = time.Now().Add(time.Duration(expirySec)*time.Second - obsTokenBuffer)
-		obsTokenMu.Unlock()
+		c.obsTokenMu.Lock()
+		c.obsTokenCache = token
+		c.obsTokenExpiry = time.Now().Add(time.Duration(expirySec)*time.Second - obsTokenBuffer)
+		c.obsTokenMu.Unlock()
 	}
 
 	return token, nil
@@ -966,23 +1027,37 @@ func (c *Client) CreateChat(mids []string, name string, chatType int) (*Chat, er
 
 // GetLastE2EEPublicKeys fetches the latest E2EE public keys for all members of a chat.
 // Returns a map of member MID → {keyId, keyData}.
-func (c *Client) GetLastE2EEPublicKeys(req GetLastE2EEPublicKeysRequest) (map[string]E2EEPeerPublicKey, error) {
-	resp, err := c.callRPC("TalkService", "getLastE2EEPublicKeys", req)
+func (c *Client) GetLastE2EEPublicKeys(chatMid string) (map[string]E2EEPeerPublicKey, error) {
+	return c.GetLastE2EEPublicKeysContext(context.Background(), chatMid)
+}
+
+func (c *Client) GetLastE2EEPublicKeysContext(ctx context.Context, chatMid string) (map[string]E2EEPeerPublicKey, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getLastE2EEPublicKeys", chatMid)
 	if err != nil {
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int                          `json:"code"`
-		Message string                       `json:"message"`
-		Data    map[string]E2EEPeerPublicKey `json:"data"`
+		Code    *int            `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, fmt.Errorf("failed to parse getLastE2EEPublicKeys response: %w", err)
+		return nil, errors.New("invalid getLastE2EEPublicKeys response")
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("getLastE2EEPublicKeys failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getLastE2EEPublicKeys response code")
 	}
-	return wrapper.Data, nil
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	var keys map[string]E2EEPeerPublicKey
+	if err := json.Unmarshal(wrapper.Data, &keys); err != nil {
+		return nil, errors.New("invalid getLastE2EEPublicKeys response")
+	}
+	if keys == nil {
+		return nil, errors.New("missing getLastE2EEPublicKeys response")
+	}
+	return keys, nil
 }
 
 // RegisterE2EEGroupKey registers a shared E2EE group key with the server.
@@ -1047,22 +1122,92 @@ func (c *Client) RejectChatInvitationContext(ctx context.Context, reqSeq int64, 
 
 // FindContactByUserid looks up a LINE user by their user ID (not MID).
 func (c *Client) FindContactByUserid(userid string) (*Contact, error) {
-	resp, err := c.callRPC("TalkService", "findContactByUserid", userid)
+	return c.FindContactByUseridContext(context.Background(), userid)
+}
+
+func (c *Client) FindContactByUseridContext(ctx context.Context, userid string) (*Contact, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "findContactByUserid", userid)
 	if err != nil {
 		return nil, err
 	}
 	var wrapper struct {
-		Code    int     `json:"code"`
-		Message string  `json:"message"`
-		Data    Contact `json:"data"`
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp, &wrapper); err != nil {
-		return nil, fmt.Errorf("failed to parse findContactByUserid response: %w", err)
+		return nil, errors.New("invalid findContactByUserid response")
 	}
-	if wrapper.Code != 0 {
-		return nil, fmt.Errorf("findContactByUserid failed: %s", wrapper.Message)
+	if wrapper.Code == nil {
+		return nil, errors.New("missing findContactByUserid response code")
 	}
-	return &wrapper.Data, nil
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	if len(wrapper.Data) == 0 || string(wrapper.Data) == "null" {
+		return nil, ErrContactNotFound
+	}
+	var contact Contact
+	if err := json.Unmarshal(wrapper.Data, &contact); err != nil {
+		return nil, errors.New("invalid findContactByUserid response")
+	}
+	if contact.Mid == "" {
+		return nil, ErrContactNotFound
+	}
+	return &contact, nil
+}
+
+// FindContactByPhone looks up a LINE user by phone number formatted as
+// "+<countryCode> <nationalNumber>" via TalkService/findContactsByPhone.
+func (c *Client) FindContactByPhone(phone string) (*Contact, error) {
+	return c.FindContactByPhoneContext(context.Background(), phone)
+}
+
+func (c *Client) FindContactByPhoneContext(ctx context.Context, phone string) (*Contact, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "findContactsByPhone", []string{phone})
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(resp, &wrapper); err != nil {
+		return nil, errors.New("invalid findContactsByPhone response")
+	}
+	if wrapper.Code == nil {
+		return nil, errors.New("missing findContactsByPhone response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	if len(wrapper.Data) == 0 || string(wrapper.Data) == "null" {
+		return nil, ErrContactNotFound
+	}
+	var contacts map[string]Contact
+	if err := json.Unmarshal(wrapper.Data, &contacts); err != nil {
+		return nil, errors.New("invalid findContactsByPhone response")
+	}
+	if exact, ok := contacts[phone]; ok && exact.Mid != "" {
+		return &exact, nil
+	}
+	var keys []string
+	for k := range contacts {
+		keys = append(keys, k)
+	}
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[j] < keys[i] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	for _, k := range keys {
+		contact := contacts[k]
+		if contact.Mid != "" {
+			return &contact, nil
+		}
+	}
+	return nil, ErrContactNotFound
 }
 
 // GetAllContactIds returns the MIDs of all contacts.
@@ -1111,6 +1256,60 @@ func (c *Client) GetBlockedContactIdsContext(ctx context.Context) ([]string, err
 		return nil, fmt.Errorf("getBlockedContactIds failed: %s", wrapper.Message)
 	}
 	return wrapper.Data, nil
+}
+
+// GetBlockedRecommendationIds returns the MIDs of blocked recommended contacts.
+func (c *Client) GetBlockedRecommendationIds() ([]string, error) {
+	return c.GetBlockedRecommendationIdsContext(context.Background())
+}
+
+func (c *Client) GetBlockedRecommendationIdsContext(ctx context.Context) ([]string, error) {
+	resp, err := c.callRPCContext(ctx, "TalkService", "getBlockedRecommendationIds")
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(resp, &wrapper); err != nil {
+		return nil, errors.New("invalid getBlockedRecommendationIds response")
+	}
+	if wrapper.Code == nil {
+		return nil, errors.New("missing getBlockedRecommendationIds response code")
+	}
+	if *wrapper.Code != 0 {
+		return nil, responseError(200, resp)
+	}
+	if len(wrapper.Data) == 0 || string(wrapper.Data) == "null" {
+		return []string{}, nil
+	}
+	var ids []string
+	if err := json.Unmarshal(wrapper.Data, &ids); err != nil {
+		return nil, errors.New("invalid getBlockedRecommendationIds response")
+	}
+	return ids, nil
+}
+
+// SetContactBlocked blocks or unblocks a contact on LINE.
+func (c *Client) SetContactBlocked(reqSeq int64, mid string, blocked bool) error {
+	return c.SetContactBlockedContext(context.Background(), reqSeq, mid, blocked)
+}
+
+func (c *Client) SetContactBlockedContext(ctx context.Context, reqSeq int64, mid string, blocked bool) error {
+	var (
+		resp []byte
+		err  error
+	)
+	if blocked {
+		resp, err = c.callRPCContext(ctx, "TalkService", "blockContact", reqSeq, mid)
+	} else {
+		resp, err = c.callRPCContext(ctx, "TalkService", "unblockContact", reqSeq, mid, "")
+	}
+	if err != nil {
+		return err
+	}
+	return mutationResponse(resp)
 }
 
 // DetermineMediaMessageFlow asks the server which upload path to use for media

@@ -90,6 +90,13 @@ type fakeAPI struct {
 	refreshResult *line.TokenV3IssueResult
 	refreshErr    error
 	refreshCalls  int
+	logoutErr     error
+	logoutCalls   int
+}
+
+func (f *fakeAPI) LogoutContext(context.Context) error {
+	f.logoutCalls++
+	return f.logoutErr
 }
 
 func (f *fakeAPI) Login(email, password, certificate string) (*line.LoginResult, error) {

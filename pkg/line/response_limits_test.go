@@ -140,7 +140,11 @@ func TestSSELineAndAggregateBudgets(t *testing.T) {
 				return &http.Response{StatusCode: 200, Body: &policyBody{Reader: strings.NewReader(tc.body), closed: &closed}}, nil
 			})}
 			emitted := 0
-			err := NewClient("synthetic").ListenSSE(context.Background(), 0, func(string, string) { emitted++ })
+			err := NewClient("synthetic").ListenSSE(context.Background(), 0, func(event, _ string) {
+				if event != SSEEventOpen {
+					emitted++
+				}
+			})
 			if errors.Is(err, ErrResponseTooLarge) != tc.oversize || emitted != tc.want || !closed {
 				t.Fatal("SSE exceeded budget or emitted partial event", err, emitted)
 			}

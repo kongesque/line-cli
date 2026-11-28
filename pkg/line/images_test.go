@@ -28,13 +28,9 @@ func TestMediaFlowRequestAndMalformedResponses(t *testing.T) {
 }
 
 func TestImageUploadTransportContracts(t *testing.T) {
-	obsTokenMu.Lock()
-	old, expiry := obsTokenCache, obsTokenExpiry
-	obsTokenCache, obsTokenExpiry = "synthetic-obs-token", time.Now().Add(time.Hour)
-	obsTokenMu.Unlock()
-	defer func() { obsTokenMu.Lock(); obsTokenCache, obsTokenExpiry = old, expiry; obsTokenMu.Unlock() }()
 	for _, kind := range []string{"encrypted", "preview", "plain"} {
 		c := NewClient("synthetic")
+		c.obsTokenCache, c.obsTokenExpiry = "synthetic-obs-token", time.Now().Add(time.Hour)
 		calls := 0
 		c.OBSClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			calls++
@@ -97,15 +93,11 @@ func TestImageUploadTransportContracts(t *testing.T) {
 }
 
 func TestImagePreviewCancellationAndLostResponse(t *testing.T) {
-	obsTokenMu.Lock()
-	old, expiry := obsTokenCache, obsTokenExpiry
-	obsTokenCache, obsTokenExpiry = "synthetic", time.Now().Add(time.Hour)
-	obsTokenMu.Unlock()
-	defer func() { obsTokenMu.Lock(); obsTokenCache, obsTokenExpiry = old, expiry; obsTokenMu.Unlock() }()
 	for _, mode := range []string{"before", "during", "lost"} {
 		ctx, cancel := context.WithCancel(context.Background())
 		calls := 0
 		c := NewClient("synthetic")
+		c.obsTokenCache, c.obsTokenExpiry = "synthetic", time.Now().Add(time.Hour)
 		c.OBSClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			calls++
 			if mode == "during" {

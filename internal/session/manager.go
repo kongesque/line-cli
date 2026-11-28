@@ -29,6 +29,9 @@ type API interface {
 	GetAllContactIdsContext(context.Context) ([]string, error)
 	GetContactsV2([]string) (*line.ContactsResponse, error)
 	GetContactsV2Context(context.Context, []string) (*line.ContactsResponse, error)
+	GetBuddyProfileContext(context.Context, string) (*line.BuddyProfile, error)
+	GetRoomsV2Context(context.Context, []string) ([]line.Room, error)
+	LogoutContext(context.Context) error
 	GetMessageBoxes(line.MessageBoxesOptions) (*line.MessageBoxesResponse, error)
 	GetMessageBoxesContext(context.Context, line.MessageBoxesOptions) (*line.MessageBoxesResponse, error)
 	GetRecentMessagesV2(string, int) ([]*line.Message, error)
@@ -36,6 +39,10 @@ type API interface {
 	GetPreviousMessagesV2Context(context.Context, string, line.MessageIDWrapper, int) ([]*line.Message, error)
 	GetBlockedContactIds() ([]string, error)
 	GetBlockedContactIdsContext(context.Context) ([]string, error)
+	GetBlockedRecommendationIdsContext(context.Context) ([]string, error)
+	FindContactByUseridContext(context.Context, string) (*line.Contact, error)
+	FindContactByPhoneContext(context.Context, string) (*line.Contact, error)
+	SetContactBlockedContext(context.Context, int64, string, bool) error
 	NegotiateE2EEPublicKey(string) (*line.E2EEPublicKey, error)
 	NegotiateE2EEPublicKeyContext(context.Context, string) (*line.E2EEPublicKey, error)
 	GetE2EEPublicKey(string, int, int) (*line.E2EEPublicKey, error)
@@ -44,6 +51,7 @@ type API interface {
 	GetE2EEGroupSharedKeyContext(context.Context, string, int) (*line.E2EEGroupSharedKey, error)
 	GetLastE2EEGroupSharedKey(string) (*line.E2EEGroupSharedKey, error)
 	GetLastE2EEGroupSharedKeyContext(context.Context, string) (*line.E2EEGroupSharedKey, error)
+	GetLastE2EEPublicKeysContext(context.Context, string) (map[string]line.E2EEPeerPublicKey, error)
 	GetChats([]string, bool, bool) (*line.GetChatsResponse, error)
 	GetChatsContext(context.Context, []string, bool, bool) (*line.GetChatsResponse, error)
 	RegisterE2EEGroupKey(int, string, []string, []int, []string) error
@@ -67,6 +75,7 @@ type API interface {
 	UploadOBSPlain([]byte, string, string) error
 	UploadOBSPlainContext(context.Context, []byte, string, string) error
 	DownloadOBSWithSIDOptions(context.Context, string, string, string, line.OBSDownloadOptions) ([]byte, error)
+	DownloadOBSPublicResourceWithOptions(context.Context, string, line.OBSDownloadOptions) ([]byte, error)
 	DownloadAlbumPreview(context.Context, string, string, string) ([]byte, error)
 }
 
@@ -466,7 +475,7 @@ func (m *Manager) do(ctx context.Context, call func(API) error, retry bool) erro
 		}
 		stale := current.AccessToken != s.AccessToken || current.RefreshToken != s.RefreshToken
 		if !stale && line.IsLoggedOut(err) {
-			return m.invalidate(s)
+			return m.invalidate(s, err)
 		}
 		if stale {
 			s = current
@@ -490,13 +499,37 @@ func (m *Manager) do(ctx context.Context, call func(API) error, retry bool) erro
 		}
 		err = call(api)
 		if line.IsLoggedOut(err) {
-			return m.invalidate(s)
+			return m.invalidate(s, err)
 		}
 	}
 	return remoteError("request", err)
 }
 
-func (m *Manager) invalidate(failed *State) error {
+// SessionInvalidatedError wraps ErrSessionInvalidated with a bounded, safe
+// LINE logout classification label (never raw server text).
+type SessionInvalidatedError struct {
+	Reason string
+}
+
+func (e *SessionInvalidatedError) Error() string {
+	if e != nil && e.Reason != "" {
+		return fmt.Sprintf("LINE session was invalidated or replaced by another client (%s); run line login", e.Reason)
+	}
+	return ErrSessionInvalidated.Error()
+}
+
+func (e *SessionInvalidatedError) Unwrap() error { return ErrSessionInvalidated }
+
+// InvalidationReason extracts the safe, bounded LINE logout reason from err, if any.
+func InvalidationReason(err error) string {
+	var inv *SessionInvalidatedError
+	if errors.As(err, &inv) {
+		return inv.Reason
+	}
+	return ""
+}
+
+func (m *Manager) invalidate(failed *State, cause error) error {
 	s, err := m.Store.Load()
 	if err != nil {
 		return err
@@ -511,6 +544,9 @@ func (m *Manager) invalidate(failed *State) error {
 	s.Invalidated = true
 	if err := m.Store.Save(s); err != nil {
 		return err
+	}
+	if reason := line.LogoutReason(cause); reason != "" {
+		return &SessionInvalidatedError{Reason: reason}
 	}
 	return ErrSessionInvalidated
 }
@@ -537,7 +573,7 @@ func (m *Manager) RecoverStream(ctx context.Context, generation, accessToken str
 		return nil
 	}
 	if line.IsLoggedOut(cause) {
-		return m.invalidate(s)
+		return m.invalidate(s, cause)
 	}
 	if !line.IsAuthError(cause) {
 		return remoteError("stream", cause)
@@ -628,4 +664,43 @@ func (m *Manager) ReserveSequence() (int64, error) {
 		return 0, err
 	}
 	return next, nil
+}
+
+// LogoutContext revokes the saved session remotely via AuthService/logoutV2 once.
+// Only explicit logoutV2 success or a confirmed forced-logout response
+// (line.IsLoggedOut) returns nil so the caller can remove local credentials.
+// Bare HTTP 401/403 (e.g. an expired access token), network, and transient
+// failures retain local credentials and return an error so the caller can retry
+// or instruct --local-only.
+func (m *Manager) LogoutContext(ctx context.Context) error {
+	if err := m.readOnly("logout"); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s, err := m.Store.Load()
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if s == nil || s.Invalidated || s.AccessToken == "" {
+		return nil
+	}
+	api := m.NewClient(s.AccessToken)
+	err = api.LogoutContext(ctx)
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if line.IsLoggedOut(err) {
+		return nil
+	}
+	return remoteError("logout", err)
 }

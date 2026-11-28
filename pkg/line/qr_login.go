@@ -58,7 +58,10 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	gen "github.com/kongesque/line-cli/pkg"
 )
@@ -90,6 +93,44 @@ var (
 	ErrQRPinTimeout          = errors.New("PIN approval timed out")
 )
 
+// QRError carries structured LINE QR login exception metadata parsed from a
+// gateway error envelope. Its Error() output formats only numeric codes and
+// recognized safe enum tokens, never arbitrary server bodies or secrets.
+type QRError struct {
+	Method       string
+	HTTPStatus   int
+	GatewayCode  int
+	Code         *int
+	Reason       string
+	AlertMessage string
+}
+
+func (e *QRError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "QR %s failed (HTTP %d, gateway code %d", e.Method, e.HTTPStatus, e.GatewayCode)
+	if e.Code != nil {
+		fmt.Fprintf(&b, ", code %d", *e.Code)
+	}
+	if reason := e.SafeReason(); reason != "" {
+		fmt.Fprintf(&b, ", reason %s", reason)
+	}
+	b.WriteByte(')')
+	return b.String()
+}
+
+// SafeReason returns e.Reason only when it is a safe, bounded uppercase enum
+// token, never arbitrary server text.
+func (e *QRError) SafeReason() string {
+	if e == nil {
+		return ""
+	}
+	reason := strings.TrimSpace(e.Reason)
+	if !isSafeEnumToken(reason) {
+		return ""
+	}
+	return reason
+}
+
 // QRServiceError retains numeric classification without retaining server
 // messages, exception names, URLs, or raw response bodies. No certificate
 // rejection code is classified outside the narrowly evidenced verification case.
@@ -99,10 +140,18 @@ type QRServiceError struct {
 	Code        int
 	StatusCode  int
 	ServiceCode *int
+	Detail      *QRError
 }
 
 func (e *QRServiceError) Error() string {
 	return fmt.Sprintf("QR %s failed (HTTP %d, gateway code %d)", e.Method, e.HTTPStatus, e.Code)
+}
+
+func (e *QRServiceError) Unwrap() error {
+	if e.Detail == nil {
+		return nil
+	}
+	return e.Detail
 }
 
 // QRCompleteError marks possible dispatch, including a lost response. A true
@@ -535,13 +584,27 @@ func parseQREnvelope(method string, status int, body []byte, out any) error {
 	if *env.Code != 0 {
 		e := &QRServiceError{Method: method, HTTPStatus: status, Code: *env.Code}
 		var data struct {
-			StatusCode int  `json:"statusCode"`
-			Code       *int `json:"code"`
+			StatusCode   int    `json:"statusCode"`
+			Code         *int   `json:"code"`
+			Reason       string `json:"reason"`
+			AlertMessage string `json:"alertMessage"`
 		}
 		if json.Unmarshal(env.Data, &data) == nil {
 			e.ServiceCode = data.Code
 			if e.Code == gatewayResponseHTTPError {
 				e.StatusCode = data.StatusCode
+			}
+			reason := sanitizeQRField(data.Reason, 128)
+			alert := sanitizeQRField(data.AlertMessage, 256)
+			if data.Code != nil || reason != "" || alert != "" {
+				e.Detail = &QRError{
+					Method:       method,
+					HTTPStatus:   status,
+					GatewayCode:  *env.Code,
+					Code:         data.Code,
+					Reason:       reason,
+					AlertMessage: alert,
+				}
 			}
 		}
 		return e
@@ -556,6 +619,24 @@ func parseQREnvelope(method string, status int, body []byte, out any) error {
 		return errors.New("invalid QR response data")
 	}
 	return nil
+}
+
+func sanitizeQRField(raw string, maxBytes int) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || !utf8.ValidString(trimmed) {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range trimmed {
+		if unicode.IsControl(r) {
+			continue
+		}
+		if b.Len()+utf8.RuneLen(r) > maxBytes {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func isQRWrappedExpiry(err error) bool {

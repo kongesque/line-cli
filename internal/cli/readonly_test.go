@@ -151,10 +151,13 @@ func mutatingInvocations() []struct {
 		{[]string{"read", "Alice"}, false, true},
 		{[]string{"invites", "accept", "c" + strings.Repeat("A", 43)}, false, false},
 		{[]string{"invites", "reject", "c" + strings.Repeat("A", 43), "--json"}, false, false},
+		{[]string{"contacts", "block", chat}, false, false},
+		{[]string{"contacts", "unblock", chat, "--json"}, false, false},
 		{[]string{"login"}, false, false},
 		{[]string{"login", "--email", "you@example.com"}, false, false},
 		{[]string{"login", "--qr-url", "--force"}, false, false},
 		{[]string{"logout"}, false, false},
+		{[]string{"logout", "--local-only"}, false, false},
 		{[]string{"auth", "migrate", "--storage=headless"}, false, false},
 		{[]string{"update"}, false, false},
 		{[]string{"update", "--json"}, false, false},
@@ -244,7 +247,7 @@ func TestInvalidReadOnlyEnvironmentFailsClosed(t *testing.T) {
 }
 
 func TestReadOnlyAllowsHelpAndLocalInformation(t *testing.T) {
-	for _, args := range [][]string{{"help"}, {"version"}, {"--help"}, {}, {"send", "--help"}, {"read", "--help"}, {"invites", "accept", "--help"}, {"react", "-h"}, {"login", "--help"}, {"update", "--help"}, {"logout", "--help"}, {"auth", "migrate", "--help"}} {
+	for _, args := range [][]string{{"help"}, {"version"}, {"--help"}, {}, {"send", "--help"}, {"read", "--help"}, {"invites", "accept", "--help"}, {"contacts", "block", "--help"}, {"contacts", "unblock", "--help"}, {"react", "-h"}, {"login", "--help"}, {"update", "--help"}, {"logout", "--help"}, {"auth", "migrate", "--help"}} {
 		a, _ := sealedApp(t, false)
 		if err := a.Run(append([]string{"--read-only"}, args...)); err != nil {
 			t.Fatalf("%q: %v", args, err)

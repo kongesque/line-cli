@@ -107,11 +107,6 @@ func TestCommandRPCsPropagateCancellation(t *testing.T) {
 }
 
 func TestOBSTokenPreparationCancellation(t *testing.T) {
-	obsTokenMu.Lock()
-	old, expiry := obsTokenCache, obsTokenExpiry
-	obsTokenCache = ""
-	obsTokenMu.Unlock()
-	defer func() { obsTokenMu.Lock(); obsTokenCache, obsTokenExpiry = old, expiry; obsTokenMu.Unlock() }()
 	for _, name := range []string{"upload", "plain upload", "preview upload", "download"} {
 		t.Run(name, func(t *testing.T) {
 			testRPCContextCancellation(t, name, func(c *Client, ctx context.Context) error {
@@ -137,16 +132,12 @@ func TestOBSTokenPreparationCancellation(t *testing.T) {
 }
 
 func TestOBSUploadsCancelInFlight(t *testing.T) {
-	obsTokenMu.Lock()
-	old, expiry := obsTokenCache, obsTokenExpiry
-	obsTokenCache, obsTokenExpiry = "synthetic", time.Now().Add(time.Hour)
-	obsTokenMu.Unlock()
-	defer func() { obsTokenMu.Lock(); obsTokenCache, obsTokenExpiry = old, expiry; obsTokenMu.Unlock() }()
 	for _, plain := range []bool{false, true} {
 		ctx, cancel := context.WithCancel(context.Background())
 		started := make(chan struct{})
 		done := make(chan error, 1)
 		c := NewClient("synthetic")
+		c.obsTokenCache, c.obsTokenExpiry = "synthetic", time.Now().Add(time.Hour)
 		c.OBSClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			close(started)
 			<-r.Context().Done()

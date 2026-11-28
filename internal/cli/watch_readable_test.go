@@ -20,6 +20,10 @@ type streamAPI struct {
 	sent         bool
 	contactCalls int
 	chatCalls    int
+	buddyCalls   int
+	roomCalls    int
+	buddies      map[string]line.BuddyProfile
+	rooms        map[string]line.Room
 	namesFail    bool
 }
 
@@ -54,6 +58,31 @@ func (f *streamAPI) GetChatsContext(_ context.Context, ids []string, _, _ bool) 
 		return nil, errors.New("synthetic lookup failure")
 	}
 	return &line.GetChatsResponse{Chats: []line.Chat{{ChatMid: ids[0], ChatName: "Family"}}}, nil
+}
+
+func (f *streamAPI) GetBuddyProfileContext(_ context.Context, mid string) (*line.BuddyProfile, error) {
+	f.buddyCalls++
+	if f.namesFail {
+		return nil, errors.New("synthetic lookup failure")
+	}
+	if b, ok := f.buddies[mid]; ok {
+		return &b, nil
+	}
+	return nil, line.ErrBuddyNotFound
+}
+
+func (f *streamAPI) GetRoomsV2Context(_ context.Context, mids []string) ([]line.Room, error) {
+	f.roomCalls++
+	if f.namesFail {
+		return nil, errors.New("synthetic lookup failure")
+	}
+	out := make([]line.Room, 0, len(mids))
+	for _, mid := range mids {
+		if r, ok := f.rooms[mid]; ok {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 func operation(rev, opType int, msg *line.Message) string {
@@ -216,5 +245,29 @@ func TestWatchReadablePostNotifications(t *testing.T) {
 	}
 	if !strings.Contains(outJSON.String(), `"text":"Alice created a note fallback."`) {
 		t.Fatalf("watch --json altered legacy wrapper text:\n%s", outJSON.String())
+	}
+}
+
+func TestWatchReadableResolvesBuddyAndRoomNames(t *testing.T) {
+	created := json.Number(fmt.Sprint(time.Now().UnixMilli()))
+	f := &streamAPI{
+		frames: []string{
+			operation(2, 26, &line.Message{ID: "1", From: "u-official", To: "u-self", CreatedTime: created, Text: "deal alert"}),
+			operation(3, 26, &line.Message{ID: "2", From: "u-alice", To: "r-room1", ToType: 1, CreatedTime: created, Text: "room hi"}),
+		},
+		buddies: map[string]line.BuddyProfile{
+			"u-official": {Mid: "u-official", DisplayName: "LINE Store"},
+		},
+		rooms: map[string]line.Room{
+			"r-room1": {Mid: "r-room1", MemberMids: line.FlexibleMidMap{"u-self": true, "u-alice": true}},
+		},
+	}
+	a, out, _ := watchApp(t, true, f)
+	if err := a.Run([]string{"watch", "--timeout", "200ms"}); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "LINE Store: deal alert") || !strings.Contains(got, "Alice · Alice: room hi") {
+		t.Fatalf("buddy or room name missing in readable watch:\n%s", got)
 	}
 }

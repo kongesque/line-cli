@@ -210,7 +210,8 @@ See [sending and encryption](docs/CLI.md#send-messages-and-files) and
 - File sending and media downloads are limited to 20 MiB. `--file` preserves
   original bytes and appears as an ordinary file. Encrypted native image sending
   is disabled; non-E2EE images require explicit LINE capability. Native
-  audio/video and sticker sends, and external media URL downloads, are unsupported.
+  audio/video and sticker sends are unsupported. External media URL downloads
+  enforce public-network SSRF and size limits without sending LINE credentials.
 - LINE CLI uses LINE's Chrome-style protocol. Server changes can affect
   compatibility, and some protocol paths need broader live validation.
 

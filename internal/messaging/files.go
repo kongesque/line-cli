@@ -196,11 +196,11 @@ func (c *Client) DownloadFileWithOptions(ctx context.Context, chat, id string, o
 	if opts.Preview != nil {
 		return nil, fault.New("invalid_arguments", "lookup", "--preview is only supported for album preview messages", nil)
 	}
-	if msg.ContentMetadata["DOWNLOAD_URL"] != "" {
-		return nil, fault.New("unsupported_content", "lookup", "downloads from external media URLs are not supported", nil)
-	}
 	if n, err := strconv.ParseInt(msg.ContentMetadata["FILE_SIZE"], 10, 64); err == nil && (n < 0 || n > MaxAttachmentBytes) {
 		return nil, errors.New("attachment exceeds the CLI limit of 20 MiB")
+	}
+	if downloadURL := msg.ContentMetadata["DOWNLOAD_URL"]; downloadURL != "" {
+		return c.downloadPublicMedia(ctx, msg, downloadURL)
 	}
 	oid, sid, talkMeta := msg.ContentMetadata["OID"], attachmentSID(msg.ContentType), msg.ID
 	advertisedSID := msg.ContentMetadata["SID"]
@@ -277,6 +277,52 @@ func (c *Client) DownloadFileWithOptions(ctx context.Context, chat, id string, o
 		if err != nil {
 			return nil, fault.New("decryption_failed", "decode", "Could not authenticate or decrypt the attachment.", err)
 		}
+	}
+	if len(data) > MaxAttachmentBytes {
+		return nil, errors.New("attachment exceeds the CLI limit of 20 MiB")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (c *Client) downloadPublicMedia(ctx context.Context, msg *line.Message, downloadURL string) ([]byte, error) {
+	advertisedSID := msg.ContentMetadata["SID"]
+	if len(msg.Chunks) > 0 || msg.ContentMetadata["e2eeVersion"] != "" || msg.ContentMetadata["ENC_KM"] != "" || msg.ContentMetadata["OID"] != "" || strings.HasPrefix(advertisedSID, "em") {
+		return nil, fault.New("unsupported_content", "lookup", "encrypted attachments cannot use an external media URL", nil)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Public OBS and external DOWNLOAD_URL fetches send no LINE auth headers.
+	// Run outside Manager.DoContext so untrusted external URLs or transport
+	// errors can never trigger LINE auth classification, token refresh, or
+	// session invalidation.
+	api := c.Session.NewClient("")
+	data, err := api.DownloadOBSPublicResourceWithOptions(ctx, downloadURL, line.OBSDownloadOptions{MaxBytes: MaxAttachmentBytes})
+	if err != nil {
+		switch {
+		case errors.Is(err, context.Canceled):
+			return nil, context.Canceled
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, context.DeadlineExceeded
+		case errors.Is(err, line.ErrOBSObjectNotFound):
+			return nil, errors.New("attachment is no longer available from LINE")
+		case errors.Is(err, line.ErrOBSEncodingIncomplete):
+			return nil, errors.New("LINE is still processing this attachment; try again later")
+		case errors.Is(err, line.ErrOBSSizeLimit):
+			return nil, errors.New("attachment exceeds the CLI limit of 20 MiB")
+		case errors.Is(err, line.ErrPublicMediaBlocked):
+			return nil, fault.New("unsupported_content", "lookup", "external media URL is blocked by network safety policy", err)
+		case errors.Is(err, line.ErrPublicMediaRedirectLimit):
+			return nil, errors.New("external media download exceeded the redirect limit")
+		}
+		var statusErr *line.PublicMediaStatusError
+		if errors.As(err, &statusErr) {
+			return nil, fmt.Errorf("external media download failed (status %d)", statusErr.Status)
+		}
+		return nil, errors.New("external media download failed")
 	}
 	if len(data) > MaxAttachmentBytes {
 		return nil, errors.New("attachment exceeds the CLI limit of 20 MiB")

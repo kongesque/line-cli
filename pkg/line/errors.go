@@ -15,10 +15,30 @@ import (
 var (
 	// ErrE2EEDisabled distinguishes explicit capability responses from missing
 	// or malformed keys. Callers must not downgrade encryption on the latter.
-	ErrE2EEDisabled          = errors.New("letter sealing is explicitly unavailable")
-	ErrNoUsableE2EEPublicKey = errors.New("no usable E2EE public key")
-	ErrNoUsableE2EEGroupKey  = errors.New("no usable E2EE group key")
-	ErrGroupKeyNotFound      = errors.New("group key not found")
+	ErrE2EEDisabled             = errors.New("letter sealing is explicitly unavailable")
+	ErrLoginVerificationExpired = errors.New("LINE login verification expired")
+	ErrNoUsableE2EEPublicKey    = errors.New("no usable E2EE public key")
+	ErrNoUsableE2EEGroupKey     = errors.New("no usable E2EE group key")
+	ErrGroupKeyNotFound         = errors.New("group key not found")
+	ErrBuddyNotFound            = errors.New("buddy profile not found")
+	ErrContactNotFound          = errors.New("contact not found")
+)
+
+const (
+	TalkExceptionNotAvailableUser    = 7
+	TalkExceptionNotAuthorizedDevice = 8
+
+	talkExceptionDBFailed         = 2
+	talkExceptionExcessiveAccess  = 4
+	talkExceptionSystemError      = 15
+	talkExceptionInternalError    = 20
+	talkExceptionMaintenanceError = 33
+
+	talkExceptionE2EEUpdateReceiverKey  = 84
+	talkExceptionE2EEInvalidVersion     = 86
+	talkExceptionE2EESenderDisabled     = 87
+	talkExceptionE2EEReceiverDisabled   = 88
+	talkExceptionE2EEReceiverNotAllowed = 90
 )
 
 // IsE2EEDisabled accepts explicit capability responses only. Unlike the legacy
@@ -29,6 +49,10 @@ func IsE2EEDisabled(err error) bool {
 	}
 	if errors.Is(err, ErrE2EEDisabled) {
 		return true
+	}
+	var respErr *ResponseError
+	if errors.As(err, &respErr) && respErr.Status != 200 && respErr.Status != 400 {
+		return false
 	}
 	msg := protocolMessage(err)
 	start := strings.IndexByte(msg, '{')
@@ -63,10 +87,142 @@ func IsLoggedOut(err error) bool {
 		return false
 	}
 	return strings.Contains(strings.ToUpper(protocolMessage(err)), "V3_TOKEN_CLIENT_LOGGED_OUT") ||
-		isExceptionCode(err, "TalkException", 8) ||
+		isExceptionCode(err, "TalkException", TalkExceptionNotAvailableUser) ||
+		isExceptionCode(err, "TalkException", TalkExceptionNotAuthorizedDevice) ||
 		isExceptionCode(err, "TokenAuthException", 3) ||
 		IsInvalidSenderKey(err) ||
 		IsRequestNeedLogin(err)
+}
+
+// LogoutReason returns a safe, bounded classification label when err indicates
+// a LINE forced logout or session invalidation, or "" if err is not a logout
+// error. It never returns arbitrary raw server text.
+func LogoutReason(err error) string {
+	if err == nil || !IsLoggedOut(err) {
+		return ""
+	}
+	msg := protocolMessage(err)
+	if strings.Contains(strings.ToUpper(msg), "V3_TOKEN_CLIENT_LOGGED_OUT") {
+		return "V3_TOKEN_CLIENT_LOGGED_OUT"
+	}
+	if IsInvalidSenderKey(err) {
+		return "INVALID_SENDER_KEY"
+	}
+	if IsRequestNeedLogin(err) {
+		return "REQUEST_NEED_LOGIN"
+	}
+	if data, ok := parseEnvelopeExceptionData(msg); ok {
+		reason := strings.TrimSpace(data.Reason)
+		if isSafeEnumToken(reason) {
+			return reason
+		}
+		if strings.EqualFold(data.Name, "TokenAuthException") && data.Code == 3 {
+			return "TOKEN_AUTH_LOGGED_OUT"
+		}
+		if strings.EqualFold(data.Name, "TalkException") && data.Code == TalkExceptionNotAvailableUser {
+			return "NOT_AVAILABLE_USER"
+		}
+		if strings.EqualFold(data.Name, "TalkException") && data.Code == TalkExceptionNotAuthorizedDevice {
+			return "AUTHENTICATION_FAILED"
+		}
+	}
+	return "LOGGED_OUT"
+}
+
+// IsE2EEGroupMemberMismatch returns true when LINE rejects E2EE group key
+// registration with TalkException code 99 (member set/count mismatch).
+func IsE2EEGroupMemberMismatch(err error) bool {
+	if err == nil {
+		return false
+	}
+	return hasResponseErrorCode(protocolMessage(err)) &&
+		isExceptionCode(err, "TalkException", 99)
+}
+
+// IsE2EEReceiverKeyRejected returns true when LINE authoritatively rejects an
+// E2EE 1:1 send because the receiver's key or E2EE state is incompatible
+// (TalkException codes 84, 86, 87, 88, 90, or 83 with explicit "invalid
+// receiver key") inside an HTTP 200/400 gateway 10051 envelope. It strictly
+// excludes "invalid sender key", which indicates own-key/session invalidation.
+func IsE2EEReceiverKeyRejected(err error) bool {
+	if err == nil || IsInvalidSenderKey(err) {
+		return false
+	}
+	data, ok := parseAuthoritativeTalkException(err)
+	if !ok {
+		return false
+	}
+	switch data.Code {
+	case talkExceptionE2EEUpdateReceiverKey,
+		talkExceptionE2EEInvalidVersion,
+		talkExceptionE2EESenderDisabled,
+		talkExceptionE2EEReceiverDisabled,
+		talkExceptionE2EEReceiverNotAllowed:
+		return true
+	case 83:
+		return strings.Contains(strings.ToLower(strings.TrimSpace(data.Reason)), "invalid receiver key")
+	default:
+		return false
+	}
+}
+
+func parseAuthoritativeTalkException(err error) (talkExceptionData, bool) {
+	if err == nil {
+		return talkExceptionData{}, false
+	}
+	var respErr *ResponseError
+	if errors.As(err, &respErr) && respErr.Status != 200 && respErr.Status != 400 {
+		return talkExceptionData{}, false
+	}
+	msg := protocolMessage(err)
+	start := strings.IndexByte(msg, '{')
+	if start < 0 {
+		return talkExceptionData{}, false
+	}
+	var envelope struct {
+		Code int               `json:"code"`
+		Data talkExceptionData `json:"data"`
+	}
+	if json.Unmarshal([]byte(msg[start:]), &envelope) != nil {
+		return talkExceptionData{}, false
+	}
+	if envelope.Code != 10051 || !strings.EqualFold(envelope.Data.Name, "TalkException") {
+		return talkExceptionData{}, false
+	}
+	return envelope.Data, true
+}
+
+func parseEnvelopeExceptionData(msg string) (talkExceptionData, bool) {
+	start := strings.IndexByte(msg, '{')
+	if start < 0 {
+		return talkExceptionData{}, false
+	}
+	var envelope struct {
+		Data talkExceptionData `json:"data"`
+	}
+	if json.Unmarshal([]byte(msg[start:]), &envelope) != nil {
+		return talkExceptionData{}, false
+	}
+	return envelope.Data, envelope.Data.Name != "" || envelope.Data.Code != 0 || envelope.Data.Reason != ""
+}
+
+func isSafeEnumToken(s string) bool {
+	if len(s) < 2 || len(s) > 64 {
+		return false
+	}
+	hasLetter := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			hasLetter = true
+			continue
+		}
+		if (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return hasLetter
 }
 
 func IsInvalidSenderKey(err error) bool {
@@ -152,11 +308,11 @@ func IsRefreshRejected(err error) bool {
 	return errors.As(err, &rejected)
 }
 
-// IsGroupKeyNotFound returns true when the error is specifically code 5 "not found"
-// from getE2EEGroupSharedKey / getLastE2EEGroupSharedKey — meaning no group key has been
-// registered yet, but E2EE is supported. Callers should attempt to register a key.
-// Matches both the processed error (ErrGroupKeyNotFound) and the raw HTTP 400 error
-// from callRPC which contains the TalkException JSON payload.
+// IsGroupKeyNotFound returns true when the error is specifically an
+// authoritative TalkException code 5 ("not found") inside an HTTP 200/400
+// gateway 10051 envelope (or ErrGroupKeyNotFound) from getE2EEGroupSharedKey /
+// getLastE2EEGroupSharedKey — meaning no group key has been registered yet,
+// while E2EE is supported. Non-200/400 gateway errors never match.
 func IsGroupKeyNotFound(err error) bool {
 	if err == nil {
 		return false
@@ -164,14 +320,15 @@ func IsGroupKeyNotFound(err error) bool {
 	if errors.Is(err, ErrGroupKeyNotFound) {
 		return true
 	}
-	msg := strings.ToLower(protocolMessage(err))
-	if strings.Contains(msg, "group key not found: not found") {
-		return true
+	var respErr *ResponseError
+	if errors.As(err, &respErr) && respErr.Status != 200 && respErr.Status != 400 {
+		return false
 	}
-	// Match raw API error: HTTP 400 with TalkException code 5 "not found"
-	return strings.Contains(msg, "\"code\":10051") &&
-		strings.Contains(msg, "talkexception") &&
-		(strings.Contains(msg, "\"code\":5,") || strings.Contains(msg, "\"code\":5}"))
+	if data, ok := parseAuthoritativeTalkException(err); ok {
+		return data.Code == 5
+	}
+	msg := strings.ToLower(protocolMessage(err))
+	return strings.Contains(msg, "group key not found: not found")
 }
 
 // IsNoUsableE2EEGroupKey returns true when a group has no shared E2EE key
@@ -225,6 +382,68 @@ func IsTalkExceptionNotFound(err error) bool {
 			strings.Contains(msg, "\"code\": 5,")) &&
 		(strings.Contains(msg, "\"reason\":\"not found\"") ||
 			strings.Contains(msg, "\"reason\": \"not found\""))
+}
+
+// IsBuddyEndpointUnavailable returns true when the LINE Chrome gateway rejects
+// BuddyService/getBuddyProfile with HTTP 404 (e.g. gateway code 10001),
+// indicating that the endpoint is not exposed on the gateway. Transient and
+// authentication errors never match.
+func IsBuddyEndpointUnavailable(err error) bool {
+	if err == nil || IsAuthError(err) || IsTransientError(err) {
+		return false
+	}
+	var response *ResponseError
+	if !errors.As(err, &response) {
+		return false
+	}
+	return response.Status == 404 && (response.code == 10001 || response.code == 0)
+}
+
+// IsBuddyNotFound returns true when BuddyService/getBuddyProfile indicates that
+// the target MID is not an official/business account. Transient and auth errors
+// never match.
+func IsBuddyNotFound(err error) bool {
+	if err == nil || IsAuthError(err) || IsTransientError(err) {
+		return false
+	}
+	if errors.Is(err, ErrBuddyNotFound) || IsTalkExceptionNotFound(err) || IsBuddyEndpointUnavailable(err) {
+		return true
+	}
+	msg := protocolMessage(err)
+	if !hasResponseErrorCode(msg) {
+		return false
+	}
+	return isExceptionCode(err, "TalkException", 5) ||
+		isExceptionCode(err, "TalkException", 35) ||
+		isExceptionCode(err, "BuddyException", 5)
+}
+
+// IsTalkExceptionIllegalArgument returns true when LINE rejects an RPC
+// parameter with TalkException code 0 (ILLEGAL_ARGUMENT).
+func IsTalkExceptionIllegalArgument(err error) bool {
+	if err == nil || IsAuthError(err) || IsTransientError(err) {
+		return false
+	}
+	return hasResponseErrorCode(protocolMessage(err)) &&
+		isExceptionCode(err, "TalkException", 0)
+}
+
+// IsContactNotFound returns true when LINE reports that a contact lookup
+// (by userid or phone number) matched no available user. Transient and auth
+// errors never match.
+func IsContactNotFound(err error) bool {
+	if err == nil || IsAuthError(err) || IsTransientError(err) {
+		return false
+	}
+	if errors.Is(err, ErrContactNotFound) || IsTalkExceptionNotFound(err) {
+		return true
+	}
+	msg := protocolMessage(err)
+	if !hasResponseErrorCode(msg) {
+		return false
+	}
+	return isExceptionCode(err, "TalkException", 5) ||
+		isExceptionCode(err, "TalkException", 35)
 }
 
 // IsNotAMemberError returns true when the API reports the user is not a member of a chat.
@@ -337,14 +556,28 @@ func protocolMessage(err error) string {
 	return msg
 }
 
-// IsTransientError is used only for token refresh. Mutations never use it.
+// IsTransientError is used only for read-only key fetches and token refresh.
+// Mutations never use it.
 func IsTransientError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || IsAuthError(err) {
 		return false
 	}
 	var response *ResponseError
 	if errors.As(err, &response) {
-		return response.Status == 408 || response.Status == 429 || response.Status >= 500 && response.Status <= 599
+		if response.Status == 408 || response.Status == 429 || (response.Status >= 500 && response.Status <= 599) {
+			return true
+		}
+		if talk, ok := parseAuthoritativeTalkException(err); ok {
+			switch talk.Code {
+			case talkExceptionDBFailed,
+				talkExceptionExcessiveAccess,
+				talkExceptionSystemError,
+				talkExceptionInternalError,
+				talkExceptionMaintenanceError:
+				return true
+			}
+		}
+		return false
 	}
 	var network net.Error
 	return errors.As(err, &network) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)

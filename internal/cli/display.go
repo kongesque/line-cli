@@ -154,6 +154,21 @@ func (a *App) renderMessages(chat string, messages []messaging.Message, ids bool
 			for id, c := range response.Contacts {
 				names[id] = c.Contact.EffectiveDisplayName()
 			}
+			var missing []string
+			for _, id := range senders {
+				if strings.TrimSpace(names[id]) == "" {
+					missing = append(missing, id)
+				}
+			}
+			if len(missing) > 0 {
+				if buddies, buddyErr := a.fetchBuddyProfiles(a.loginContext(), missing); buddyErr == nil {
+					for id, c := range buddies {
+						names[id] = c.EffectiveDisplayName()
+					}
+				} else if a.loginContext().Err() != nil {
+					return a.loginContext().Err()
+				}
+			}
 		} else {
 			fmt.Fprintln(a.Err, "Some sender names are unavailable; showing IDs instead.")
 		}

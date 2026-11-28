@@ -3,6 +3,7 @@ package line
 import (
 	"encoding/json"
 	"errors"
+	"math"
 )
 
 type FlexibleMidMap map[string]bool
@@ -95,20 +96,30 @@ type MessageLocation struct {
 }
 
 // UnmarshalJSON retains malformed locations for per-message reporting instead
-// of inventing zero coordinates or failing an entire history page.
+// of inventing zero coordinates or failing an entire history page. It accepts
+// both JSON numbers and quoted numeric strings for latitude and longitude.
 func (l *MessageLocation) UnmarshalJSON(data []byte) error {
 	var value struct {
-		Title     string   `json:"title"`
-		Address   string   `json:"address"`
-		Latitude  *float64 `json:"latitude"`
-		Longitude *float64 `json:"longitude"`
+		Title     string       `json:"title"`
+		Address   string       `json:"address"`
+		Latitude  *json.Number `json:"latitude"`
+		Longitude *json.Number `json:"longitude"`
 	}
 	*l = MessageLocation{}
 	if json.Unmarshal(data, &value) != nil || value.Latitude == nil || value.Longitude == nil {
 		l.invalid = true
 		return nil
 	}
-	l.Title, l.Address, l.Latitude, l.Longitude = value.Title, value.Address, *value.Latitude, *value.Longitude
+	lat, errLat := value.Latitude.Float64()
+	lng, errLng := value.Longitude.Float64()
+	if errLat != nil || errLng != nil ||
+		math.IsNaN(lat) || math.IsInf(lat, 0) ||
+		math.IsNaN(lng) || math.IsInf(lng, 0) ||
+		math.Abs(lat) > 90 || math.Abs(lng) > 180 {
+		l.invalid = true
+		return nil
+	}
+	l.Title, l.Address, l.Latitude, l.Longitude = value.Title, value.Address, lat, lng
 	return nil
 }
 
@@ -295,6 +306,12 @@ type Chat struct {
 	Type                 int         `json:"type"` // 0=GROUP, 1=ROOM
 }
 
+type Room struct {
+	Mid        string         `json:"mid"`
+	MemberMids FlexibleMidMap `json:"memberMids"`
+	Contacts   []Contact      `json:"contacts,omitempty"`
+}
+
 type ChatExtra struct {
 	GroupExtra *GroupExtra `json:"groupExtra,omitempty"`
 	PeerExtra  *PeerExtra  `json:"peerExtra,omitempty"`
@@ -374,12 +391,6 @@ type MediaMessageFlowResponse struct {
 type E2EEPeerPublicKey struct {
 	KeyID   int    `json:"keyId"`
 	KeyData string `json:"keyData"`
-}
-
-// GetLastE2EEPublicKeysRequest is the request body for getLastE2EEPublicKeys.
-type GetLastE2EEPublicKeysRequest struct {
-	ChatMid string   `json:"chatMid"`
-	Members []string `json:"members"`
 }
 
 type CreateChatRequest struct {

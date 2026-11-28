@@ -176,7 +176,10 @@ func TestGroupSendRegistersCompleteMembershipIncludingSelf(t *testing.T) {
 	c, f, _, _ := setup(t, false)
 	f.groupErr = line.ErrGroupKeyNotFound
 	f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
-	f.chats = &line.GetChatsResponse{Chats: []line.Chat{{ChatMid: "c-group", Extra: line.ChatExtra{GroupExtra: &line.GroupExtra{MemberMids: line.FlexibleMidMap{"u-self": true, "u-peer": true}}}}}}
+	f.groupPublicKeys = map[string]line.E2EEPeerPublicKey{
+		"u-self": {KeyID: 11, KeyData: testPublicKey},
+		"u-peer": {KeyID: 22, KeyData: testPublicKey},
+	}
 	result, err := c.Send("c-group", "hello")
 	if err != nil {
 		t.Fatal(err)
@@ -259,17 +262,14 @@ func TestMissingOrUnrestorableKeysNeverDowngrade(t *testing.T) {
 	}
 }
 
-func TestGroupRegistrationAddsOmittedCallerAndExcludesInvitees(t *testing.T) {
+func TestGroupRegistrationRejectsOmittedCaller(t *testing.T) {
 	c, f, _, _ := setup(t, false)
 	f.groupErr = line.ErrGroupKeyNotFound
 	f.group = &line.E2EEGroupSharedKey{GroupKeyID: 33, Creator: "u-self", CreatorKeyID: 11, ReceiverKeyID: 11, EncryptedSharedKey: "wrapped"}
-	f.chats = &line.GetChatsResponse{Chats: []line.Chat{{ChatMid: "c-group", Extra: line.ChatExtra{GroupExtra: &line.GroupExtra{
-		MemberMids: line.FlexibleMidMap{"u-peer": true}, InviteeMids: line.FlexibleMidMap{"u-invited": true},
-	}}}}}
-	if _, err := c.Send("c-group", "hello"); err != nil {
-		t.Fatal(err)
+	f.groupPublicKeys = map[string]line.E2EEPeerPublicKey{
+		"u-peer": {KeyID: 22, KeyData: testPublicKey},
 	}
-	if strings.Join(f.registeredMembers, ",") != "u-peer,u-self" {
-		t.Fatal("caller omitted or invitee included")
+	if _, err := c.Send("c-group", "hello"); err == nil || f.registrations != 0 || f.sends != 0 {
+		t.Fatalf("registered or sent when caller missing from authoritative keys: err=%v regs=%d sends=%d", err, f.registrations, f.sends)
 	}
 }

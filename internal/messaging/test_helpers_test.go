@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -45,10 +46,15 @@ type fakeAPI struct {
 	negotiateErr      error
 	key               *line.E2EEPublicKey
 	lookupIDs         []int
+	lookupErr         error
 	group             *line.E2EEGroupSharedKey
 	groupErr          error
 	groupIDs          []int
+	groupPublicKeys   map[string]line.E2EEPeerPublicKey
+	groupPublicKeyErr error
 	chats             *line.GetChatsResponse
+	rooms             []line.Room
+	roomErr           error
 	registrations     int
 	registeredMembers []string
 	registeredKeys    []int
@@ -70,7 +76,11 @@ func (f *fakeAPI) NegotiateE2EEPublicKey(string) (*line.E2EEPublicKey, error) {
 
 func (f *fakeAPI) GetE2EEPublicKey(_ string, _ int, id int) (*line.E2EEPublicKey, error) {
 	f.lookupIDs = append(f.lookupIDs, id)
-	return f.key, nil
+	return f.key, f.lookupErr
+}
+
+func (f *fakeAPI) GetLastE2EEPublicKeysContext(_ context.Context, _ string) (map[string]line.E2EEPeerPublicKey, error) {
+	return f.groupPublicKeys, f.groupPublicKeyErr
 }
 
 func (f *fakeAPI) GetE2EEGroupSharedKey(_ string, id int) (*line.E2EEGroupSharedKey, error) {
@@ -105,10 +115,13 @@ type fakeCrypto struct {
 	payload      string
 	decryptErr   error
 	encryptErr   error
+	unwrapErr    error
 	loadErr      error
 	loaded       map[string]string
 	registered   []int
 	unwrapped    []int
+	groupKeys    map[string]bool
+	releasedKeys []int
 	decryptCalls int
 	groupVersion int
 }
@@ -126,10 +139,24 @@ func (f *fakeCrypto) IsMyKey(id int) bool { return id == 11 || id == 10 }
 
 func (f *fakeCrypto) HasPeerPublicKey(int) bool { return false }
 
+func (f *fakeCrypto) HasGroupKey(chat string, id int) bool {
+	if f.groupKeys == nil {
+		return false
+	}
+	return f.groupKeys[fmt.Sprintf("%s:%d", chat, id)]
+}
+
 func (f *fakeCrypto) RegisterPeerPublicKey(id int, _ string) { f.registered = append(f.registered, id) }
 
-func (f *fakeCrypto) UnwrapGroupSharedKey(_ string, key *line.E2EEGroupSharedKey) (int, error) {
+func (f *fakeCrypto) UnwrapGroupSharedKey(chat string, key *line.E2EEGroupSharedKey) (int, error) {
+	if f.unwrapErr != nil {
+		return 0, f.unwrapErr
+	}
 	f.unwrapped = append(f.unwrapped, key.GroupKeyID)
+	if f.groupKeys == nil {
+		f.groupKeys = make(map[string]bool)
+	}
+	f.groupKeys[fmt.Sprintf("%s:%d", chat, key.GroupKeyID)] = true
 	return 333, nil
 }
 
@@ -158,7 +185,20 @@ func (f *fakeCrypto) EncryptGroupMessageVersion(chat, from string, version int, 
 
 func (f *fakeCrypto) GenerateGroupKey() (int, error) { return 33, nil }
 
+func (f *fakeCrypto) ReleaseGroupKey(id int) error {
+	f.releasedKeys = append(f.releasedKeys, id)
+	return nil
+}
+
 func (f *fakeCrypto) WrapGroupKeyForMember(string, int) (string, error) { return "wrapped", nil }
+
+func (f *fakeCrypto) WrapRegistrationGroupKey(pubs []string) ([]string, error) {
+	out := make([]string, len(pubs))
+	for i := range pubs {
+		out[i] = "wrapped"
+	}
+	return out, nil
+}
 
 func encryptedChunks(sender, receiver int) []string {
 	encode := func(id int) string {
@@ -212,6 +252,10 @@ func (f *fakeAPI) GetChatsContext(_ context.Context, arg0 []string, arg1 bool, a
 	return f.GetChats(arg0, arg1, arg2)
 }
 
+func (f *fakeAPI) GetRoomsV2Context(_ context.Context, _ []string) ([]line.Room, error) {
+	return f.rooms, f.roomErr
+}
+
 func (f *fakeAPI) RegisterE2EEGroupKeyContext(_ context.Context, arg0 int, arg1 string, members []string, keys []int, wrapped []string) error {
 	return f.RegisterE2EEGroupKey(arg0, arg1, members, keys, wrapped)
 }
@@ -234,6 +278,11 @@ type fileAPI struct {
 	albumOID, albumChatID, albumID   string
 	albumData                        []byte
 	albumErr                         error
+	publicCalls                      int
+	publicURL                        string
+	publicOptions                    line.OBSDownloadOptions
+	publicData                       []byte
+	publicErr                        error
 }
 
 func (f *fileAPI) UploadOBSWithSID(data []byte, sid string) (string, error) {
@@ -271,6 +320,16 @@ func (f *fileAPI) DownloadAlbumPreview(_ context.Context, oid, chatID, albumID s
 	f.albumOID, f.albumChatID, f.albumID = oid, chatID, albumID
 	if f.albumData != nil || f.albumErr != nil {
 		return f.albumData, f.albumErr
+	}
+	return f.data, f.downloadErr
+}
+
+func (f *fileAPI) DownloadOBSPublicResourceWithOptions(_ context.Context, resourceURL string, opts line.OBSDownloadOptions) ([]byte, error) {
+	f.publicCalls++
+	f.publicURL = resourceURL
+	f.publicOptions = opts
+	if f.publicData != nil || f.publicErr != nil {
+		return f.publicData, f.publicErr
 	}
 	return f.data, f.downloadErr
 }

@@ -161,3 +161,32 @@ func TestChatOptionsValidateBeforeSession(t *testing.T) {
 		_ = a.Run(args)
 	}
 }
+
+func TestChatsResolvesBuddyProfilesAndLegacyRooms(t *testing.T) {
+	f := &chatAPI{
+		boxes: []line.MessageBox{
+			{ID: "u-official"},
+			{ID: "r-room1"},
+		},
+		names: map[string]string{
+			"u-alice": "Alice",
+			"u-bob":   "Bob",
+			"u-self":  "Me",
+		},
+		buddies: map[string]line.BuddyProfile{
+			"u-official": {Mid: "u-official", DisplayName: "LINE News"},
+		},
+		rooms: map[string]line.Room{
+			"r-room1": {Mid: "r-room1", MemberMids: line.FlexibleMidMap{"u-self": true, "u-alice": true, "u-bob": true}},
+		},
+	}
+	a := chatTestApp(f)
+	a.Manager.Store = &testStore{state: &session.State{MID: "u-self", AccessToken: "secret"}}
+	if err := a.Run([]string{"chats"}); err != nil {
+		t.Fatal(err)
+	}
+	output := a.Out.(fmt.Stringer).String()
+	if !strings.Contains(output, "LINE News") || !strings.Contains(output, "Alice, Bob") || strings.Contains(output, "Me") {
+		t.Fatalf("buddy or legacy room name missing:\n%s", output)
+	}
+}

@@ -67,18 +67,33 @@ func (e *LoginError) Error() string {
 		message := "QR certificate verification failed. PIN fallback is not available for this response. Your saved session was not changed. Close the phone prompt and use line login --email you@example.com."
 		var response *line.QRServiceError
 		if errors.As(e.cause, &response) {
-			// Only numeric fields are safe to display. Do not format the wrapped
-			// error or its method/name, which need not be trusted caller input.
+			// Only numeric fields and safe uppercase enum tokens are displayed.
+			// Never format arbitrary server text or method/name strings.
 			message += fmt.Sprintf(" Diagnostic: verifyCertificate (HTTP %d, gateway %d, status %d", response.HTTPStatus, response.Code, response.StatusCode)
 			if response.ServiceCode != nil {
 				message += fmt.Sprintf(", service %d", *response.ServiceCode)
+			}
+			if reason := response.Detail.SafeReason(); reason != "" {
+				message += ", reason " + reason
 			}
 			message += ")."
 		}
 		return message
 	}
 	if e.Stage == LoginPhoneApproval {
-		return "Phone approval could not be confirmed. Your saved session was not changed. Wait for the phone prompt to close, then retry line login."
+		message := "Phone approval could not be confirmed. Your saved session was not changed. Wait for the phone prompt to close, then retry line login."
+		var response *line.QRServiceError
+		if errors.As(e.cause, &response) {
+			message += fmt.Sprintf(" Diagnostic: checkPinCodeVerified (HTTP %d, gateway %d, status %d", response.HTTPStatus, response.Code, response.StatusCode)
+			if response.ServiceCode != nil {
+				message += fmt.Sprintf(", service %d", *response.ServiceCode)
+			}
+			if reason := response.Detail.SafeReason(); reason != "" {
+				message += ", reason " + reason
+			}
+			message += ")."
+		}
+		return message
 	}
 	if errors.Is(e.cause, line.ErrQRCodeExpired) && e.Stage == LoginBeforeScan {
 		return "QR login expired after 3 attempts. Your saved session was not changed. Retry line login, or use line login --email you@example.com."

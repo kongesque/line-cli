@@ -45,12 +45,17 @@ var (
 )
 
 type Client struct {
-	HTTPClient  *http.Client
-	OBSClient   *http.Client
-	AccessToken string
+	HTTPClient        *http.Client
+	OBSClient         *http.Client
+	PublicMediaClient *http.Client
+	AccessToken       string
 
 	channelTokenMu    sync.Mutex
 	channelTokenCache map[string]cachedChannelAccessToken
+
+	obsTokenMu     sync.Mutex
+	obsTokenCache  string
+	obsTokenExpiry time.Time
 
 	clockMu     sync.Mutex
 	serverClock time.Time
@@ -233,7 +238,7 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	}
 	req.Header.Set("x-hmac", signature)
 
-	pollClient := &http.Client{Timeout: 200 * time.Second}
+	pollClient := c.loginPollHTTPClient(200 * time.Second)
 	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
@@ -243,10 +248,13 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkLoginPollingStatus(resp.StatusCode, body); err != nil {
+		return nil, err
+	}
 
 	// JQ response: {"data":{"result":{"verifier":"...","authPhase":"QRCODE_VERIFIED",...}}}
 	var wrapper struct {
-		Code    int    `json:"code"`
+		Code    *int   `json:"code"`
 		Message string `json:"message"`
 		Data    struct {
 			Result struct {
@@ -258,18 +266,59 @@ func (c *Client) waitForLoginJQ(verifier string) (*LoginResult, error) {
 	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse JQ polling response: %w", err)
 	}
+	if wrapper.Code != nil && *wrapper.Code != 0 {
+		return nil, loginPollingError(resp.StatusCode, body)
+	}
 
 	if wrapper.Data.Result.AuthPhase != "QRCODE_VERIFIED" {
 		return nil, fmt.Errorf("JQ polling: unexpected authPhase %q", wrapper.Data.Result.AuthPhase)
 	}
 
+	finalVerifier := strings.TrimSpace(wrapper.Data.Result.Verifier)
+	if finalVerifier == "" {
+		finalVerifier = verifier
+	}
 	log.Printf("[LINE] JQ poll verified, finalizing non-E2EE login")
-	res, err := c.LoginV2WithVerifier(verifier)
+	res, err := c.LoginV2WithVerifier(finalVerifier)
 	if err != nil {
 		return nil, fmt.Errorf("non-E2EE login finalization failed: %w", err)
 	}
 	res.NoE2EE = true
 	return res, nil
+}
+
+func (c *Client) loginPollHTTPClient(timeout time.Duration) *http.Client {
+	pollClient := &http.Client{Timeout: timeout}
+	if c.HTTPClient != nil && c.HTTPClient.Transport != nil {
+		pollClient.Transport = c.HTTPClient.Transport
+	}
+	return pollClient
+}
+
+// checkLoginPollingStatus detects gateway 10052 + nested statusCode 410
+// (verification expired) or non-200 HTTP failures on LF1/JQ polling without
+// leaking raw server bodies.
+func checkLoginPollingStatus(httpStatus int, body []byte) error {
+	var envelope struct {
+		Code *int `json:"code"`
+		Data struct {
+			StatusCode int `json:"statusCode"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &envelope) == nil && envelope.Code != nil && *envelope.Code == 10052 && envelope.Data.StatusCode == http.StatusGone {
+		return ErrLoginVerificationExpired
+	}
+	if httpStatus != http.StatusOK {
+		return loginPollingError(httpStatus, body)
+	}
+	return nil
+}
+
+func loginPollingError(httpStatus int, body []byte) error {
+	if err := responseError(httpStatus, body); err != nil {
+		return err
+	}
+	return &ResponseError{Status: httpStatus}
 }
 
 // waitForLoginLF1 polls the LF1 endpoint for LSON accounts (E2EE).
@@ -299,7 +348,7 @@ func (c *Client) waitForLoginLF1(verifier string) (*LoginResult, error) {
 	}
 	req.Header.Set("x-hmac", signature)
 
-	pollClient := &http.Client{Timeout: 120 * time.Second}
+	pollClient := c.loginPollHTTPClient(120 * time.Second)
 	resp, err := doLINERequest(pollClient, req)
 	if err != nil {
 		return nil, err
@@ -309,14 +358,20 @@ func (c *Client) waitForLoginLF1(verifier string) (*LoginResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkLoginPollingStatus(resp.StatusCode, body); err != nil {
+		return nil, err
+	}
 
 	var wrapper struct {
-		Code    int                `json:"code"`
+		Code    *int               `json:"code"`
 		Message string             `json:"message"`
 		Data    LoginPollingResult `json:"data"`
 	}
 	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse LF1 polling response: %w", err)
+	}
+	if wrapper.Code != nil && *wrapper.Code != 0 {
+		return nil, loginPollingError(resp.StatusCode, body)
 	}
 
 	meta := wrapper.Data.Result.Metadata
@@ -826,43 +881,80 @@ func (c *Client) DownloadOBSWithSIDOptions(ctx context.Context, oid string, mess
 }
 
 // DownloadOBSPublicResource downloads a public OBS resource referenced by
-// message content metadata. LINE Chrome uses DOWNLOAD_URL directly and skips
-// object_info.obs and the private OBS authorization header mapper.
-func (c *Client) DownloadOBSPublicResource(ctx context.Context, resourcePath string) ([]byte, error) {
-	parsedPath, err := url.Parse(resourcePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse public OBS resource path: %w", err)
-	}
-	if parsedPath.IsAbs() || parsedPath.Host != "" || !strings.HasPrefix(parsedPath.Path, "/") {
-		return nil, errors.New("public OBS resource must be an absolute path")
-	}
+// message content metadata. Relative paths starting with "/" are fetched from
+// OBSBaseURL; absolute http(s) URLs are fetched via the SSRF-hardened public
+// media client without LINE authentication headers.
+func (c *Client) DownloadOBSPublicResource(ctx context.Context, resourceURL string) ([]byte, error) {
+	return c.DownloadOBSPublicResourceWithOptions(ctx, resourceURL, OBSDownloadOptions{})
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, OBSBaseURL+resourcePath, nil)
+// DownloadOBSPublicResourceWithOptions downloads a public OBS resource path or
+// external http(s) DOWNLOAD_URL while enforcing opts.MaxBytes and network
+// safety policies. LINE auth headers are never sent.
+func (c *Client) DownloadOBSPublicResourceWithOptions(ctx context.Context, resourceURL string, opts OBSDownloadOptions) ([]byte, error) {
+	parsed, err := url.Parse(resourceURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create public OBS resource request: %w", err)
+		return nil, fmt.Errorf("%w: invalid resource URL", ErrPublicMediaBlocked)
 	}
-	req.Header.Set("User-Agent", UserAgent)
-
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	var (
+		resp *http.Response
+	)
+	if parsed.IsAbs() {
+		if _, _, err := validatePublicMediaURL(parsed); err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create public media request: %w", err)
+		}
+		req.Header.Set("User-Agent", UserAgent)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		resp, err = c.publicMediaHTTPClient().Do(req)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(resourceURL, "//") {
+			return nil, fmt.Errorf("%w: public resource must be an absolute path or http(s) URL", ErrPublicMediaBlocked)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, OBSBaseURL+resourceURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create public OBS resource request: %w", err)
+		}
+		req.Header.Set("User-Agent", UserAgent)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		resp, err = doLINERequest(c.obsHTTPClient(), req)
+		if err != nil {
+			return nil, fmt.Errorf("public OBS resource request failed: %w", err)
+		}
 	}
-	resp, err := doLINERequest(c.obsHTTPClient(), req)
-	if err != nil {
-		return nil, fmt.Errorf("public OBS resource request failed: %w", err)
-	}
-	body, readErr := readResponseBody(resp, maxMediaResponseBytes)
-	if readErr != nil {
-		return nil, fmt.Errorf("failed to read public OBS resource response: %w", readErr)
+	maxBytes := opts.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = maxMediaResponseBytes
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
+		body, readErr := readResponseBody(resp, maxBytes)
+		if errors.Is(readErr, ErrResponseTooLarge) {
+			return nil, ErrOBSSizeLimit
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read public resource response: %w", readErr)
+		}
 		return body, nil
 	case http.StatusAccepted:
+		_, _ = readResponseBody(resp, maxErrorResponseBytes)
 		return nil, ErrOBSEncodingIncomplete
 	case http.StatusNotFound:
+		_, _ = readResponseBody(resp, maxErrorResponseBytes)
 		return nil, ErrOBSObjectNotFound
 	default:
-		return nil, fmt.Errorf("public OBS resource download failed (%d): %s", resp.StatusCode, string(body))
+		_, _ = readResponseBody(resp, maxErrorResponseBytes)
+		return nil, &PublicMediaStatusError{Status: resp.StatusCode}
 	}
 }
 
@@ -999,6 +1091,9 @@ func (c *Client) downloadOBSWithServiceAndSIDOptions(ctx context.Context, servic
 		if err == nil {
 			var data []byte
 			data, err = c.downloadOBSObject(ctx, obsURL, obsToken, messageID, opts.MaxBytes)
+			if err != nil && opts.TID == "original" && isOBSHTTPStatus(err, http.StatusNotFound) {
+				data, err = c.downloadOBSObject(ctx, objectInfoURL, obsToken, messageID, opts.MaxBytes)
+			}
 			if err == nil {
 				return data, nil
 			}
@@ -1065,6 +1160,20 @@ func (c *Client) checkOBSObjectReady(ctx context.Context, obsURL, obsToken, mess
 	}
 }
 
+type obsHTTPStatusError struct {
+	status int
+	body   string
+}
+
+func (e *obsHTTPStatusError) Error() string {
+	return fmt.Sprintf("OBS download failed (%d): %s", e.status, e.body)
+}
+
+func isOBSHTTPStatus(err error, status int) bool {
+	var statusErr *obsHTTPStatusError
+	return errors.As(err, &statusErr) && statusErr.status == status
+}
+
 func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messageID string, maxBytes int64) ([]byte, error) {
 	req, err := c.newOBSDownloadRequest(ctx, obsURL, obsToken, messageID)
 	if err != nil {
@@ -1077,23 +1186,25 @@ func (c *Client) downloadOBSObject(ctx context.Context, obsURL, obsToken, messag
 	if err != nil {
 		return nil, fmt.Errorf("OBS download request failed: %w", err)
 	}
-	if maxBytes == 0 {
-		maxBytes = maxMediaResponseBytes
-	}
-	body, readErr := readResponseBody(resp, maxBytes)
-	if errors.Is(readErr, ErrResponseTooLarge) {
-		return nil, ErrOBSSizeLimit
-	}
-	if readErr != nil {
-		return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)
-	}
 	switch resp.StatusCode {
 	case http.StatusOK:
+		if maxBytes == 0 {
+			maxBytes = maxMediaResponseBytes
+		}
+		body, readErr := readResponseBody(resp, maxBytes)
+		if errors.Is(readErr, ErrResponseTooLarge) {
+			return nil, ErrOBSSizeLimit
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read OBS response body: %w", readErr)
+		}
 		return body, nil
 	case http.StatusAccepted:
+		_, _ = readResponseBody(resp, maxOBSMetadataBytes)
 		return nil, ErrOBSEncodingIncomplete
 	default:
-		return nil, fmt.Errorf("OBS download failed (%d): %s", resp.StatusCode, string(body))
+		body, _ := readResponseBody(resp, maxOBSMetadataBytes)
+		return nil, &obsHTTPStatusError{status: resp.StatusCode, body: string(body)}
 	}
 }
 

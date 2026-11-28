@@ -566,3 +566,34 @@ func TestQRMetadataDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+func TestQRPinFailureAttachesStructuredQRErrorWithoutLeakingSecrets(t *testing.T) {
+	c := qrTestClient(func(req *http.Request) (*http.Response, error) {
+		return qrTestResponse(400, `{"code":10051,"message":"RESPONSE_ERROR","data":{"code":100,"reason":"INVALID_PIN_CODE","alertMessage":"PIN verification failed on device"}}`), nil
+	})
+
+	err := c.WaitForQRPin(context.Background(), qrTestSession)
+	var qrErr *QRError
+	if !errors.As(err, &qrErr) {
+		t.Fatalf("expected *QRError, got %v", err)
+	}
+	if qrErr.Code == nil || *qrErr.Code != 100 || qrErr.Reason != "INVALID_PIN_CODE" || qrErr.AlertMessage != "PIN verification failed on device" {
+		t.Fatalf("unexpected QRError fields: %+v", qrErr)
+	}
+	if !strings.Contains(qrErr.Error(), "code 100") || !strings.Contains(qrErr.Error(), "INVALID_PIN_CODE") {
+		t.Fatalf("QRError.Error() = %q", qrErr.Error())
+	}
+
+	// Freeform reason/alert secrets must never leak through Error().
+	c2 := qrTestClient(func(req *http.Request) (*http.Response, error) {
+		return qrTestResponse(400, `{"code":10051,"message":"secret-msg","data":{"code":99,"reason":"secret-reason-body","alertMessage":"secret-alert-body"}}`), nil
+	})
+	err2 := c2.WaitForQRPin(context.Background(), qrTestSession)
+	var qrErr2 *QRError
+	if !errors.As(err2, &qrErr2) {
+		t.Fatalf("expected *QRError, got %v", err2)
+	}
+	if strings.Contains(err2.Error(), "secret") || strings.Contains(qrErr2.Error(), "secret") {
+		t.Fatalf("QRError leaked freeform server text: err=%q detail=%q", err2.Error(), qrErr2.Error())
+	}
+}
